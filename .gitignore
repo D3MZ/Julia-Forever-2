@@ -1,0 +1,6 @@
+# Local Julia environment and coverage output
+Manifest.toml
+*.cov
+*.mem
+lcov.info
+.DS_Store
