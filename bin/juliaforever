@@ -1,3 +1,12 @@
 #!/bin/sh
-project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+set -e
+script=$0
+while [ -L "$script" ]; do
+    target=$(readlink "$script")
+    case $target in
+        /*) script=$target ;;
+        *) script=$(dirname -- "$script")/$target ;;
+    esac
+done
+project_dir=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd)
 exec julia --project="$project_dir" -e 'using JuliaForever2; exit(JuliaForever2.main())' "$@"

@@ -13,6 +13,8 @@ using JuliaForever2: Kernel, ComponentSpec, install!, Session, Reply, run_turn!,
     @test occursin("42", session.messages[3].content)
     @test Base.invokelatest(component(kernel, :custom), 7) == 21
     @test [message.role for message in session.messages] == [:user, :assistant, :code_result, :assistant]
+    @test session.messages[2].kind == :code
+    @test session.messages[4].kind == :answer
 end
 
 @testset "Stateful turn counter plugin" begin

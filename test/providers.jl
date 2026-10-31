@@ -37,6 +37,47 @@ end
     @test !occursin("\$", JuliaForever2.usage_label(session))
 end
 
+@testset "Codex subscription model and reasoning" begin
+    mktempdir() do dir
+        executable = joinpath(dir, "codex")
+        arguments = joinpath(dir, "arguments")
+        script = """
+        #!/bin/sh
+        printf '%s\\n' "\$@" > "\$JF2_CODEX_ARGS"
+        while [ "\$#" -gt 0 ]; do
+            if [ "\$1" = "-o" ]; then shift; outfile=\$1; fi
+            shift
+        done
+        printf '%s' '{"kind":"answer","content":"ok"}' > "\$outfile"
+        printf '%s\\n' '{"type":"turn.completed","usage":{"input_tokens":120,"output_tokens":18}}'
+        """
+        write(executable, script)
+        chmod(executable, 0o755)
+        withenv("JF2_CODEX_ARGS" => arguments) do
+            provider = JuliaForever2.CodexProvider(executable)
+            session = Session(Kernel())
+            reply = provider([Message(:user, "hello")], session)
+            @test reply == Reply(:answer, "ok")
+            @test JuliaForever2.usage_label(session) == "↑120 ↓18"
+            args = readlines(arguments)
+            @test "gpt-6.1-terra" in args
+            @test "model_reasoning_effort=\"max\"" in args
+            @test "--json" in args
+            @test JuliaForever2.provider_detail(provider) == "(openai-codex) gpt-6.1-terra • max"
+        end
+    end
+end
+
+@testset "OpenRouter key sources" begin
+    mktempdir() do dir
+        env = Dict("OPENROUTER_API_KEY" => "env-key")
+        @test JuliaForever2.openrouter_key(dir; pi_key=() -> "pi-key", environment=env) == "pi-key"
+        @test JuliaForever2.openrouter_key(dir; pi_key=() -> "", environment=env) == "env-key"
+        JuliaForever2.save_credentials!(dir, :openrouter, Dict("key" => "saved-key"))
+        @test JuliaForever2.openrouter_key(dir; pi_key=() -> "pi-key", environment=env) == "saved-key"
+    end
+end
+
 @testset "Browser credentials take precedence" begin
     mktempdir() do dir
         JuliaForever2.save_credentials!(dir, :openrouter, Dict("key" => "browser-key"))

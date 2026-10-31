@@ -1,6 +1,21 @@
 using JSON
 using Downloads
 
+const CODE_MODE_INSTRUCTIONS = """
+You are the model in a Julia agent harness. Respond with a JSON object containing exactly the
+string fields kind and content. For any action, return kind=code and Julia source in content;
+the host automatically executes that code and sends the result as code_result in the next request.
+Do not use your own tools or claim an action was completed before seeing its execution result.
+Return kind=answer when the user's request is complete or no action is needed.
+Code executes with the user's permissions in a persistent Julia module. The module provides
+kernel, session, include, print, println, and the JuliaForever2 exports. Install runtime components
+with install!(kernel, ComponentSpec(:name, value; requires=[:dependency])); retrieve them with
+component(kernel, :name). A :loop component receives (session, prompt, max_steps) and may call
+JuliaForever2.default_loop!(session, prompt, max_steps). spawn_agent! creates a child session.
+Julia code can inspect the runtime, write and include plugin files, and replace components.
+Use the code_result to check and repair your work before answering.
+"""
+
 struct DemoProvider end
 
 function (::DemoProvider)(messages, session)
@@ -12,29 +27,37 @@ end
 
 struct CodexProvider
     executable::String
+    model::String
+    reasoning::String
 end
-CodexProvider() = CodexProvider("codex")
+CodexProvider(executable::AbstractString="codex") = CodexProvider(String(executable), "gpt-6.1-terra", "max")
 
 function (provider::CodexProvider)(messages::Vector{Message}, session::Session)
     schema = Dict("type" => "object", "properties" => Dict("kind" => Dict("type" => "string", "enum" => ["code", "answer"]), "content" => Dict("type" => "string")), "required" => ["kind", "content"], "additionalProperties" => false)
-    instructions = "You are the model for a Julia agent harness. Do not use your tools. Respond with JSON matching the schema. Use kind=code with Julia source in content when you need to act; the harness executes it and returns the result. Use kind=answer for your final reply. Code runs in a persistent Julia module with kernel, session, print and println available. JuliaForever2 exports ComponentSpec, install!, component, spawn_agent!, and other kernel APIs. Code has the user's full permissions. Conversation follows:\n"
+    instructions = CODE_MODE_INSTRUCTIONS * "\nConversation follows:\n"
     transcript = join(["$(m.role): $(m.content)" for m in messages], "\n\n")
     return mktempdir() do dir::String
         schemafile = joinpath(dir, "schema.json")
         outfile = joinpath(dir, "reply.json")
+        eventsfile = joinpath(dir, "events.jsonl")
         write(schemafile, JSON.json(schema))
-        cmd = `$(provider.executable) exec --ephemeral --ignore-user-config --skip-git-repo-check --sandbox read-only -C $dir --output-schema $schemafile -o $outfile -`
-        process = run(pipeline(cmd, stdin=IOBuffer(instructions * transcript), stdout=devnull, stderr=devnull); wait=false)
-        wait(process)
+        reasoning = "model_reasoning_effort=" * JSON.json(provider.reasoning)
+        cmd = `$(provider.executable) exec --ephemeral --ignore-user-config --skip-git-repo-check --sandbox read-only -C $dir --model $(provider.model) -c $reasoning --json --output-schema $schemafile -o $outfile -`
+        process = open(eventsfile, "w") do output
+            child = run(pipeline(cmd, stdin=IOBuffer(instructions * transcript), stdout=output, stderr=devnull); wait=false)::Base.Process
+            wait(child)
+            return child
+        end
         success(process) || return Reply(:error, "Codex could not produce a response. Check that the CLI is installed and signed in.")
+        record_codex_usage!(session, eachline(eventsfile))
         parsed = JSON.parse(read(outfile, String))
         return Reply(Symbol(parsed["kind"]), String(parsed["content"]))
     end
 end
 
-function default_kernel()
+function default_kernel(provider=DemoProvider())
     kernel = Kernel()
-    install!(kernel, ComponentSpec(:provider, DemoProvider()))
+    install!(kernel, ComponentSpec(:provider, provider))
     install!(kernel, ComponentSpec(:executor, default_evaluate!))
     install!(kernel, ComponentSpec(:loop, default_loop!))
     install!(kernel, ComponentSpec(:input, default_input!))
@@ -57,6 +80,18 @@ function router_request(url, body, headers)
 end
 
 OpenRouterProvider(api_key::AbstractString, model::AbstractString) = OpenRouterProvider(String(api_key), String(model), router_request)
+
+function record_codex_usage!(session::Session, events)
+    for line in events
+        startswith(line, "{") || continue
+        event = JSON.parse(line)
+        if get(event, "type", "") == "turn.completed"
+            usage = get(event, "usage", Dict())
+            record_usage!(session, Dict("prompt_tokens" => get(usage, "input_tokens", nothing), "completion_tokens" => get(usage, "output_tokens", nothing)))
+        end
+    end
+    return nothing
+end
 
 function record_usage!(session::Session, usage::AbstractDict)
     input = get(usage, "prompt_tokens", nothing)
@@ -86,16 +121,33 @@ function record_usage!(session::Session, usage)
     return nothing
 end
 
-function OpenRouterProvider()
-    saved = load_credentials(config_dir(), :openrouter)
+function pi_openrouter_key()
+    executable = Sys.which("pi")
+    if !isnothing(executable)
+        output = IOBuffer()
+        process = run(pipeline(ignorestatus(`$executable auth print-api-key --provider openrouter`); stdout=output, stderr=devnull))
+        success(process) && return strip(String(take!(output)))
+    end
+    return ""
+end
+
+function openrouter_key(dir::AbstractString; pi_key=pi_openrouter_key, environment=ENV)
+    saved = load_credentials(dir, :openrouter)
     stored = isnothing(saved) ? "" : get(saved, "key", "")
-    key = isempty(stored) ? get(ENV, "OPENROUTER_API_KEY", "") : stored
-    return OpenRouterProvider(key, get(ENV, "OPENROUTER_MODEL", "openai/gpt-4.1-mini"))
+    if !isempty(stored)
+        return stored
+    end
+    key = pi_key()
+    return isempty(key) ? get(environment, "OPENROUTER_API_KEY", "") : key
+end
+
+function OpenRouterProvider()
+    return OpenRouterProvider(openrouter_key(config_dir()), get(ENV, "OPENROUTER_MODEL", "nvidia/nemotron-3.5-super-vl:free"))
 end
 
 function (provider::OpenRouterProvider)(messages::Vector{Message}, session::Session)
     isempty(provider.api_key) && return Reply(:error, "Set OPENROUTER_API_KEY before selecting OpenRouter.")
-    system = "You are the model for a Julia agent harness. Reply as a JSON object with exactly the string fields kind and content. Use kind=code and Julia source when you need to act; the harness runs it and returns the result. Use kind=answer for your final response. A persistent Julia module provides kernel, session, include, and JuliaForever2 exports. Register a value with install!(kernel, ComponentSpec(:name, value)); retrieve it with component(kernel, :name). Dependencies use ComponentSpec(:name, value; requires=[:dependency]). A :loop component is called as (session, prompt, max_steps) and may delegate to JuliaForever2.default_loop!(session, prompt, max_steps). spawn_agent! starts a child session. Code runs with the user's permissions."
+    system = CODE_MODE_INSTRUCTIONS
     transcript = join(["$(m.role): $(m.content)" for m in messages], "\n\n")
     body = JSON.json(Dict("model" => provider.model, "messages" => [Dict("role" => "system", "content" => system), Dict("role" => "user", "content" => transcript)], "response_format" => Dict("type" => "json_object")))
     headers = ["Authorization" => "Bearer $(provider.api_key)", "Content-Type" => "application/json"]
@@ -137,7 +189,7 @@ function (provider::OpenAIProvider)(messages::Vector{Message}, session::Session)
     requested = get(ENV, "CHATGPT_MODEL", "")
     model = isempty(requested) ? first(available) : requested
     model in available || return Reply(:error, "CHATGPT_MODEL is not in the account's available model list.")
-    instructions = "You are the model for a Julia agent harness. Respond with a JSON object with keys kind and content. Use kind=code and Julia source when you need to act; the harness executes it and returns the result. Use kind=answer for your final answer. Code runs in a persistent Julia module with kernel, session, and JuliaForever2 exports including ComponentSpec, install!, component, and spawn_agent!. Code runs with the user's permissions."
+    instructions = CODE_MODE_INSTRUCTIONS
     transcript = join(["$(m.role): $(m.content)" for m in messages], "\n\n")
     body = JSON.json(Dict("model" => model, "input" => [Dict("role" => "developer", "content" => instructions), Dict("role" => "user", "content" => transcript)], "store" => false, "stream" => true, "text" => Dict("format" => Dict("type" => "json_object"))))
     response = provider.transport(OPENAI_RESOURCE * "/responses", "POST", body, headers)
@@ -149,4 +201,22 @@ function (provider::OpenAIProvider)(messages::Vector{Message}, session::Session)
     content = get(parsed, "content", "")
     kind in (:code, :answer) && content isa AbstractString || return Reply(:error, "ChatGPT returned an invalid agent response.")
     return Reply(kind, String(content))
+end
+
+provider_from_name(name::AbstractString) = name == "chatgpt" ? OpenAIProvider() : name == "openrouter" ? OpenRouterProvider() : name == "codex" ? CodexProvider() : DemoProvider()
+
+function configured_provider(dir::AbstractString=config_dir())
+    path = joinpath(dir, "provider")
+    return provider_from_name(isfile(path) ? strip(read(path, String)) : "demo")
+end
+
+function save_provider!(dir::AbstractString, provider::Symbol)
+    mkpath(dir; mode=0o700)
+    mktemp(dir) do temp, io
+        chmod(temp, 0o600)
+        print(io, provider)
+        close(io)
+        Base.Filesystem.rename(temp, joinpath(dir, "provider"))
+    end
+    return nothing
 end

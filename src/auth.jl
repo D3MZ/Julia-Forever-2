@@ -323,6 +323,32 @@ function receive_callback(server, flow::AuthFlow, attempt::OAuthAttempt; timeout
     return (ok=false, code="", client_id="", reason="Sign-in cancelled or timed out.")
 end
 
+function codex_sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), executable=Sys.which("codex"))
+    if isnothing(executable)
+        return (ok=false, reason="Install the Codex CLI to sign in with ChatGPT.")
+    end
+    output = Pipe()
+    process = run(pipeline(ignorestatus(`$executable login`); stdin=devnull, stdout=output, stderr=output); wait=false)::Base.Process
+    close(output.in)
+    reader = @async for line in eachline(output)
+        url = match(r"https://[^\s]+", line)
+        isnothing(url) || announce(String(url.match))
+    end
+    while process_running(process) && active_auth(flow)
+        sleep(0.05)
+    end
+    if !active_auth(flow) && process_running(process)
+        kill(process)
+    end
+    wait(process)
+    wait(reader)
+    close(output)
+    if !active_auth(flow)
+        return (ok=false, reason="Sign-in cancelled.")
+    end
+    return success(process) ? (ok=true, reason="ChatGPT / Codex connected.") : (ok=false, reason="Codex sign-in failed. Run codex login to retry.")
+end
+
 function sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), opener=open_auth_browser, transport=auth_request, identity=verify_chatgpt_identity, timeout=180.0)
     server = listen(ip"127.0.0.1", 0)
     started = lock(flow.lock) do

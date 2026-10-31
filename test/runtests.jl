@@ -1,37 +1,26 @@
-using JuliaForever2
 using Test
-using Aqua
-using JET
 
-include("lint.jl")
-include("kernel.jl")
-include("agent.jl")
-include("tui.jl")
-include("providers.jl")
-include("auth.jl")
+include("groups.jl")
 
-@testset "Forbidden syntax lint" begin
-    for source in ("throw(e)", "Base.throw(e)", "rethrow()", "Base.rethrow(e)", "@assert x", "Base.@assert x", "try f() catch e; g(e) end")
-        @test !isempty(forbidden_syntax(source))
-    end
-    for source in ("# throw(e)\nx = \"@assert x\"", "@test x", "try f() finally g() end")
-        @test isempty(forbidden_syntax(source))
-    end
-    @test !isempty(forbidden_syntax("function incomplete("))
-    mktempdir() do root
-        mkpath(joinpath(root, "nested"))
-        write(joinpath(root, "nested", "example.jl"), "x = 1\nthrow(x)\n")
-        @test lint_repository(root) == [(joinpath("nested", "example.jl"), 2, "throw")]
-    end
-    @test isempty(lint_repository(dirname(@__DIR__)))
+unknown = unknown_test_groups(ARGS)
+if !isempty(unknown)
+    println(stderr, "Unknown test group(s): ", join(unknown, ", "))
+    println(stderr, "Available groups: ", join(sort!(collect(keys(TEST_GROUPS))), ", "))
+    exit(2)
 end
 
-@testset "JuliaForever2" begin
-    @test greet("Julia") == "Hello, Julia!"
-    @test greet("") == "Hello, !"
+files = selected_test_files(ARGS)
+missing_checks = [name for (file, name) in (("aqua.jl", "Aqua"), ("jet.jl", "JET")) if file in files && isnothing(Base.find_package(name))]
+if !isempty(missing_checks)
+    println(stderr, "Test dependencies unavailable: ", join(missing_checks, ", "))
+    println(stderr, "Use the test environment: julia --project -e 'using Pkg; Pkg.test(; test_args=ARGS)' <groups>")
+    exit(2)
 end
 
-@testset "Package quality" begin
-    Aqua.test_all(JuliaForever2)
-    JET.test_package(JuliaForever2; target_modules=(JuliaForever2,))
+if any(file -> !(file in ("selection.jl", "launcher.jl", "lint_tests.jl")), files)
+    @eval using JuliaForever2
+end
+
+for file in files
+    include(file)
 end

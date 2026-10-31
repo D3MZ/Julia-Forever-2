@@ -2,6 +2,25 @@ using Sockets
 using JWTs
 using JuliaForever2: oauth_attempt, authorization_url, callback_params, finish_callback, save_credentials!, load_credentials, chatgpt_reply, OpenAIProvider
 
+@testset "Codex CLI sign-in" begin
+    mktempdir() do dir
+        executable = joinpath(dir, "codex")
+        write(executable, "#!/bin/sh\necho 'Visit https://example.invalid/login' >&2\n")
+        chmod(executable, 0o755)
+        urls = String[]
+        result = JuliaForever2.codex_sign_in!(JuliaForever2.AuthFlow(), :codex, dir; executable, announce=url -> push!(urls, url))
+        @test result.ok
+        @test urls == ["https://example.invalid/login"]
+        write(executable, "#!/bin/sh\nexec sleep 20\n")
+        flow = JuliaForever2.AuthFlow()
+        task = @async JuliaForever2.codex_sign_in!(flow, :codex, dir; executable)
+        sleep(0.2)
+        JuliaForever2.cancel_auth!(flow)
+        @test timedwait(() -> istaskdone(task), 5) == :ok
+        @test !fetch(task).ok
+    end
+end
+
 @testset "OAuth state and PKCE" begin
     attempt = oauth_attempt(:chatgpt, "http://127.0.0.1:54321/auth/callback"; host_id="urn:uuid:123")
     url = authorization_url(attempt)

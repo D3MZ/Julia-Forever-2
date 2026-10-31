@@ -1,7 +1,10 @@
 struct Message
     role::Symbol
     content::String
+    kind::Symbol
 end
+
+Message(role::Symbol, content::AbstractString) = Message(role, String(content), :text)
 
 struct Reply
     kind::Symbol
@@ -77,7 +80,7 @@ function default_loop!(session::Session, prompt::AbstractString, max_steps::Int)
         reply isa Reply || return (ok=false, text="Provider returned an invalid reply.")
         reply.kind == :error && return (ok=false, text=reply.content)
         lock(session.lock) do
-            push!(session.messages, Message(:assistant, reply.content))
+            push!(session.messages, Message(:assistant, reply.content, reply.kind))
         end
         reply.kind == :answer && return (ok=true, text=reply.content)
         reply.kind == :code || return (ok=false, text="Unknown reply kind: $(reply.kind)")
