@@ -16,3 +16,18 @@ using JSON
     failed = OpenRouterProvider("secret", "example/model", (args...) -> (status=401, body="bad"))
     @test failed([Message(:user, "Hi")], Session(Kernel())).kind == :error
 end
+
+@testset "Browser credentials take precedence" begin
+    mktempdir() do dir
+        JuliaForever2.save_credentials!(dir, :openrouter, Dict("key" => "browser-key"))
+        withenv("JULIAFOREVER_CONFIG_DIR" => dir, "OPENROUTER_API_KEY" => "environment-key") do
+            @test OpenRouterProvider().api_key == "browser-key"
+        end
+    end
+end
+
+@testset "Credentials are not shown when displaying a provider" begin
+    provider = OpenRouterProvider("synthetic-secret", "example/model")
+    @test !occursin("synthetic-secret", repr(provider))
+    @test occursin("example/model", repr(provider))
+end

@@ -75,3 +75,53 @@ end
     update!(app, KeyEvent('x'))
     @test app.status == "custom input"
 end
+
+@testset "Provider sign-in controls" begin
+    app = App(default_kernel())
+    update!(app, KeyEvent('/'))
+    update!(app, KeyEvent(:enter))
+    update!(app, KeyEvent(:down))
+    @test app.selected == 2
+    update!(app, KeyEvent(:enter))
+    @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.OpenAIProvider
+    @test occursin("sign in", lowercase(app.status))
+end
+
+@testset "Account status is visible without credentials" begin
+    mktempdir() do dir
+        JuliaForever2.save_credentials!(dir, :chatgpt, Dict("email" => "example@example.com", "access_token" => "never-display-this"))
+        withenv("JULIAFOREVER_CONFIG_DIR" => dir) do
+            app = App(default_kernel())
+            app.page = :settings
+            tb = TestBackend(100, 24)
+            frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+            Tachikoma.view(app, frame)
+            @test !isnothing(find_text(tb, "example@example.com"))
+            @test isnothing(find_text(tb, "never-display-this"))
+        end
+    end
+end
+
+@testset "Sign-in updates the terminal" begin
+    mktempdir() do dir
+        withenv("JULIAFOREVER_CONFIG_DIR" => dir) do
+            app = App(default_kernel())
+            app.page = :settings
+            action = (flow, provider, storage; announce) -> begin
+                announce("https://example.invalid/authorize")
+                JuliaForever2.save_credentials!(storage, :openrouter, Dict("key" => "synthetic-key"))
+                (ok=true, reason="OpenRouter connected.")
+            end
+            JuliaForever2.start_sign_in!(app, :openrouter; action, dir)
+            @test timedwait(() -> isready(app.queue.channel), 5) == :ok
+            update!(app, take!(app.queue.channel))
+            @test app.auth_url == "https://example.invalid/authorize"
+            @test timedwait(() -> isready(app.queue.channel), 5) == :ok
+            update!(app, take!(app.queue.channel))
+            @test app.page == :settings
+            @test !app.busy
+            @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.OpenRouterProvider
+            @test app.status == "OpenRouter connected."
+        end
+    end
+end

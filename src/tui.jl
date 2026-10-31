@@ -1,5 +1,5 @@
 using Tachikoma
-import Tachikoma: update!, view, should_quit, task_queue
+import Tachikoma: update!, view, should_quit, task_queue, cleanup!
 
 mutable struct App <: Model
     session::Session
@@ -13,9 +13,12 @@ mutable struct App <: Model
     status::String
     scroll::Int
     area::Rect
+    auth_flow::Union{AuthFlow,Nothing}
+    auth_url::String
+    auth_provider::Symbol
 end
 
-App(kernel::Kernel=default_kernel()) = App(Session(kernel), TextInput(; label="❯ "), :chat, false, 1, false, false, TaskQueue(), "Demo provider · Julia executes with your permissions", 0, Rect())
+App(kernel::Kernel=default_kernel()) = App(Session(kernel), TextInput(; label="❯ "), :chat, false, 1, false, false, TaskQueue(), "Demo provider · Julia executes with your permissions", 0, Rect(), nothing, "", :none)
 const COMMANDS = [("settings", "Choose a provider"), ("components", "Inspect installed components"), ("julia", "Run a Julia expression"), ("clear", "Clear the conversation"), ("quit", "Exit")]
 matching_commands(app::App) = filter(item -> startswith(item[1], replace(Tachikoma.text(app.input), r"^/" => "")), COMMANDS)
 task_queue(app::App) = app.queue
@@ -62,22 +65,73 @@ function submit!(app::App, prompt::String)
     end
 end
 
+function start_sign_in!(app::App, provider::Symbol; action=sign_in!, dir=config_dir())
+    app.busy && return
+    flow = AuthFlow()
+    app.auth_flow = flow
+    app.auth_url = ""
+    app.auth_provider = provider
+    app.busy = true
+    app.page = :auth
+    app.status = "Opening browser for sign-in…"
+    Tachikoma.spawn_task!(app.queue, :auth_done) do
+        announce = url -> put!(app.queue.channel, TaskEvent(:auth_url, (flow, url)))
+        action(flow, provider, dir; announce)
+    end
+end
+
 function update!(app::App, event::TaskEvent)
-    event.id == :turn || return
-    app.busy = false
-    app.status = event.value isa Exception ? sprint(showerror, event.value) : (event.value.ok ? "Ready" : event.value.text)
+    if event.id == :auth_url
+        flow, url = event.value
+        if app.auth_flow === flow && active_auth(flow)
+            app.auth_url = url
+            app.status = "Complete sign-in in your browser."
+        end
+    elseif event.id == :auth_done
+        app.busy = false
+        flow = app.auth_flow
+        app.auth_flow = nothing
+        cancelled = isnothing(flow) || !active_auth(flow)
+        if cancelled
+            app.status = "Sign-in cancelled."
+        elseif event.value isa Exception
+            app.status = "Sign-in failed. Check your connection and try again."
+        else
+            result = event.value
+            app.status = result.reason
+            if result.ok
+                provider = app.auth_provider == :chatgpt ? OpenAIProvider() : OpenRouterProvider()
+                install!(app.session.kernel, ComponentSpec(:provider, provider))
+            end
+        end
+        app.page == :auth && (app.page = :settings)
+        app.auth_url = ""
+    elseif event.id == :turn
+        app.busy = false
+        app.status = event.value isa Exception ? sprint(showerror, event.value) : (event.value.ok ? "Ready" : event.value.text)
+    end
 end
 
 function default_input!(app::App, event::KeyEvent)
-    if app.page == :settings
+    if app.page == :auth
+        flow = app.auth_flow
+        if event.key == :escape && !isnothing(flow)
+            cancel_auth!(flow)
+            app.status = "Cancelling sign-in…"
+            app.page = :settings
+        end
+        return
+    elseif app.page == :settings
         if event.key == :escape
             app.page = :chat
         elseif event.key in (:up, :down)
-            app.selected = mod1(app.selected + (event.key == :up ? -1 : 1), 3)
+            app.selected = mod1(app.selected + (event.key == :up ? -1 : 1), 4)
+        elseif event.key == :char && event.char == 's' && app.selected in (2, 3)
+            start_sign_in!(app, app.selected == 2 ? :chatgpt : :openrouter)
         elseif event.key == :enter
-            provider = app.selected == 1 ? DemoProvider() : app.selected == 2 ? CodexProvider() : OpenRouterProvider()
+            provider = app.selected == 1 ? DemoProvider() : app.selected == 2 ? OpenAIProvider() : app.selected == 3 ? OpenRouterProvider() : CodexProvider()
             install!(app.session.kernel, ComponentSpec(:provider, provider))
-            app.status = app.selected == 1 ? "Demo provider" : app.selected == 2 ? "Codex CLI provider" : "OpenRouter provider"
+            app.status = app.selected == 1 ? "Demo provider" : app.selected == 2 ? "ChatGPT selected — sign in from settings with s" : app.selected == 3 ? "OpenRouter selected — sign in from settings with s" : "Codex CLI provider"
             app.page = :chat
         end
         return
@@ -121,6 +175,16 @@ function drawline!(buffer, x, y, width, text, style=:text)
     Tachikoma.set_string!(buffer, x, y, text, tstyle(style); max_x=x + width - 1)
 end
 
+function provider_labels()::NTuple{4,String}
+    chatgpt = load_credentials(config_dir(), :chatgpt)
+    router = load_credentials(config_dir(), :openrouter)
+    raw_email = isnothing(chatgpt) ? "" : get(chatgpt, "email", "")
+    email = raw_email isa String ? raw_email : ""
+    chat_status = isnothing(chatgpt) ? "not connected" : isempty(email) ? "connected" : email
+    router_status = !isnothing(router) || !isempty(get(ENV, "OPENROUTER_API_KEY", "")) ? "connected" : "not connected"
+    return ("Demo — offline, deterministic", "ChatGPT plan — " * chat_status, "OpenRouter — " * router_status, "Codex CLI — existing CLI sign-in")
+end
+
 function default_view!(app::App, frame::Frame)
     area = frame.area
     app.area = area
@@ -129,12 +193,23 @@ function default_view!(app::App, frame::Frame)
     w < 5 && return
     h < 5 && return
     drawline!(buf, x + 1, y, w - 2, "◆ JULIA FOREVER", :accent)
-    if app.page == :settings
+    if app.page == :auth
+        drawline!(buf, x + 1, y + 2, w - 2, "Sign in to " * (app.auth_provider == :chatgpt ? "ChatGPT" : "OpenRouter"), :accent)
+        drawline!(buf, x + 1, y + 4, w - 2, "Complete authorization in your browser.", :text)
+        drawline!(buf, x + 1, y + 6, w - 2, "If it did not open, copy this URL:", :text_dim)
+        chars = collect(app.auth_url)
+        for (i, part) in enumerate(Iterators.partition(chars, max(1, w - 2)))
+            i > h - 10 && break
+            drawline!(buf, x + 1, y + 6 + i, w - 2, String(collect(part)), :text)
+        end
+        drawline!(buf, x + 1, y + h - 1, w - 2, "esc cancel", :text_dim)
+        return
+    elseif app.page == :settings
         drawline!(buf, x + 1, y + 2, w - 2, "Settings  /  Provider", :accent)
-        for (i, name) in enumerate(("Demo — offline, deterministic", "Codex CLI — uses your existing sign-in", "OpenRouter — OPENROUTER_API_KEY / OPENROUTER_MODEL"))
+        for (i, name) in enumerate(provider_labels())
             drawline!(buf, x + 2, y + 3 + i, w - 3, (app.selected == i ? "› " : "  ") * name, app.selected == i ? :accent : :text)
         end
-        drawline!(buf, x + 1, y + h - 1, w - 2, "↑↓ select   enter apply   esc back", :text_dim)
+        drawline!(buf, x + 1, y + h - 1, w - 2, "↑↓ select   enter use   s sign in   esc back", :text_dim)
         return
     elseif app.page == :components
         drawline!(buf, x + 1, y + 2, w - 2, "Components", :accent)
@@ -202,7 +277,7 @@ function default_input!(app::App, event::MouseEvent)
     area = app.area
     if app.page == :settings
         selected = event.y - area.y - 3
-        if 1 <= selected <= 3
+        if 1 <= selected <= 4
             app.selected = selected
             update!(app, KeyEvent(:enter))
         end
@@ -229,3 +304,9 @@ end
 
 update!(app::App, event::Union{KeyEvent,MouseEvent}) = ui_component(app, :input, default_input!, event)
 view(app::App, frame::Frame) = ui_component(app, :view, default_view!, frame)
+
+function cleanup!(app::App)
+    flow = app.auth_flow
+    isnothing(flow) || cancel_auth!(flow)
+    return nothing
+end

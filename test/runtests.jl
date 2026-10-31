@@ -8,6 +8,7 @@ include("kernel.jl")
 include("agent.jl")
 include("tui.jl")
 include("providers.jl")
+include("auth.jl")
 
 @testset "Forbidden syntax lint" begin
     for source in ("throw(e)", "Base.throw(e)", "rethrow()", "Base.rethrow(e)", "@assert x", "Base.@assert x", "try f() catch e; g(e) end")

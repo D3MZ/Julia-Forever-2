@@ -4,6 +4,7 @@ export greet, Kernel, ComponentSpec, component, install!, remove!, acquire!, rel
 
 include("kernel.jl")
 include("agent.jl")
+include("auth.jl")
 include("providers.jl")
 include("tui.jl")
 
