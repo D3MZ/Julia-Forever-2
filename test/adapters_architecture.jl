@@ -93,6 +93,29 @@ end
     @test only(JuliaForever2.provider_descriptors(second_catalog)) === second_descriptor
 end
 
+@testset "Provider lookup preserves descriptor identity and snapshot isolation" begin
+    registry = JuliaForever2.ProviderRegistry()
+    original = JuliaForever2.ProviderDescriptor(:lookup_fixture, "Original", directory -> :original)
+    replacement = JuliaForever2.ProviderDescriptor(:lookup_fixture, "Replacement", directory -> :replacement)
+
+    @test isnothing(JuliaForever2.provider_descriptor(registry, :lookup_fixture))
+    JuliaForever2.register_provider!(registry, original)
+    snapshot = JuliaForever2.provider_descriptors(registry)
+    @test JuliaForever2.provider_descriptor(registry, :lookup_fixture) === original
+    @test JuliaForever2.provider_from_name(:lookup_fixture; registry, dir="unused") == :original
+
+    JuliaForever2.register_provider!(registry, replacement)
+    @test JuliaForever2.provider_descriptor(registry, :lookup_fixture) === replacement
+    @test JuliaForever2.provider_from_name(:lookup_fixture; registry, dir="unused") == :replacement
+    @test only(snapshot) === original
+    @test only(JuliaForever2.provider_descriptors(registry)) === replacement
+
+    JuliaForever2.unregister_provider!(registry, :lookup_fixture)
+    @test isnothing(JuliaForever2.provider_descriptor(registry, :lookup_fixture))
+    @test isempty(JuliaForever2.provider_descriptors(registry))
+    @test only(snapshot) === original
+end
+
 JuliaForever2.authorization_url(::Val{:adapter_fixture}, attempt::JuliaForever2.OAuthAttempt) =
     "https://example.invalid/authorize?state=" * attempt.state
 
