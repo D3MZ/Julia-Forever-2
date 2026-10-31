@@ -97,12 +97,18 @@ end
     @test events[2].data == ""
     @test events[2].id == ""
 
-    write(decoder, "id: invalid\0id\nż: ignored\nretry: 1000\ndata:  leading space\n\n")
+    write(decoder, "id:\r\nevent:\r\ndata: \r\n\r\n")
     @test length(events) == 3
-    @test events[3].data == " leading space"
+    @test events[3].data == ""
     @test events[3].id == ""
     @test events[3].event == "message"
 
+    write(decoder, "id: invalid\0id\nż: ignored\nretry: 1000\ndata:  leading space\n\n")
+    @test length(events) == 4
+    @test events[4].data == " leading space"
+    @test events[4].id == ""
+    @test events[4].event == "message"
+
     write(decoder, ": comment\n\n")
-    @test length(events) == 3
+    @test length(events) == 4
 end
