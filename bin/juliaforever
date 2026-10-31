@@ -1,0 +1,3 @@
+#!/bin/sh
+project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec julia --project="$project_dir" -e 'using JuliaForever2; exit(JuliaForever2.main())' "$@"

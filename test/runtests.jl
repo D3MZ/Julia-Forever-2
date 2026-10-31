@@ -4,6 +4,10 @@ using Aqua
 using JET
 
 include("lint.jl")
+include("kernel.jl")
+include("agent.jl")
+include("tui.jl")
+include("providers.jl")
 
 @testset "Forbidden syntax lint" begin
     for source in ("throw(e)", "Base.throw(e)", "rethrow()", "Base.rethrow(e)", "@assert x", "Base.@assert x", "try f() catch e; g(e) end")
@@ -28,5 +32,5 @@ end
 
 @testset "Package quality" begin
     Aqua.test_all(JuliaForever2)
-    JET.test_package(JuliaForever2)
+    JET.test_package(JuliaForever2; target_modules=(JuliaForever2,))
 end
