@@ -145,6 +145,35 @@ end
     @test JSON.parse(conversation[4]["content"])["kind"] == "code_result"
 end
 
+@testset "Slow model discovery does not serialize independent callers" begin
+    entered = Channel{Nothing}(1)
+    release = Channel{Nothing}(1)
+    requests = Threads.Atomic{Int}(0)
+    model_body = slug -> JSON.json(Dict("models" => [Dict("slug" => slug, "visibility" => "list")]))
+    transport = function (url, method, body, headers, context, sink)
+        request = Threads.atomic_add!(requests, 1) + 1
+        if request == 1
+            put!(entered, nothing)
+            take!(release)
+        end
+        return (status=200, body=model_body(request == 1 ? "slow" : "fast"))
+    end
+    provider = JuliaForever2.OpenAIProvider("unused", transport)
+    context = ExecutionContext()
+    first = Threads.@spawn JuliaForever2.available_models!(provider, [], context)
+    take!(entered)
+    @test !islocked(provider.catalog.lock)
+    second = Threads.@spawn JuliaForever2.available_models!(provider, [], context)
+    completed = timedwait(() -> istaskdone(second), 5.0; pollint=0.01) == :ok
+    put!(release, nothing)
+    @test completed
+    @test fetch(second).models == ["fast"]
+    @test fetch(first).models == ["fast"]
+    @test JuliaForever2.available_models!(provider, [], context).models == ["fast"]
+    @test requests[] == 2
+    close(context)
+end
+
 @testset "ChatGPT streams events, reports usage, and caches models" begin
     mktempdir() do directory
         JuliaForever2.save_credentials!(directory, :chatgpt, Dict("access_token" => "synthetic", "expires_at" => time() + 3600))

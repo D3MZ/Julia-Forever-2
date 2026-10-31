@@ -286,15 +286,22 @@ OpenAIProvider(dir::AbstractString=config_dir(), transport=openai_request, auth_
 (provider::OpenAIProvider)(messages, session) = call_provider(provider, messages, session)
 
 function available_models!(provider::OpenAIProvider, headers, context)
-    lock(provider.catalog.lock) do
-        time() < provider.catalog.expires_at && return (models=provider.catalog.models, reason="")
-        response = transport_request(provider.transport, OPENAI_RESOURCE * "/models", "GET", "", headers, context)
-        200 <= response.status < 300 || return (models=String[], reason=transport_reason(response, "ChatGPT model discovery"))
-        data = parse_json(response.body)
-        data isa AbstractDict || return (models=String[], reason="ChatGPT model discovery returned invalid JSON.")
-        models = get(data, "models", [])
-        provider.catalog.models = String[m["slug"] for m in models if get(m, "visibility", "") == "list" && get(m, "slug", nothing) isa AbstractString]
-        provider.catalog.expires_at = time() + provider.catalog_ttl
+    cached = lock(provider.catalog.lock) do
+        time() < provider.catalog.expires_at ? provider.catalog.models : nothing
+    end
+    isnothing(cached) || return (models=cached, reason="")
+
+    response = transport_request(provider.transport, OPENAI_RESOURCE * "/models", "GET", "", headers, context)
+    200 <= response.status < 300 || return (models=String[], reason=transport_reason(response, "ChatGPT model discovery"))
+    data = parse_json(response.body)
+    data isa AbstractDict || return (models=String[], reason="ChatGPT model discovery returned invalid JSON.")
+    models = get(data, "models", [])
+    discovered = String[m["slug"] for m in models if get(m, "visibility", "") == "list" && get(m, "slug", nothing) isa AbstractString]
+    return lock(provider.catalog.lock) do
+        if time() >= provider.catalog.expires_at
+            provider.catalog.models = discovered
+            provider.catalog.expires_at = time() + provider.catalog_ttl
+        end
         return (models=provider.catalog.models, reason="")
     end
 end
