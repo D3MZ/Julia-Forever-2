@@ -39,16 +39,17 @@ function sse_line!(decoder::SSEDecoder)
         return nothing
     end
     startswith(line, ':') && return nothing
-    parts = split(line, ':'; limit=2)
-    field = parts[1]
-    value = length(parts) == 2 ? String(parts[2]) : ""
-    startswith(value, ' ') && (value = chop(value; head=1, tail=0))
+    colon = findfirst(isequal(':'), line)
+    field = isnothing(colon) ? line :
+        colon == firstindex(line) ? "" : SubString(line, firstindex(line), prevind(line, colon))
+    value = isnothing(colon) ? "" : SubString(line, nextind(line, colon))
+    startswith(value, ' ') && (value = SubString(value, nextind(value, firstindex(value))))
     if field == "data"
-        push!(decoder.data, value)
+        push!(decoder.data, String(value))
     elseif field == "event"
-        decoder.event = value
+        decoder.event = String(value)
     elseif field == "id" && !occursin('\0', value)
-        decoder.id = value
+        decoder.id = String(value)
     end
     return nothing
 end
