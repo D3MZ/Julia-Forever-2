@@ -43,9 +43,10 @@ provider_descriptors(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) =
     lock(() -> copy(registry.descriptors), registry.lock)
 
 function provider_descriptor(registry::ProviderRegistry, id::Symbol)
-    descriptors = provider_descriptors(registry)
-    index = findfirst(descriptor -> descriptor.id == id, descriptors)
-    return isnothing(index) ? nothing : descriptors[index]
+    lock(registry.lock) do
+        index = findfirst(descriptor -> descriptor.id == id, registry.descriptors)
+        return isnothing(index) ? nothing : registry.descriptors[index]
+    end
 end
 provider_descriptor(id::Symbol) = provider_descriptor(DEFAULT_PROVIDER_REGISTRY, id)
 
