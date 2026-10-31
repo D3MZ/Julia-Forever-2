@@ -19,9 +19,10 @@
         end
         args = readlines(output)
         @test realpath(args[1]) == realpath(workdir)
-        @test args[2] == "--project=$project"
+        @test args[2] == "--project=$(joinpath(project, "app"))"
         @test args[3] == "-e"
         @test occursin("JuliaForever2.main()", args[4])
+        @test occursin("Tachikoma, CommonMark", args[4])
         @test args[5:end] == ["two words", "--example"]
     end
 end

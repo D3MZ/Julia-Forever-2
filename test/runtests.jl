@@ -10,6 +10,10 @@ if !isempty(unknown)
 end
 
 files = selected_test_files(ARGS)
+if any(file -> file in ("tui.jl", "aqua.jl", "jet.jl"), files)
+    import Pkg
+    Pkg.activate(@__DIR__; io=devnull)
+end
 missing_checks = [name for (file, name) in (("aqua.jl", "Aqua"), ("jet.jl", "JET")) if file in files && isnothing(Base.find_package(name))]
 if !isempty(missing_checks)
     println(stderr, "Test dependencies unavailable: ", join(missing_checks, ", "))

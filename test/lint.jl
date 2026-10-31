@@ -12,8 +12,8 @@ function inspect_syntax!(issues, node, line=1)
         push!(issues, (line, string(syntax_name(node.args[1]))))
     elseif node.head === :macrocall && syntax_name(node.args[1]) === Symbol("@assert")
         push!(issues, (line, "@assert"))
-    elseif node.head === Symbol("try") && node.args[3] !== false
-        push!(issues, (line, "try/catch"))
+    elseif node.head === Symbol("try")
+        push!(issues, (line, "try"))
     elseif node.head in (:error, :incomplete)
         push!(issues, (line, "parse error"))
     end

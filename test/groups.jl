@@ -1,8 +1,10 @@
 const UNIT_TEST_FILES = [
     "selection.jl",
     "launcher.jl",
+    "packaging.jl",
     "kernel.jl",
     "agent.jl",
+    "contracts.jl",
     "tui.jl",
     "providers.jl",
     "auth.jl",
@@ -13,9 +15,11 @@ const TEST_FILES = vcat(UNIT_TEST_FILES, ["lint_tests.jl", "aqua.jl", "jet.jl"])
 const TEST_GROUPS = Dict(
     "selection" => ["selection.jl"],
     "launcher" => ["launcher.jl"],
+    "packaging" => ["packaging.jl"],
     "kernel" => ["kernel.jl"],
     "agent" => ["agent.jl"],
-    "core" => ["kernel.jl", "agent.jl"],
+    "contracts" => ["contracts.jl"],
+    "core" => ["kernel.jl", "agent.jl", "contracts.jl"],
     "tui" => ["tui.jl"],
     "providers" => ["providers.jl"],
     "auth" => ["auth.jl"],

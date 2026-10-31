@@ -1,4 +1,5 @@
 using Sockets
+using JSON
 using JWTs
 using JuliaForever2: oauth_attempt, authorization_url, callback_params, finish_callback, save_credentials!, load_credentials, chatgpt_reply, OpenAIProvider
 
@@ -254,4 +255,38 @@ end
     @test !occursin(attempt.verifier, repr(attempt))
     @test !occursin(attempt.nonce, repr(attempt))
     @test !occursin(attempt.state, repr(attempt))
+end
+
+@testset "SSE framing survives chunks, Unicode, and multiline data" begin
+    events = []
+    decoder = JuliaForever2.SSEDecoder(event -> push!(events, event))
+    bytes = codeunits("\ufeff: comment\r\nevent: example\r\nid: 7\r\ndata: α\r\ndata: β\r\n\r\n")
+    for byte in bytes
+        write(decoder, byte)
+    end
+    @test length(events) == 1
+    @test events[1].event == "example"
+    @test events[1].id == "7"
+    @test events[1].data == "α\nβ"
+    write(decoder, "data: incomplete")
+    @test length(events) == 1
+    partial = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\ndata: {\"type\":\"response.completed\"}"
+    @test !chatgpt_reply(partial).ok
+    multiline = "data: {\"type\":\"response.output_text.delta\",\n" *
+        "data: \"delta\":\"hello\"}\n\ndata: {\"type\":\"response.completed\"}\n\n"
+    @test chatgpt_reply(multiline) == (ok=true, text="hello")
+end
+
+@testset "Refresh keeps the token when rotation is omitted" begin
+    mktempdir() do directory
+        save_credentials!(directory, :chatgpt, Dict("client_id" => "client", "subject" => "subject", "access_token" => "old", "refresh_token" => "keep-refresh", "scope" => "chatgpt.tokens.use.direct", "expires_at" => 0))
+        transport = (url, body, headers) -> (status=200, body=JSON.json(Dict("access_token" => "new", "expires_in" => 3600, "token_type" => "Bearer")))
+        result = JuliaForever2.refresh_chatgpt!(directory; transport)
+        @test result.ok
+        @test result.credentials["refresh_token"] == "keep-refresh"
+        @test load_credentials(directory, :chatgpt)["access_token"] == "new"
+        @test JuliaForever2.auth_lock(directory, :chatgpt) === JuliaForever2.auth_lock(directory, :chatgpt)
+        @test JuliaForever2.auth_lock(directory, :chatgpt) !== JuliaForever2.auth_lock(directory, :openrouter)
+        @test JuliaForever2.auth_lock(directory, :chatgpt) !== JuliaForever2.auth_lock(joinpath(directory, "other"), :chatgpt)
+    end
 end

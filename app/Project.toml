@@ -1,0 +1,13 @@
+[deps]
+CommonMark = "a80b9123-70ca-4bc0-993e-6e3bcb318db6"
+JuliaForever2 = "075b3f8b-fd8a-400f-9aeb-7c9970270ab2"
+Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
+
+[sources]
+JuliaForever2 = {path = ".."}
+
+[compat]
+CommonMark = "0.8, 1"
+JuliaForever2 = "0.2"
+Tachikoma = "2.8"
+julia = "1.13"

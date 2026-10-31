@@ -1,0 +1,27 @@
+[deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+CommonMark = "a80b9123-70ca-4bc0-993e-6e3bcb318db6"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+JWTs = "d850fbd6-035d-5a70-a269-1ca2e636ac6c"
+JuliaForever2 = "075b3f8b-fd8a-400f-9aeb-7c9970270ab2"
+Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources]
+JuliaForever2 = {path = ".."}
+
+[compat]
+Aqua = "0.8"
+CommonMark = "0.8, 1"
+JET = "0.13"
+JSON = "1.13.4"
+JWTs = "1.2"
+JuliaForever2 = "0.2"
+Pkg = "1"
+Sockets = "1.11"
+Tachikoma = "2.8"
+Test = "1"
+julia = "1.13"

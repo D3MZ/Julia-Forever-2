@@ -4,11 +4,20 @@ using Random
 using Sockets
 using UUIDs
 using JWTs
+using JSON
+using Downloads
 
 const OPENAI_ISSUER = "https://auth.openai.com"
 const OPENAI_RESOURCE = "https://api.openai.com/v1"
 const OPENAI_SCOPE = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct"
 const AUTH_LOCK = ReentrantLock()
+const AUTH_ACCOUNT_LOCKS = Dict{Tuple{String,Symbol},ReentrantLock}()
+
+function auth_lock(dir::AbstractString, provider::Symbol)
+    lock(AUTH_LOCK) do
+        return get!(ReentrantLock, AUTH_ACCOUNT_LOCKS, (abspath(dir), provider))
+    end
+end
 
 base64url(bytes) = rstrip(replace(base64encode(bytes), '+' => '-', '/' => '_'), '=')
 random_secret() = base64url(rand(RandomDevice(), UInt8, 32))
@@ -121,13 +130,15 @@ end
 config_dir() = get(ENV, "JULIAFOREVER_CONFIG_DIR", joinpath(homedir(), ".config", "juliaforever2"))
 
 function save_credentials!(dir::AbstractString, provider::Symbol, credentials)
-    mkpath(dir; mode=0o700)
-    path = joinpath(dir, "$(provider).json")
-    mktemp(dir) do temp, io
-        chmod(temp, 0o600)
-        write(io, JSON.json(credentials))
-        close(io)
-        Base.Filesystem.rename(temp, path)
+    lock(auth_lock(dir, provider)) do
+        mkpath(dir; mode=0o700)
+        path = joinpath(dir, "$(provider).json")
+        mktemp(dir) do temp, io
+            chmod(temp, 0o600)
+            write(io, JSON.json(credentials))
+            close(io)
+            Base.Filesystem.rename(temp, path)
+        end
     end
     return nothing
 end
@@ -135,11 +146,12 @@ end
 function load_credentials(dir::AbstractString, provider::Symbol)
     path = joinpath(dir, "$(provider).json")
     isfile(path) || return nothing
-    return JSON.parse(read(path, String))
+    data = parse_json(read(path, String))
+    return data isa AbstractDict ? data : nothing
 end
 
 function host_id!(dir::AbstractString)
-    lock(AUTH_LOCK) do
+    lock(auth_lock(dir, :host)) do
         saved = load_credentials(dir, :host)
         !isnothing(saved) && return saved["id"]
         id = "urn:uuid:" * string(uuid4())
@@ -148,28 +160,86 @@ function host_id!(dir::AbstractString)
     end
 end
 
-function chatgpt_reply(stream::AbstractString)
-    text = IOBuffer()
-    completed = false
-    for line in split(stream, '\n')
-        startswith(line, "data:") || continue
-        data = strip(line[6:end])
-        (isempty(data) || data == "[DONE]") && continue
-        event = JSON.parse(data)
-        kind = get(event, "type", "")
-        kind == "response.output_text.delta" && print(text, get(event, "delta", ""))
-        kind in ("response.failed", "response.incomplete", "error") && return (ok=false, text="ChatGPT response failed or was incomplete.")
-        kind == "response.completed" && (completed = true)
-    end
-    completed || return (ok=false, text="ChatGPT response ended before completion.")
-    return (ok=true, text=String(take!(text)))
+struct SSEEvent
+    event::String
+    data::String
+    id::String
 end
 
-function auth_request(url::AbstractString, body::String, headers)
-    output = IOBuffer()
-    response = Downloads.request(url; method="POST", input=IOBuffer(body), output, headers, throw=false, timeout=60)
-    return (status=response.status, body=String(take!(output)))
+mutable struct SSEDecoder{F} <: IO
+    sink::F
+    line::Vector{UInt8}
+    data::Vector{String}
+    event::String
+    id::String
+    after_cr::Bool
+    first_line::Bool
 end
+SSEDecoder(sink) = SSEDecoder(sink, UInt8[], String[], "", "", false, true)
+Base.isopen(::SSEDecoder) = true
+Base.iswritable(::SSEDecoder) = true
+Base.flush(::SSEDecoder) = nothing
+Base.close(::SSEDecoder) = nothing
+
+function sse_line!(decoder::SSEDecoder)
+    line = String(copy(decoder.line))
+    empty!(decoder.line)
+    if decoder.first_line
+        startswith(line, "\ufeff") && (line = chop(line; head=1, tail=0))
+        decoder.first_line = false
+    end
+    if isempty(line)
+        if !isempty(decoder.data)
+            decoder.sink(SSEEvent(isempty(decoder.event) ? "message" : decoder.event, join(decoder.data, '\n'), decoder.id))
+        end
+        empty!(decoder.data)
+        decoder.event = ""
+        return nothing
+    end
+    startswith(line, ':') && return nothing
+    parts = split(line, ':'; limit=2)
+    field = parts[1]
+    value = length(parts) == 2 ? String(parts[2]) : ""
+    startswith(value, ' ') && (value = chop(value; head=1, tail=0))
+    if field == "data"
+        push!(decoder.data, value)
+    elseif field == "event"
+        decoder.event = value
+    elseif field == "id" && !occursin('\0', value)
+        decoder.id = value
+    end
+    return nothing
+end
+
+function Base.write(decoder::SSEDecoder, byte::UInt8)
+    if decoder.after_cr
+        decoder.after_cr = false
+        byte == 0x0a && return 1
+    end
+    if byte == 0x0d || byte == 0x0a
+        sse_line!(decoder)
+        decoder.after_cr = byte == 0x0d
+    else
+        push!(decoder.line, byte)
+    end
+    return 1
+end
+
+function Base.unsafe_write(decoder::SSEDecoder, source::Ptr{UInt8}, count::UInt)
+    for index in 1:Int(count)
+        write(decoder, unsafe_load(source, index))
+    end
+    return Int(count)
+end
+
+function chatgpt_reply(stream::AbstractString)
+    result = ChatGPTStream(ExecutionContext())
+    write(SSEDecoder(result), stream)
+    result.completed && !result.failed || return (ok=false, text="ChatGPT response ended before successful completion.")
+    return (ok=true, text=String(take!(result.text)))
+end
+
+auth_request(url::AbstractString, body::String, headers, context::ExecutionContext=ExecutionContext()) = http_request(url, "POST", body, headers, context; timeout=60.0)
 
 function verify_chatgpt_identity(token::AbstractString, client::AbstractString, nonce::Union{AbstractString,Nothing}; keyset=nothing)
     required = ["iss", "aud", "exp", "sub"]
@@ -180,11 +250,13 @@ end
 
 function valid_token_response(data; require_id=false)
     data isa AbstractDict || return false
-    fields = require_id ? ("access_token", "refresh_token", "id_token", "scope", "token_type") : ("access_token", "refresh_token", "token_type")
+    fields = require_id ? ("access_token", "refresh_token", "id_token", "scope", "token_type") : ("access_token", "token_type")
     for field in fields
         value = get(data, field, nothing)
         value isa AbstractString && !isempty(value) || return false
     end
+    refresh = get(data, "refresh_token", nothing)
+    !isnothing(refresh) && !(refresh isa AbstractString && !isempty(refresh)) && return false
     lowercase(data["token_type"]) == "bearer" || return false
     lifetime = get(data, "expires_in", nothing)
     lifetime isa Real && !(lifetime isa Bool) && isfinite(lifetime) && lifetime > 0 || return false
@@ -192,13 +264,13 @@ function valid_token_response(data; require_id=false)
     return true
 end
 
-function complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, callback; transport=auth_request, identity=verify_chatgpt_identity, persist=(provider, data) -> (save_credentials!(dir, provider, data); true))
+function complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, callback; transport=auth_request, identity=verify_chatgpt_identity, context=ExecutionContext(), persist=(provider, data) -> (save_credentials!(dir, provider, data); true))
     callback.ok || return (ok=false, reason=callback.reason)
     if attempt.provider == :chatgpt
         body = query_string(["grant_type" => "authorization_code", "client_id" => callback.client_id, "code" => callback.code, "code_verifier" => attempt.verifier, "redirect_uri" => attempt.redirect_uri, "resource" => OPENAI_RESOURCE])
-        response = transport(OPENAI_ISSUER * "/api/accounts/oauth/token", body, ["Content-Type" => "application/x-www-form-urlencoded"])
-        200 <= response.status < 300 || return (ok=false, reason="ChatGPT authorization exchange failed (HTTP $(response.status)).")
-        data = JSON.parse(response.body)
+        response = transport_request(transport, OPENAI_ISSUER * "/api/accounts/oauth/token", body, ["Content-Type" => "application/x-www-form-urlencoded"], context)
+        200 <= response.status < 300 || return (ok=false, reason=transport_reason(response, "ChatGPT authorization exchange"))
+        data = parse_json(response.body)
         valid_token_response(data; require_id=true) || return (ok=false, reason="ChatGPT returned invalid credentials.")
         "chatgpt.tokens.use.direct" in split(data["scope"]) || return (ok=false, reason="ChatGPT plan access was not granted.")
         claims = identity(data["id_token"], callback.client_id, attempt.nonce)
@@ -213,24 +285,25 @@ function complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, cal
         return (ok=true, reason="ChatGPT connected.")
     end
     body = JSON.json(Dict("code" => callback.code, "code_verifier" => attempt.verifier, "code_challenge_method" => "S256"))
-    response = transport("https://openrouter.ai/api/v1/auth/keys", body, ["Content-Type" => "application/json"])
-    200 <= response.status < 300 || return (ok=false, reason="OpenRouter authorization exchange failed (HTTP $(response.status)).")
-    data = JSON.parse(response.body)
+    response = transport_request(transport, "https://openrouter.ai/api/v1/auth/keys", body, ["Content-Type" => "application/json"], context)
+    200 <= response.status < 300 || return (ok=false, reason=transport_reason(response, "OpenRouter authorization exchange"))
+    data = parse_json(response.body)
+    data isa AbstractDict || return (ok=false, reason="OpenRouter returned invalid credentials.")
     key = get(data, "key", "")
     key isa AbstractString && !isempty(key) || return (ok=false, reason="OpenRouter did not return a key.")
     persist(:openrouter, Dict("key" => key)) || return (ok=false, reason="Sign-in cancelled.")
     return (ok=true, reason="OpenRouter connected.")
 end
 
-function refresh_chatgpt!(dir::AbstractString; transport=auth_request, identity=verify_chatgpt_identity)
-    lock(AUTH_LOCK) do
+function refresh_chatgpt!(dir::AbstractString; transport=auth_request, identity=verify_chatgpt_identity, context=ExecutionContext())
+    lock(auth_lock(dir, :chatgpt)) do
         saved = load_credentials(dir, :chatgpt)
         isnothing(saved) && return (ok=false, reason="Sign in to ChatGPT first.", credentials=nothing)
         get(saved, "expires_at", 0) > time() + 60 && return (ok=true, reason="", credentials=saved)
         body = query_string(["grant_type" => "refresh_token", "client_id" => saved["client_id"], "refresh_token" => saved["refresh_token"], "resource" => OPENAI_RESOURCE])
-        response = transport(OPENAI_ISSUER * "/api/accounts/oauth/token", body, ["Content-Type" => "application/x-www-form-urlencoded"])
-        200 <= response.status < 300 || return (ok=false, reason="ChatGPT session expired. Sign in again.", credentials=nothing)
-        data = JSON.parse(response.body)
+        response = transport_request(transport, OPENAI_ISSUER * "/api/accounts/oauth/token", body, ["Content-Type" => "application/x-www-form-urlencoded"], context)
+        200 <= response.status < 300 || return (ok=false, reason=transport_reason(response, "ChatGPT token refresh"), credentials=nothing)
+        data = parse_json(response.body)
         valid_token_response(data) || return (ok=false, reason="ChatGPT returned invalid refreshed credentials.", credentials=nothing)
         if haskey(data, "id_token")
             claims = identity(data["id_token"], saved["client_id"], nothing)
@@ -240,7 +313,7 @@ function refresh_chatgpt!(dir::AbstractString; transport=auth_request, identity=
         scope = get(data, "scope", saved["scope"])
         "chatgpt.tokens.use.direct" in split(scope) || return (ok=false, reason="ChatGPT plan access is no longer granted.", credentials=nothing)
         saved["access_token"] = data["access_token"]
-        saved["refresh_token"] = data["refresh_token"]
+        saved["refresh_token"] = get(data, "refresh_token", saved["refresh_token"])
         saved["scope"] = scope
         saved["expires_at"] = time() + data["expires_in"]
         save_credentials!(dir, :chatgpt, saved)
@@ -248,16 +321,19 @@ function refresh_chatgpt!(dir::AbstractString; transport=auth_request, identity=
     end
 end
 
-mutable struct AuthFlow
+mutable struct AuthFlow{C}
     lock::ReentrantLock
     cancelled::Bool
     listener::Union{Sockets.TCPServer,Nothing}
+    context::C
 end
-AuthFlow() = AuthFlow(ReentrantLock(), false, nothing)
+AuthFlow(; timeout=180.0) = AuthFlow(ReentrantLock(), false, nothing, ExecutionContext(; timeout))
 
 function cancel_auth!(flow::AuthFlow)
     lock(flow.lock) do
         flow.cancelled = true
+        cancel!(flow.context)
+        close(flow.context)
         listener = flow.listener
         isnothing(listener) || close(listener)
     end
@@ -266,7 +342,7 @@ end
 
 function active_auth(flow::AuthFlow)
     lock(flow.lock) do
-        return !flow.cancelled
+        return !flow.cancelled && !cancelled(flow.context)
     end
 end
 
@@ -289,26 +365,34 @@ function read_request_line(client)
     return ""
 end
 
-function receive_callback(server, flow::AuthFlow, attempt::OAuthAttempt; timeout=180.0)
-    deadline = time() + timeout
-    while active_auth(flow) && time() < deadline
-        connection = @async accept(server)
-        while !istaskdone(connection) && active_auth(flow) && time() < deadline
+function receive_callback(server::Sockets.TCPServer, flow::AuthFlow, attempt::OAuthAttempt; timeout=180.0)
+    deadline = monotonic_seconds() + timeout
+    while active_auth(flow) && monotonic_seconds() < deadline
+        connection = Threads.@spawn accept(server)
+        while !istaskdone(connection) && active_auth(flow) && monotonic_seconds() < deadline
             sleep(0.05)
         end
-        istaskdone(connection) || return (ok=false, code="", client_id="", reason="Sign-in cancelled or timed out.")
-        istaskfailed(connection) && return (ok=false, code="", client_id="", reason="Sign-in listener stopped.")
-        client = connection.result
-        reader = @async read_request_line(client)
-        request_deadline = min(deadline, time() + 5)
-        while !istaskdone(reader) && active_auth(flow) && time() < request_deadline
+        if !istaskdone(connection)
+            close(server)
+            wait(connection; throw=false)
+            return (ok=false, code="", client_id="", reason="Sign-in cancelled or timed out.")
+        end
+        if !active_auth(flow) || monotonic_seconds() >= deadline
+            istaskfailed(connection) || close(fetch(connection))
+            return (ok=false, code="", client_id="", reason="Sign-in cancelled or timed out.")
+        end
+        client = fetch(connection)
+        reader = Threads.@spawn read_request_line(client)
+        request_deadline = min(deadline, monotonic_seconds() + 5)
+        while !istaskdone(reader) && active_auth(flow) && monotonic_seconds() < request_deadline
             sleep(0.02)
         end
-        if !istaskdone(reader) || istaskfailed(reader)
+        if !istaskdone(reader) || !active_auth(flow) || monotonic_seconds() >= request_deadline
             close(client)
+            wait(reader; throw=false)
             continue
         end
-        request = split(reader.result, ' ')
+        request = split(fetch(reader), ' ')
         callback = length(request) == 3 && request[1] == "GET" ? finish_callback(attempt, callback_params(request[2])) : (ok=false, code="", client_id="", reason="Invalid authorization callback.")
         if callback.reason == "Invalid authorization callback."
             write(client, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
@@ -324,76 +408,72 @@ function receive_callback(server, flow::AuthFlow, attempt::OAuthAttempt; timeout
 end
 
 function codex_sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), executable=Sys.which("codex"))
+    active_auth(flow) || return (ok=false, reason="Sign-in cancelled.")
     if isnothing(executable)
+        close(flow.context)
         return (ok=false, reason="Install the Codex CLI to sign in with ChatGPT.")
     end
     output = Pipe()
     process = run(pipeline(ignorestatus(`$executable login`); stdin=devnull, stdout=output, stderr=output); wait=false)::Base.Process
     close(output.in)
-    reader = @async for line in eachline(output)
+    reader = Threads.@spawn for line in eachline(output)
         url = match(r"https://[^\s]+", line)
         isnothing(url) || announce(String(url.match))
     end
-    while process_running(process) && active_auth(flow)
-        sleep(0.05)
-    end
-    if !active_auth(flow) && process_running(process)
-        kill(process)
-    end
-    wait(process)
+    completed = wait_process!(process, flow.context)
     wait(reader)
     close(output)
+    close(flow.context)
     if !active_auth(flow)
         return (ok=false, reason="Sign-in cancelled.")
     end
-    return success(process) ? (ok=true, reason="ChatGPT / Codex connected.") : (ok=false, reason="Codex sign-in failed. Run codex login to retry.")
+    return completed ? (ok=true, reason="ChatGPT / Codex connected.") : (ok=false, reason="Codex sign-in failed. Run codex login to retry.")
+end
+
+function run_authorization!(server::Sockets.TCPServer, flow::AuthFlow, provider::Symbol, dir::AbstractString; announce, opener, transport, identity, timeout)
+    port = Int(getsockname(server)[2])
+    redirect = "http://127.0.0.1:$port/auth/callback"
+    host = provider == :chatgpt ? host_id!(dir) : ""
+    saved = provider == :chatgpt ? load_credentials(dir, :chatgpt) : nothing
+    pending = provider == :chatgpt && isnothing(saved) ? load_credentials(dir, :chatgpt_pending) : nothing
+    registration = isnothing(saved) ? pending : saved
+    client_id = isnothing(registration) ? "" : get(registration, "client_id", "")
+    attempt = oauth_attempt(provider, redirect; host_id=host, client_id)
+    url = authorization_url(attempt)
+    announce(url)
+    opener(url)
+    callback = receive_callback(server, flow, attempt; timeout)
+    callback.ok || return (ok=false, reason=callback.reason)
+    if provider == :chatgpt && isempty(attempt.client_id)
+        registered = lock(flow.lock) do
+            active_auth(flow) || return false
+            save_credentials!(dir, :chatgpt_pending, Dict("client_id" => callback.client_id, "host_id" => host))
+            return true
+        end
+        registered || return (ok=false, reason="Sign-in cancelled.")
+    end
+    persist = (kind, credentials) -> lock(flow.lock) do
+        active_auth(flow) || return false
+        save_credentials!(dir, kind, credentials)
+        return true
+    end
+    result = complete_authorization!(dir, attempt, callback; transport, identity, persist, context=flow.context)
+    result.ok && provider == :chatgpt && rm(joinpath(dir, "chatgpt_pending.json"); force=true)
+    return result
 end
 
 function sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), opener=open_auth_browser, transport=auth_request, identity=verify_chatgpt_identity, timeout=180.0)
     server = listen(ip"127.0.0.1", 0)
     started = lock(flow.lock) do
-        flow.cancelled && return false
+        active_auth(flow) || return false
         flow.listener = server
         return true
     end
-    if !started
+    result = started ? run_authorization!(server, flow, provider, dir; announce, opener, transport, identity, timeout) : (ok=false, reason="Sign-in cancelled.")
+    lock(flow.lock) do
         close(server)
-        return (ok=false, reason="Sign-in cancelled.")
+        flow.listener = nothing
     end
-    try
-        port = Int(getsockname(server)[2])
-        redirect = "http://127.0.0.1:$port/auth/callback"
-        host = provider == :chatgpt ? host_id!(dir) : ""
-        saved = provider == :chatgpt ? load_credentials(dir, :chatgpt) : nothing
-        pending = provider == :chatgpt && isnothing(saved) ? load_credentials(dir, :chatgpt_pending) : nothing
-        registration = isnothing(saved) ? pending : saved
-        client_id = isnothing(registration) ? "" : get(registration, "client_id", "")
-        attempt = oauth_attempt(provider, redirect; host_id=host, client_id)
-        url = authorization_url(attempt)
-        announce(url)
-        opener(url)
-        callback = receive_callback(server, flow, attempt; timeout)
-        callback.ok || return (ok=false, reason=callback.reason)
-        if provider == :chatgpt && isempty(attempt.client_id)
-            registered = lock(flow.lock) do
-                flow.cancelled && return false
-                save_credentials!(dir, :chatgpt_pending, Dict("client_id" => callback.client_id, "host_id" => host))
-                return true
-            end
-            registered || return (ok=false, reason="Sign-in cancelled.")
-        end
-        persist = (kind, credentials) -> lock(flow.lock) do
-            flow.cancelled && return false
-            save_credentials!(dir, kind, credentials)
-            return true
-        end
-        result = complete_authorization!(dir, attempt, callback; transport, identity, persist)
-        result.ok && provider == :chatgpt && rm(joinpath(dir, "chatgpt_pending.json"); force=true)
-        return result
-    finally
-        lock(flow.lock) do
-            close(server)
-            flow.listener = nothing
-        end
-    end
+    close(flow.context)
+    return result
 end
