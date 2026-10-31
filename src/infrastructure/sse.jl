@@ -40,8 +40,7 @@ function sse_line!(decoder::SSEDecoder)
     end
     startswith(line, ':') && return nothing
     colon = findfirst(isequal(':'), line)
-    field = isnothing(colon) ? line :
-        colon == firstindex(line) ? "" : SubString(line, firstindex(line), prevind(line, colon))
+    field = isnothing(colon) ? line : SubString(line, firstindex(line), prevind(line, colon))
     value = isnothing(colon) ? "" : SubString(line, nextind(line, colon))
     startswith(value, ' ') && (value = SubString(value, nextind(value, firstindex(value))))
     if field == "data"
