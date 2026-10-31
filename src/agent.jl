@@ -279,25 +279,21 @@ function use_component(fallback, session::Session, name::Symbol, args...)
     end
 end
 
-function evaluate!(session::Session, code; context=current_execution_context())
+"""Run session components with the same serialization, cancellation, and task-local context."""
+function run_component!(session::Session, context, fallback, name::Symbol, args...)
     lock(session.execution_lock) do
         (!isopen(session) || cancelled(context)) && return stopped_result()
         task_local_storage(:JuliaForever2_context, context) do
-            result = use_component(default_evaluate!, session, :executor, code)
-            return execution_result(result)
+            return execution_result(use_component(fallback, session, name, args...))
         end
     end
 end
 
-function run_turn!(session::Session, prompt::AbstractString; max_steps::Integer=20, context=current_execution_context())
-    lock(session.execution_lock) do
-        (!isopen(session) || cancelled(context)) && return stopped_result()
-        task_local_storage(:JuliaForever2_context, context) do
-            result = use_component(default_loop!, session, :loop, prompt, max_steps)
-            return execution_result(result)
-        end
-    end
-end
+evaluate!(session::Session, code; context=current_execution_context()) =
+    run_component!(session, context, default_evaluate!, :executor, code)
+
+run_turn!(session::Session, prompt::AbstractString; max_steps::Integer=20, context=current_execution_context()) =
+    run_component!(session, context, default_loop!, :loop, prompt, max_steps)
 
 function submit_managed!(f, owner::Session, session::Session, context::ExecutionContext)
     ready = Base.Event()
