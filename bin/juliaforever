@@ -9,4 +9,4 @@ while [ -L "$script" ]; do
     esac
 done
 project_dir=$(CDPATH= cd -- "$(dirname -- "$script")/.." && pwd)
-exec julia --project="$project_dir" -e 'using JuliaForever2; exit(JuliaForever2.main())' "$@"
+exec julia --project="$project_dir/app" -e 'using JuliaForever2, Tachikoma, CommonMark; exit(JuliaForever2.main())' "$@"

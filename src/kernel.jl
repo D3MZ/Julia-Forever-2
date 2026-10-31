@@ -5,29 +5,33 @@ struct ComponentSpec{T,F}
     cleanup::F
 end
 
-ComponentSpec(name::Symbol, value; requires=Symbol[], cleanup=Returns(nothing)) = ComponentSpec(name, value, collect(Symbol, requires), cleanup)
+ComponentSpec(name::Symbol, value; requires=Symbol[], cleanup=Returns(nothing)) = ComponentSpec(name, value, unique(collect(Symbol, requires)), cleanup)
 
-mutable struct ComponentEntry
-    spec::ComponentSpec
+mutable struct ComponentEntry{S}
+    spec::S
+    dependencies::Vector{ComponentEntry}
     users::Int
     retired::Bool
+    cleaning::Bool
     cleaned::Bool
 end
 
 mutable struct Kernel
     lock::ReentrantLock
     entries::Dict{Symbol,ComponentEntry}
+    closed::Bool
 end
 
-Kernel() = Kernel(ReentrantLock(), Dict{Symbol,ComponentEntry}())
+Kernel() = Kernel(ReentrantLock(), Dict{Symbol,ComponentEntry}(), false)
 
-mutable struct ComponentLease{T}
+mutable struct ComponentLease{T,E}
     kernel::Kernel
-    entry::ComponentEntry
+    entry::E
     value::T
     released::Bool
 end
 
+"""Inspect a component; use with_component when its resources must remain live."""
 function component(kernel::Kernel, name::Symbol)
     lock(kernel.lock) do
         entry = get(kernel.entries, name, nothing)
@@ -49,43 +53,72 @@ function cyclic(kernel::Kernel, spec::ComponentSpec)
     return false
 end
 
-function retire!(entry::ComponentEntry)
+function ready_to_clean!(pending, entry::ComponentEntry)
+    if entry.retired && entry.users == 0 && !entry.cleaning && !entry.cleaned
+        entry.cleaning = true
+        push!(pending, entry)
+    end
+    return pending
+end
+
+function retire!(pending, entry::ComponentEntry)
     entry.retired = true
-    if entry.users == 0 && !entry.cleaned
-        entry.cleaned = true
-        return entry.spec
+    return ready_to_clean!(pending, entry)
+end
+
+function clean_entries!(kernel::Kernel, pending)
+    while !isempty(pending)
+        entry = pop!(pending)
+        Base.invokelatest(entry.spec.cleanup, entry.spec.value)
+        lock(kernel.lock) do
+            entry.cleaned = true
+            entry.cleaning = false
+            for dependency in entry.dependencies
+                dependency.users -= 1
+                ready_to_clean!(pending, dependency)
+            end
+            empty!(entry.dependencies)
+        end
     end
     return nothing
 end
 
-function cleanup(spec)
-    isnothing(spec) || Base.invokelatest(spec.cleanup, spec.value)
-    return nothing
-end
-
-function install!(kernel::Kernel, spec::ComponentSpec)
-    result, old = lock(kernel.lock) do
+function install!(kernel::Kernel, spec::ComponentSpec; expected_entry=missing)
+    pending = ComponentEntry[]
+    result = lock(kernel.lock) do
+        kernel.closed && return (ok=false, reason="Kernel is closed")
         missing = filter(name -> !haskey(kernel.entries, name), spec.requires)
-        isempty(missing) || return ((ok=false, reason="Missing dependencies: $(join(missing, ", "))"), nothing)
-        cyclic(kernel, spec) && return ((ok=false, reason="Cyclic dependencies"), nothing)
+        isempty(missing) || return (ok=false, reason="Missing dependencies: $(join(missing, ", "))")
+        cyclic(kernel, spec) && return (ok=false, reason="Cyclic dependencies")
         previous = get(kernel.entries, spec.name, nothing)
-        kernel.entries[spec.name] = ComponentEntry(spec, 0, false, false)
-        return ((ok=true, reason=""), isnothing(previous) ? nothing : retire!(previous))
+        if !ismissing(expected_entry) && previous !== expected_entry
+            return (ok=false, reason="Component changed during composition")
+        end
+        dependencies = ComponentEntry[kernel.entries[name] for name in unique(spec.requires)]
+        for dependency in dependencies
+            dependency.users += 1
+        end
+        stored = ComponentSpec(spec.name, spec.value; requires=copy(spec.requires), cleanup=spec.cleanup)
+        kernel.entries[spec.name] = ComponentEntry(stored, dependencies, 0, false, false, false)
+        isnothing(previous) || retire!(pending, previous)
+        return (ok=true, reason="")
     end
-    cleanup(old)
+    clean_entries!(kernel, pending)
     return result
 end
 
 function remove!(kernel::Kernel, name::Symbol)
-    result, old = lock(kernel.lock) do
+    pending = ComponentEntry[]
+    result = lock(kernel.lock) do
         entry = get(kernel.entries, name, nothing)
-        isnothing(entry) && return ((ok=false, reason="Component not found"), nothing)
+        isnothing(entry) && return (ok=false, reason="Component not found")
         dependents = [key for (key, other) in kernel.entries if name in other.spec.requires]
-        isempty(dependents) || return ((ok=false, reason="Required by: $(join(dependents, ", "))"), nothing)
+        isempty(dependents) || return (ok=false, reason="Required by: $(join(dependents, ", "))")
         delete!(kernel.entries, name)
-        return ((ok=true, reason=""), retire!(entry))
+        retire!(pending, entry)
+        return (ok=true, reason="")
     end
-    cleanup(old)
+    clean_entries!(kernel, pending)
     return result
 end
 
@@ -99,13 +132,55 @@ function acquire!(kernel::Kernel, name::Symbol)
 end
 
 function release!(lease::ComponentLease)
-    old = lock(lease.kernel.lock) do
-        lease.released && return nothing
-        lease.released = true
-        entry = lease.entry
-        entry.users -= 1
-        return entry.retired ? retire!(entry) : nothing
+    pending = ComponentEntry[]
+    lock(lease.kernel.lock) do
+        if !lease.released
+            lease.released = true
+            lease.entry.users -= 1
+            ready_to_clean!(pending, lease.entry)
+        end
     end
-    cleanup(old)
+    clean_entries!(lease.kernel, pending)
     return nothing
 end
+
+"""Call f with a component generation retained for the duration of normal execution."""
+function with_component(f, kernel::Kernel, name::Symbol; fallback=nothing)
+    lease = acquire!(kernel, name)
+    isnothing(lease) && return isnothing(fallback) ? nothing : f(fallback)
+    result = f(lease.value)
+    release!(lease)
+    return result
+end
+
+"""Wrap the current component while retaining the exact generation being wrapped."""
+function wrap_component!(builder, kernel::Kernel, name::Symbol; fallback=nothing, requires=Symbol[], cleanup=Returns(nothing))
+    lease = acquire!(kernel, name)
+    inner = isnothing(lease) ? fallback : lease.value
+    value = builder(inner)
+    dispose = value -> begin
+        cleanup(value)
+        isnothing(lease) || release!(lease)
+        nothing
+    end
+    expected_entry = isnothing(lease) ? nothing : lease.entry
+    result = install!(kernel, ComponentSpec(name, value; requires, cleanup=dispose); expected_entry)
+    result.ok || dispose(value)
+    return result
+end
+
+"""Retire all components; outstanding leases defer cleanup in dependency order."""
+function Base.close(kernel::Kernel)
+    pending = ComponentEntry[]
+    lock(kernel.lock) do
+        kernel.closed = true
+        for entry in values(kernel.entries)
+            retire!(pending, entry)
+        end
+        empty!(kernel.entries)
+    end
+    clean_entries!(kernel, pending)
+    return nothing
+end
+
+Base.isopen(kernel::Kernel) = lock(() -> !kernel.closed, kernel.lock)

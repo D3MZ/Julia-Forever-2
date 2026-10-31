@@ -2,8 +2,8 @@
     @test isempty(unknown_test_groups(["core", "tui"]))
     @test unknown_test_groups(["core", "typo"]) == ["typo"]
     @test selected_test_files(String[]) == TEST_FILES
-    @test selected_test_files(["core"]) == ["kernel.jl", "agent.jl"]
-    @test selected_test_files(["tui", "core", "tui"]) == ["kernel.jl", "agent.jl", "tui.jl"]
+    @test selected_test_files(["core"]) == ["kernel.jl", "agent.jl", "contracts.jl"]
+    @test selected_test_files(["tui", "core", "tui"]) == ["kernel.jl", "agent.jl", "contracts.jl", "tui.jl"]
     @test selected_test_files(["lint"]) == ["lint_tests.jl"]
     @test selected_test_files(["quality"]) == ["aqua.jl", "jet.jl"]
     @test isempty(intersect(selected_test_files(["unit"]), selected_test_files(["quality", "lint"])))
