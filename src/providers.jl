@@ -71,6 +71,7 @@ function (provider::OpenRouterProvider)(messages::Vector{Message}, session::Sess
     body = JSON.json(Dict("model" => provider.model, "messages" => [Dict("role" => "system", "content" => system), Dict("role" => "user", "content" => transcript)], "response_format" => Dict("type" => "json_object")))
     headers = ["Authorization" => "Bearer $(provider.api_key)", "Content-Type" => "application/json"]
     response = provider.transport("https://openrouter.ai/api/v1/chat/completions", body, headers)
+    response.status == 401 && return Reply(:error, "OpenRouter rejected the API key (HTTP 401). Check or replace the configured key.")
     200 <= response.status < 300 || return Reply(:error, "OpenRouter returned HTTP $(response.status).")
     parsed = JSON.parse(response.body)
     reply = JSON.parse(parsed["choices"][1]["message"]["content"])

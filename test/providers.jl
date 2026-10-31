@@ -14,7 +14,10 @@ using JSON
     @test occursin("Hi", requests[1][2]["messages"][2]["content"])
     @test ("Authorization" => "Bearer secret") in requests[1][3]
     failed = OpenRouterProvider("secret", "example/model", (args...) -> (status=401, body="bad"))
-    @test failed([Message(:user, "Hi")], Session(Kernel())).kind == :error
+    failure = failed([Message(:user, "Hi")], Session(Kernel()))
+    @test failure.kind == :error
+    @test occursin("401", failure.content)
+    @test occursin("key", lowercase(failure.content))
 end
 
 @testset "Browser credentials take precedence" begin
