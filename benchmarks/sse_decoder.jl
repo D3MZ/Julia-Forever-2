@@ -8,7 +8,7 @@ function decode_events(wire::String)
 end
 
 function measure_sse(event_count::Int; repetitions=10)
-    wire = repeat("id: 21\nevent: delta\ndata: {\\"content\\":\\"λ:ok\\"}\n\n", event_count)
+    wire = repeat("id: 21\nevent: delta\ndata: {\"content\":\"λ:ok\"}\n\n", event_count)
     for _ in 1:3
         decode_events(wire)
     end
