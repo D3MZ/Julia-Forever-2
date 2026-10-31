@@ -1,0 +1,3 @@
+4733 bytes	4 allocations	/workspace/scratch/dcd5ea4dd962/Julia-Forever-2/src/features/code_mode/streaming.jl:81 protocol_string_result [String]
+96 bytes	4 allocations	/workspace/scratch/dcd5ea4dd962/Julia-Forever-2/src/features/code_mode/streaming.jl:81 protocol_string_result [Memory{UInt8}]
+32 bytes	1 allocations	/workspace/scratch/dcd5ea4dd962/Julia-Forever-2/src/features/code_mode/streaming.jl:153 protocol_progress [JuliaForever2.ResponseProgress]

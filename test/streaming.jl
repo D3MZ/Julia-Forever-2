@@ -112,3 +112,46 @@ end
     write(decoder, ": comment\n\n")
     @test length(events) == 4
 end
+
+@testset "Protocol strings preserve complete UTF-8 prefixes and reject invalid sequences" begin
+    policy = CodeModePolicy()
+    prefix = "{\"kind\":\"answer\",\"content\":\"safe"
+    suffix = "\"}"
+    for character in ('\u0080', '\u07ff', '\u0800', '\ud7ff', '\ue000', '\uffff', '\U00010000', '\U0010ffff')
+        bytes = collect(codeunits(string(character)))
+        for count in 0:(length(bytes) - 1)
+            wire = String(vcat(codeunits(prefix), bytes[1:count]))
+            @test protocol_progress(policy, wire).text == "safe"
+        end
+        wire = prefix * string(character) * suffix
+        @test protocol_progress(policy, wire).text == "safe" * string(character)
+    end
+
+    invalid_sequences = (
+        UInt8[0x80],
+        UInt8[0xc0, 0xaf],
+        UInt8[0xc2, 0x20],
+        UInt8[0xe0, 0x9f, 0xbf],
+        UInt8[0xed, 0xa0, 0x80],
+        UInt8[0xe2, 0x28, 0xa1],
+        UInt8[0xf0, 0x8f, 0xbf, 0xbf],
+        UInt8[0xf4, 0x90, 0x80, 0x80],
+        UInt8[0xf5, 0x80, 0x80, 0x80],
+    )
+    for bytes in invalid_sequences
+        wire = String(vcat(codeunits(prefix), bytes, codeunits(suffix)))
+        @test isnothing(protocol_progress(policy, wire))
+    end
+end
+
+@testset "Protocol strings combine unchanged spans and decoded escapes" begin
+    policy = CodeModePolicy()
+    for expected in ("", "unchanged ASCII", "λ你好🚀", "\nleading", "trailing\t", "a\nb\tc\\d\"e", "λ\n你好\t🚀", "\0\b\f\r/\x1f")
+        wire = JSON.json((kind="answer", content=expected))
+        @test protocol_progress(policy, wire).text == expected
+        wrapped = " " * wire * " "
+        @test protocol_progress(policy, SubString(wrapped, 2, prevind(wrapped, lastindex(wrapped)))).text == expected
+    end
+    @test protocol_progress(policy, raw"""{"kind":"answer","content":"first\nlast\uD800""").text == "first\nlast"
+    @test isnothing(protocol_progress(policy, raw"""{"kind":"answer","content":"first\nlast\q"}"""))
+end

@@ -1,0 +1,21 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+JWTs = "d850fbd6-035d-5a70-a269-1ca2e636ac6c"
+JuliaForever2 = "075b3f8b-fd8a-400f-9aeb-7c9970270ab2"
+Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+
+[sources]
+JuliaForever2 = {path = ".."}
+
+[compat]
+BenchmarkTools = "1"
+JSON = "1.13.4"
+JWTs = "1.2"
+JuliaForever2 = "0.3"
+Profile = "1"
+SHA = "1"
+Statistics = "1"
+julia = "1.13"

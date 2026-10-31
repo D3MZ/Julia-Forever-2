@@ -1,0 +1,97 @@
+┌ Warning: attempting to remove probably stale pidfile
+│   path = "/workspace/scratch/dcd5ea4dd962/julia-depot/compiled/v1.13/JuliaForever2/O9KKE_txI8M.ji.pidfile"
+└ @ FileWatching.Pidfile /workspace/scratch/dcd5ea4dd962/runtime/julia-1.13.3/share/julia/stdlib/v1.13/FileWatching/src/pidfile.jl:251
+Test Summary:                                     | Pass  Total  Time
+Code-mode streaming decodes only response content |  357    357  0.9s
+Test Summary:                                   | Pass  Total  Time
+Incomplete or invalid protocol never leaks JSON |    3      3  0.0s
+Test Summary:                                                      | Pass  Total  Time
+Semantic progress identifies the operation and honors cancellation |    7      7  0.3s
+Test Summary:                                                | Pass  Total  Time
+Incremental SSE fields preserve framing, colons, and Unicode |   17     17  0.2s
+Test Summary:                                                                  | Pass  Total  Time
+Protocol strings preserve complete UTF-8 prefixes and reject invalid sequences |   41     41  0.1s
+Test Summary:                                                | Pass  Total  Time
+Protocol strings combine unchanged spans and decoded escapes |   18     18  0.3s
+Test Summary:       | Pass  Total  Time
+OpenRouter protocol |    9      9  2.1s
+Test Summary:                     | Pass  Total  Time
+Reported usage appears in session |    5      5  0.8s
+Test Summary:                          | Pass  Total  Time
+Codex subscription model and reasoning |    6      6  0.9s
+Test Summary:          | Pass  Total  Time
+OpenRouter key sources |    3      3  0.2s
+Test Summary:                       | Pass  Total  Time
+Browser credentials take precedence |    1      1  0.1s
+Test Summary:                                        | Pass  Total  Time
+Credentials are not shown when displaying a provider |    2      2  0.0s
+Test Summary:                 | Pass  Total  Time
+Transport failures are values |    2      2  0.7s
+Test Summary:                          | Pass  Total  Time
+Configuration belongs to each provider |    3      3  0.3s
+Test Summary:                                       | Pass  Total  Time
+Provider policy and structured conversation compose |    5      5  0.1s
+Test Summary:                                               | Pass  Total  Time
+Slow model discovery does not serialize independent callers |    6      6  0.7s
+Test Summary:                                            | Pass  Total  Time
+ChatGPT streams events, reports usage, and caches models |   10     10  2.1s
+Test Summary:                                           | Pass  Total  Time
+Provider registration does not require built-in changes |    8      8  0.3s
+Test Summary:                              | Pass  Total  Time
+Cancelled providers do not start transport |    2      2  0.1s
+Test Summary:                                 | Pass  Total  Time
+Codex cancellation stops its owned subprocess |    4      4  0.4s
+Test Summary:                                              | Pass  Total  Time
+Downloads delivers stream events before request completion |    4      4  0.6s
+Test Summary:                                       | Pass  Total  Time
+Downloads cancellation interrupts an active request |    2      2  0.2s
+Test Summary:                                            | Pass  Total  Time
+Success does not cancel later requests sharing a context |    6      6  0.2s
+Test Summary:                                                       | Pass  Total  Time
+Built-in model adapters consume explicit requests without a session |    4      4  0.1s
+Test Summary:                                                  | Pass  Total  Time
+Legacy calls and session turns account for provider usage once |    3      3  3.3s
+Test Summary:                                                            | Pass  Total  Time
+Coalesced protocol progress always publishes the final semantic snapshot |    4      4  0.3s
+Test Summary:                                            | Pass  Total  Time
+Provider selection persists only successful installation |    9      9  0.7s
+Test Summary:                                              | Pass  Total  Time
+Application provider catalogs are independently composable |    5      5  0.1s
+Test Summary:                                                        | Pass  Total  Time
+Provider lookup preserves descriptor identity and snapshot isolation |   10     10  0.1s
+Test Summary:                                                    | Pass  Total  Time
+Authorization protocols extend without central provider branches |    3      3  0.4s
+Test Summary:                                                     | Pass  Total  Time
+Authentication cancellation leaves resource draining to its owner |    4      4  0.4s
+Test Summary:     | Pass  Total  Time
+Codex CLI sign-in |    4      4  0.5s
+Test Summary:        | Pass  Total  Time
+OAuth state and PKCE |   11     11  0.2s
+Test Summary:         | Pass  Total  Time
+Protected credentials |    3      3  0.1s
+Test Summary:            | Pass  Total  Time
+OpenAI stream completion |    3      3  0.0s
+Test Summary:           | Pass  Total  Time
+Authorization exchanges |   10     10  0.5s
+Test Summary:                | Pass  Total  Time
+Refresh and ChatGPT provider |    9      9  0.5s
+Test Summary:          | Pass  Total  Time
+Loopback authorization |    5      5  0.8s
+Test Summary:               | Pass  Total  Time
+ChatGPT identity validation |    4      4  5.6s
+Test Summary:                                               | Pass  Total  Time
+Authorization does not replace valid credentials on failure |    7      7  0.3s
+Test Summary:                        | Pass  Total  Time
+Invalid token responses are rejected |    6      6  0.2s
+Test Summary:                                     | Pass  Total  Time
+ChatGPT registration survives an exchange failure |    7      7  0.6s
+Test Summary:                           | Pass  Total  Time
+Authorization secrets are not displayed |    3      3  0.0s
+Test Summary:                                            | Pass  Total  Time
+SSE framing survives chunks, Unicode, and multiline data |    7      7  0.1s
+Test Summary:                                               | Pass  Total  Time
+SSE bulk writes preserve every byte boundary and field rule | 1014   1014  0.4s
+Test Summary:                                    | Pass  Total  Time
+Refresh keeps the token when rotation is omitted |    6      6  0.2s
+Test Summary:         | Pass  Total  Time
+Forbidden syntax lint |   19     19  0.3s

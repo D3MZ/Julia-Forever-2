@@ -1,24 +1,38 @@
 function wrap_conversation_line(line::AbstractString, width::Int)
-    graphemes = collect(Base.Unicode.graphemes(line))
-    isempty(graphemes) && return [""]
+    graphemes = Base.Unicode.graphemes(line)
+    current = iterate(graphemes)
+    isnothing(current) && return [""]
     lines = String[]
-    first = 1
-    while first <= length(graphemes)
-        last = first - 1
-        last_space = 0
+    first_index = firstindex(line)
+    while !isnothing(current)
+        next_index = first_index
+        last_space = first_index
+        after_space = current
         columns = 0
-        for index in first:length(graphemes)
-            columns + textwidth(graphemes[index]) > width && break
-            columns += textwidth(graphemes[index])
-            last = index
-            all(isspace, graphemes[index]) && (last_space = index)
+        while !isnothing(current)
+            grapheme, state = current
+            size = textwidth(grapheme)
+            if columns + size > width
+                if next_index == first_index
+                    next_index += ncodeunits(grapheme)
+                    current = iterate(graphemes, state)
+                end
+                break
+            end
+            columns += size
+            next_index += ncodeunits(grapheme)
+            current = iterate(graphemes, state)
+            if all(isspace, grapheme)
+                last_space = next_index
+                after_space = current
+            end
         end
-        last = max(first, last)
-        if last < length(graphemes) && first <= last_space < last
-            last = last_space
+        if !isnothing(current) && first_index < last_space < next_index
+            next_index = last_space
+            current = after_space
         end
-        push!(lines, join(graphemes[first:last]))
-        first = last + 1
+        push!(lines, String(SubString(line, first_index, prevind(line, next_index))))
+        first_index = next_index
     end
     return lines
 end

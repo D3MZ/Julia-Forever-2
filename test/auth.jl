@@ -277,6 +277,37 @@ end
     @test chatgpt_reply(multiline) == (ok=true, text="hello")
 end
 
+@testset "SSE bulk writes preserve every byte boundary and field rule" begin
+    wire = "\ufeff: comment\r\nevent: custom\r\nid: 7\r\ndata: α:β\r\ndata:  second\r\n\r\n" *
+        "event: ignored\n\nunknown: discarded\ndata\n\n" *
+        "id: bad\0id\rdata:  spaced\r\rid:\ndata:reset\n\ndata: incomplete"
+    bytes = collect(codeunits(wire))
+    expected = [("custom", "α:β\n second", "7"), ("message", "", "7"),
+        ("message", " spaced", "7"), ("message", "reset", "")]
+    for boundary in 0:length(bytes)
+        events = JuliaForever2.SSEEvent[]
+        decoder = JuliaForever2.SSEDecoder(event -> push!(events, event))
+        @test write(decoder, String(bytes[1:boundary])) == boundary
+        @test write(decoder, "") == 0
+        @test write(decoder, String(bytes[(boundary + 1):end])) == length(bytes) - boundary
+        @test [(event.event, event.data, event.id) for event in events] == expected
+        write(decoder, "\n\n")
+        @test last(events).data == "incomplete"
+        @test [(event.event, event.data, event.id) for event in events[1:4]] == expected
+    end
+
+    for chunk_size in (1, 2, 3, 7, 64, 1024)
+        events = JuliaForever2.SSEEvent[]
+        decoder = JuliaForever2.SSEDecoder(event -> push!(events, event))
+        for start in 1:chunk_size:length(bytes)
+            write(decoder, String(bytes[start:min(start + chunk_size - 1, end)]))
+        end
+        @test [(event.event, event.data, event.id) for event in events] == expected
+        @test isopen(decoder) && iswritable(decoder)
+        @test isnothing(flush(decoder))
+    end
+end
+
 @testset "Refresh keeps the token when rotation is omitted" begin
     mktempdir() do directory
         save_credentials!(directory, :chatgpt, Dict("client_id" => "client", "subject" => "subject", "access_token" => "old", "refresh_token" => "keep-refresh", "scope" => "chatgpt.tokens.use.direct", "expires_at" => 0))
