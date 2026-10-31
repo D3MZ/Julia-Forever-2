@@ -2,6 +2,7 @@ using JuliaForever2: default_kernel, append_message!, clear_history!, replace_me
     ProviderDescriptor, register_provider!, unregister_provider!, ExecutionResult
 using Tachikoma
 using CommonMark
+using JSON
 import Tachikoma: update!
 
 const Terminal = Base.get_extension(JuliaForever2, :JuliaForever2TerminalExt)
@@ -11,6 +12,36 @@ struct RegisteredTerminalProvider
     directory::String
 end
 JuliaForever2.provider_id(::RegisteredTerminalProvider) = :terminal_test
+
+struct ScopedTerminalProvider
+    id::Symbol
+end
+JuliaForever2.provider_id(provider::ScopedTerminalProvider) = provider.id
+
+struct StreamedTerminalProvider
+    replies::Vector{Reply}
+    next::Threads.Atomic{Int}
+    started::Channel{UInt64}
+    proceed::Channel{Nothing}
+end
+StreamedTerminalProvider(replies) = StreamedTerminalProvider(replies, Threads.Atomic{Int}(0), Channel{UInt64}(1), Channel{Nothing}(1))
+
+function JuliaForever2.respond(provider::StreamedTerminalProvider, request::JuliaForever2.ModelRequest, context::ExecutionContext)
+    index = Threads.atomic_add!(provider.next, 1) + 1
+    reply = provider.replies[index]
+    wire = JSON.json((kind=String(reply.kind), content=reply.content))
+    JuliaForever2.emit_protocol_progress!(JuliaForever2.CodeModePolicy(), wire, context)
+    put!(provider.started, JuliaForever2.operation_id(context))
+    take!(provider.proceed)
+    return ProviderResult(reply, nothing)
+end
+
+function drain_ui_events!(app)
+    while isready(app.queue.channel)
+        update!(app, take!(app.queue.channel))
+    end
+    return nothing
+end
 
 function finish_ui_operation!(app; timeout=5)
     timedwait(timeout; pollint=0.01) do
@@ -465,6 +496,159 @@ end
         @test component(app.session.kernel, :provider).directory == directory
         unregister_provider!(:terminal_test)
     end
+end
+
+@testset "Live response previews stay outside history and ignore stale operations" begin
+    provider = StreamedTerminalProvider([Reply(:answer, "Live response"), Reply(:answer, "Cancelled response"), Reply(:answer, "Fresh response")])
+    app = App(default_kernel(provider))
+    handle = Terminal.submit!(app, "First request")
+    @test timedwait(() -> isready(provider.started), 5) == :ok
+    identity = take!(provider.started)
+    drain_ui_events!(app)
+    @test app.transcript.preview.text == "Live response"
+    @test length(app.session.messages) == 1
+
+    backend = TestBackend(80, 24)
+    frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    @test !isnothing(find_text(backend, "Live response"))
+    @test isnothing(find_text(backend, "{\"kind\""))
+    @test isempty(filter(message -> message.role == :assistant, app.session.messages))
+    stale = TaskEvent(:response_progress, (operation_id=identity + UInt64(1), progress=JuliaForever2.ResponseProgress(:answer, "Stale response")))
+    update!(app, stale)
+    @test app.transcript.preview.text == "Live response"
+    put!(provider.proceed, nothing)
+    @test finish_ui_operation!(app) == :ok
+    @test isnothing(app.transcript.preview)
+    @test count(message -> message.role == :assistant && message.content == "Live response", app.session.messages) == 1
+    @test isempty(Terminal.preview_lines!(app, 80))
+
+    delayed = TaskEvent(:response_progress, (operation_id=identity, progress=JuliaForever2.ResponseProgress(:answer, "Old response")))
+    update!(app, delayed)
+    @test isnothing(app.transcript.preview)
+    next_handle = Terminal.submit!(app, "Cancelled request")
+    @test timedwait(() -> isready(provider.started), 5) == :ok
+    next_identity = take!(provider.started)
+    drain_ui_events!(app)
+    @test app.transcript.preview.text == "Cancelled response"
+    update!(app, delayed)
+    update!(app, TaskEvent(:turn, handle))
+    @test app.active_turn === next_handle
+    @test app.transcript.preview.text == "Cancelled response"
+    Terminal.cancel_command!(app, "")
+    @test isnothing(app.transcript.preview)
+    update!(app, TaskEvent(:response_progress, (operation_id=next_identity, progress=JuliaForever2.ResponseProgress(:answer, "Too late"))))
+    @test isnothing(app.transcript.preview)
+    put!(provider.proceed, nothing)
+    @test finish_ui_operation!(app) == :ok
+    @test !any(message -> message.role == :assistant && message.content == "Cancelled response", app.session.messages)
+
+    Terminal.submit!(app, "Reusable session")
+    @test timedwait(() -> isready(provider.started), 5) == :ok
+    take!(provider.started)
+    drain_ui_events!(app)
+    @test app.transcript.preview.text == "Fresh response"
+    put!(provider.proceed, nothing)
+    @test finish_ui_operation!(app) == :ok
+    @test count(message -> message.role == :assistant, app.session.messages) == 2
+    @test isnothing(app.transcript.preview)
+    Terminal.finish_shutdown!(app)
+end
+
+@testset "Each code-mode response replaces its preview before execution" begin
+    provider = StreamedTerminalProvider([Reply(:code, "21 * 2"), Reply(:answer, "The result is 42.")])
+    app = App(default_kernel(provider))
+    executing = Channel{Nothing}(1)
+    execution_complete = Channel{Nothing}(1)
+    executor = (session, code) -> begin
+        put!(executing, nothing)
+        take!(execution_complete)
+        ExecutionResult(true, "42", 42)
+    end
+    install!(app.session.kernel, ComponentSpec(:executor, executor))
+    Terminal.submit!(app, "Calculate")
+    @test timedwait(() -> isready(provider.started), 5) == :ok
+    identity = take!(provider.started)
+    drain_ui_events!(app)
+    @test app.transcript.preview.kind == :code
+    @test !any(message -> message.role == :assistant, app.session.messages)
+    put!(provider.proceed, nothing)
+    @test timedwait(() -> isready(executing), 5) == :ok
+    take!(executing)
+    drain_ui_events!(app)
+    @test isnothing(app.transcript.preview)
+    @test count(message -> message.role == :assistant && message.kind == :code, app.session.messages) == 1
+    put!(execution_complete, nothing)
+    @test timedwait(() -> isready(provider.started), 5) == :ok
+    @test take!(provider.started) == identity
+    drain_ui_events!(app)
+    @test app.transcript.preview.kind == :answer
+    @test app.transcript.preview.text == "The result is 42."
+    @test count(message -> message.role == :code_result, app.session.messages) == 1
+    put!(provider.proceed, nothing)
+    @test finish_ui_operation!(app) == :ok
+    @test isnothing(app.transcript.preview)
+    @test count(message -> message.role == :assistant && message.content == "The result is 42.", app.session.messages) == 1
+    Terminal.finish_shutdown!(app)
+end
+
+@testset "Terminal applications isolate provider catalogs" begin
+    first_registry = JuliaForever2.ProviderRegistry()
+    second_registry = JuliaForever2.ProviderRegistry()
+    register_provider!(first_registry, ProviderDescriptor(:first_only, "First catalog", directory -> ScopedTerminalProvider(:first_only)))
+    register_provider!(second_registry, ProviderDescriptor(:second_only, "Second catalog", directory -> ScopedTerminalProvider(:second_only)))
+    mktempdir() do directory
+        first_directory = joinpath(directory, "first")
+        second_directory = joinpath(directory, "second")
+        first_app = App(Kernel(); settings_dir=first_directory, registry=first_registry)
+        second_app = App(Kernel(); settings_dir=second_directory, registry=second_registry)
+        @test [descriptor.id for descriptor in first_app.providers] == [:first_only]
+        @test [descriptor.id for descriptor in second_app.providers] == [:second_only]
+        Terminal.select_provider!(first_app)
+        Terminal.select_provider!(second_app)
+        @test component(first_app.session.kernel, :provider).id == :first_only
+        @test component(second_app.session.kernel, :provider).id == :second_only
+        restored = Terminal.terminal_app(; settings_dir=first_directory, registry=first_registry)
+        @test component(restored.session.kernel, :provider).id == :first_only
+        unregister_provider!(first_registry, :first_only)
+        Terminal.refresh_settings!(first_app)
+        Terminal.refresh_settings!(second_app)
+        @test isempty(first_app.providers)
+        @test [descriptor.id for descriptor in second_app.providers] == [:second_only]
+        foreach(Terminal.finish_shutdown!, (first_app, second_app, restored))
+    end
+end
+
+@testset "Failed background work releases frontend ownership before propagating" begin
+    app = App(default_kernel())
+    install!(app.session.kernel, ComponentSpec(:executor, (session, code) -> error("terminal execution fixture")))
+    failed = Terminal.submit!(app, "/julia failure")
+    @test timedwait(() -> istaskdone(failed), 5) == :ok
+    @test_throws TaskFailedException finish_ui_operation!(app)
+    @test isnothing(app.active_turn)
+    @test !app.busy
+    @test isnothing(app.transcript.preview)
+    install!(app.session.kernel, ComponentSpec(:executor, (session, code) -> ExecutionResult(true, "reused")))
+    Terminal.submit!(app, "/julia reuse")
+    @test finish_ui_operation!(app) == :ok
+    @test app.session.messages[end].content == "reused"
+    Terminal.finish_shutdown!(app)
+
+    auth_app = App(default_kernel())
+    releases = Threads.Atomic{Int}(0)
+    action = (flow, provider, directory; announce) -> begin
+        JuliaForever2.own_resource!(flow.context, nothing; cleanup=value -> Threads.atomic_add!(releases, 1))
+        error("terminal authorization fixture")
+    end
+    Terminal.start_sign_in!(auth_app, :openrouter; action)
+    @test timedwait(() -> isready(auth_app.queue.channel), 5) == :ok
+    @test releases[] == 1
+    @test_throws TaskFailedException update!(auth_app, take!(auth_app.queue.channel))
+    @test !auth_app.busy
+    @test isnothing(auth_app.auth_flow)
+    @test isnothing(auth_app.auth_task)
+    Terminal.finish_shutdown!(auth_app)
+    @test releases[] == 1
 end
 
 end

@@ -8,6 +8,6 @@ JuliaForever2 = {path = ".."}
 
 [compat]
 CommonMark = "0.8, 1"
-JuliaForever2 = "0.2"
+JuliaForever2 = "0.3"
 Tachikoma = "2.8"
 julia = "1.13"

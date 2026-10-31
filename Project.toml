@@ -1,6 +1,6 @@
 name = "JuliaForever2"
 uuid = "075b3f8b-fd8a-400f-9aeb-7c9970270ab2"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Demetrius Michael"]
 
 [deps]
