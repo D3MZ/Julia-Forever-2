@@ -8,18 +8,30 @@ struct Reply
     content::String
 end
 
+mutable struct Usage
+    input_tokens::Int
+    output_tokens::Int
+    cost::Float64
+    reported::Bool
+    cost_known::Bool
+    partial::Bool
+end
+
+Usage() = Usage(0, 0, 0.0, false, true, false)
+
 mutable struct Session
     kernel::Kernel
     messages::Vector{Message}
     scope::Module
     output::IOBuffer
     lock::ReentrantLock
+    usage::Usage
 end
 
 function Session(kernel::Kernel)
     scope = Module(gensym(:Agent))
     output = IOBuffer()
-    session = Session(kernel, Message[], scope, output, ReentrantLock())
+    session = Session(kernel, Message[], scope, output, ReentrantLock(), Usage())
     Core.eval(scope, :(using JuliaForever2))
     Core.eval(scope, :(const kernel = $(QuoteNode(kernel))))
     Core.eval(scope, :(const session = $(QuoteNode(session))))

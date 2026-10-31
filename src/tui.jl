@@ -18,7 +18,7 @@ mutable struct App <: Model
     auth_provider::Symbol
 end
 
-App(kernel::Kernel=default_kernel()) = App(Session(kernel), TextInput(; label="❯ "), :chat, false, 1, false, false, TaskQueue(), "Demo provider · Julia executes with your permissions", 0, Rect(), nothing, "", :none)
+App(kernel::Kernel=default_kernel()) = App(Session(kernel), TextInput(; label="", cursor_style=Tachikoma.Style(; fg=Tachikoma.ColorRGB(36, 41, 49), bg=Tachikoma.ColorRGB(255, 255, 255))), :chat, false, 1, false, false, TaskQueue(), "Ready", 0, Rect(), nothing, "", :none)
 const COMMANDS = [("settings", "Choose a provider"), ("components", "Inspect installed components"), ("julia", "Run a Julia expression"), ("clear", "Clear the conversation"), ("quit", "Exit")]
 matching_commands(app::App) = filter(item -> startswith(item[1], replace(Tachikoma.text(app.input), r"^/" => "")), COMMANDS)
 task_queue(app::App) = app.queue
@@ -175,6 +175,68 @@ function drawline!(buffer, x, y, width, text, style=:text)
     Tachikoma.set_string!(buffer, x, y, text, tstyle(style); max_x=x + width - 1)
 end
 
+provider_name(::DemoProvider) = "Demo"
+provider_name(::OpenRouterProvider{F}) where {F} = "OpenRouter"
+provider_name(::OpenAIProvider) = "ChatGPT"
+provider_name(::CodexProvider) = "Codex"
+provider_name(::Any) = "Custom provider"
+provider_detail(provider::OpenRouterProvider) = "(openrouter) " * provider.model
+provider_detail(provider) = provider_name(provider)
+
+function usage_label(session::Session)
+    lock(session.lock) do
+        usage = session.usage
+        if usage.reported
+            label = (usage.partial ? "~" : "") * "↑$(usage.input_tokens) ↓$(usage.output_tokens)"
+            return usage.cost_known ? label * " \$$(round(usage.cost; digits=4))" : label
+        end
+        return ""
+    end
+end
+
+function draw_footer!(buffer, x, y, width, app::App)
+    provider = component(app.session.kernel, :provider)
+    right = Base.invokelatest(provider_detail, provider)::String
+    left = usage_label(app.session)
+    app.status == "Ready" || (left = isempty(left) ? app.status : left * " · " * app.status)
+    drawline!(buffer, x, y, width, left, :text_dim)
+    available = max(0, width - textwidth(left) - (isempty(left) ? 0 : 1))
+    clipped = Tachikoma.truncate_to_width(right, available)
+    drawline!(buffer, x + width - textwidth(clipped), y, textwidth(clipped), clipped, :text_dim)
+end
+
+function conversation_lines(messages, width)
+    lines = Tuple{String,Symbol}[]
+    for message in messages
+        style = message.role == :user ? :user_message : message.role == :code_result ? :code_result : :text
+        style in (:user_message, :code_result) && push!(lines, ("", style))
+        for line in split(message.content, '\n')
+            chars = collect(line)
+            if isempty(chars)
+                push!(lines, ("", style))
+            else
+                for chunk in Iterators.partition(chars, max(1, width - 2))
+                    push!(lines, (String(collect(chunk)), style))
+                end
+            end
+        end
+        push!(lines, ("", style))
+        push!(lines, ("", :text))
+    end
+    return lines
+end
+
+function draw_conversation_line!(buffer, x, y, width, line, style)
+    if style in (:user_message, :code_result)
+        color = style == :user_message ? Tachikoma.ColorRGB(45, 59, 71) : Tachikoma.ColorRGB(36, 63, 48)
+        bg = Tachikoma.Style(; fg=tstyle(:text).fg, bg=color)
+        Tachikoma.set_string!(buffer, x, y, repeat(" ", width), bg; max_x=x + width - 1)
+        Tachikoma.set_string!(buffer, x + 1, y, line, bg; max_x=x + width - 2)
+    else
+        drawline!(buffer, x + 1, y, width - 2, line, style)
+    end
+end
+
 function provider_labels()::NTuple{4,String}
     chatgpt = load_credentials(config_dir(), :chatgpt)
     router = load_credentials(config_dir(), :openrouter)
@@ -192,7 +254,12 @@ function default_view!(app::App, frame::Frame)
     x, y, w, h = area.x, area.y, area.width, area.height
     w < 5 && return
     h < 5 && return
-    drawline!(buf, x + 1, y, w - 2, "◆ JULIA FOREVER", :accent)
+    empty_chat = lock(app.session.lock) do
+        isempty(app.session.messages)
+    end
+    if app.page != :chat || empty_chat
+        drawline!(buf, x + 1, y, w - 2, "◆ JULIA FOREVER", :accent)
+    end
     if app.page == :auth
         drawline!(buf, x + 1, y + 2, w - 2, "Sign in to " * (app.auth_provider == :chatgpt ? "ChatGPT" : "OpenRouter"), :accent)
         drawline!(buf, x + 1, y + 4, w - 2, "Complete authorization in your browser.", :text)
@@ -207,7 +274,7 @@ function default_view!(app::App, frame::Frame)
     elseif app.page == :settings
         drawline!(buf, x + 1, y + 2, w - 2, "Settings  /  Provider", :accent)
         for (i, name) in enumerate(provider_labels())
-            drawline!(buf, x + 2, y + 3 + i, w - 3, (app.selected == i ? "› " : "  ") * name, app.selected == i ? :accent : :text)
+            drawline!(buf, x + 2, y + 3 + i, w - 3, name, app.selected == i ? :accent : :text)
         end
         drawline!(buf, x + 1, y + h - 1, w - 2, "↑↓ select   enter use   s sign in   esc back", :text_dim)
         return
@@ -222,49 +289,35 @@ function default_view!(app::App, frame::Frame)
         drawline!(buf, x + 1, y + h - 1, w - 2, "esc back", :text_dim)
         return
     end
-    lines = Tuple{String,Symbol}[]
+    if empty_chat
+        drawline!(buf, x + 1, y + 1, w - 2, "ctrl+c exit · / commands · page up/down scroll", :text_dim)
+    end
     messages = lock(app.session.lock) do
         copy(app.session.messages)
     end
-    for message in messages
-        role = message.role == :user ? "You" : message.role == :code_result ? "Julia" : "Agent"
-        push!(lines, (role, :accent))
-        for line in split(message.content, '\n')
-            push!(lines, (String(line), :text))
-        end
-        push!(lines, ("", :text))
-    end
+    lines = conversation_lines(messages, w)
     if isempty(lines)
         push!(lines, ("Ready. Type a message, or / for commands.", :text_dim))
     end
-    wrapped = Tuple{String,Symbol}[]
-    for (line, style) in lines
-        chars = collect(line)
-        if isempty(chars)
-            push!(wrapped, ("", style))
-        else
-            for chunk in Iterators.partition(chars, max(1, w - 2))
-                push!(wrapped, (String(collect(chunk)), style))
-            end
-        end
-    end
     matches = app.menu ? matching_commands(app) : Tuple{String,String}[]
-    maxlines = max(0, h - 6 - length(matches))
-    lastline = max(0, length(wrapped) - app.scroll)
+    top = empty_chat ? 3 : 1
+    maxlines = max(0, h - 6 - top - length(matches))
+    lastline = max(0, length(lines) - app.scroll)
     firstline = max(1, lastline - maxlines + 1)
-    for (i, (line, style)) in enumerate(wrapped[firstline:lastline])
-        drawline!(buf, x + 1, y + i, w - 2, line, style)
+    for (i, (line, style)) in enumerate(lines[firstline:lastline])
+        draw_conversation_line!(buf, x, y + top + i - 1, w, line, style)
     end
     if app.menu
-        start = y + h - 4 - length(matches)
+        start = y + h - 5 - length(matches)
         for (i, (name, description)) in enumerate(matches)
-            drawline!(buf, x + 1, start + i - 1, w - 2, (app.selected == i ? "› " : "  ") * "/" * rpad(name, 13) * description, app.selected == i ? :accent : :text_dim)
+            drawline!(buf, x + 1, start + i - 1, w - 2, "/" * rpad(name, 13) * description, app.selected == i ? :accent : :text_dim)
         end
     end
-    drawline!(buf, x, y + h - 4, w, repeat("─", w), :text_dim)
-    Tachikoma.render(app.input, Rect(x + 1, y + h - 3, w - 2, 1), buf)
-    drawline!(buf, x, y + h - 2, w, repeat("─", w), :text_dim)
-    drawline!(buf, x + 1, y + h - 1, w - 2, app.status * "   / commands", :text_dim)
+    drawline!(buf, x, y + h - 5, w, repeat("─", w), :text_dim)
+    Tachikoma.render(app.input, Rect(x + 1, y + h - 4, w - 2, 1), buf)
+    drawline!(buf, x, y + h - 3, w, repeat("─", w), :text_dim)
+    drawline!(buf, x + 1, y + h - 2, w - 2, string(pwd()), :text_dim)
+    draw_footer!(buf, x + 1, y + h - 1, w - 2, app)
 end
 
 function main()
@@ -283,7 +336,7 @@ function default_input!(app::App, event::MouseEvent)
         end
     elseif app.page == :chat && app.menu
         matches = matching_commands(app)
-        selected = event.y - (area.y + area.height - 4 - length(matches)) + 1
+        selected = event.y - (area.y + area.height - 5 - length(matches)) + 1
         if 1 <= selected <= length(matches)
             command!(app, matches[selected][1])
         end

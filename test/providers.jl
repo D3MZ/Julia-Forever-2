@@ -23,6 +23,20 @@ using JSON
     @test malformed([Message(:user, "Hi")], Session(Kernel())).kind == :error
 end
 
+@testset "Reported usage appears in session" begin
+    body = JSON.json(Dict("choices" => [Dict("message" => Dict("content" => "{\"kind\":\"answer\",\"content\":\"ok\"}"))], "usage" => Dict("prompt_tokens" => 120, "completion_tokens" => 18, "cost" => 0.002)))
+    provider = OpenRouterProvider("secret", "example/model", (args...) -> (status=200, body=body))
+    session = Session(Kernel())
+    provider([Message(:user, "Hi")], session)
+    provider([Message(:user, "Hi again")], session)
+    @test session.usage.input_tokens == 240
+    @test session.usage.output_tokens == 36
+    @test session.usage.cost ≈ 0.004
+    JuliaForever2.record_usage!(session, nothing)
+    @test startswith(JuliaForever2.usage_label(session), "~↑240 ↓36")
+    @test !occursin("\$", JuliaForever2.usage_label(session))
+end
+
 @testset "Browser credentials take precedence" begin
     mktempdir() do dir
         JuliaForever2.save_credentials!(dir, :openrouter, Dict("key" => "browser-key"))

@@ -18,6 +18,35 @@ import Tachikoma: update!
     @test app.page == :chat
 end
 
+@testset "Conversation presentation" begin
+    app = App(default_kernel())
+    push!(app.session.messages, Message(:user, "My favorite fruit is mango."))
+    push!(app.session.messages, Message(:assistant, "Mango is a great choice."))
+    push!(app.session.messages, Message(:code_result, "Julia output"))
+    tb = TestBackend(80, 24)
+    frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    user = find_text(tb, "My favorite fruit is mango.")
+    answer = find_text(tb, "Mango is a great choice.")
+    @test !isnothing(user) && !isnothing(answer)
+    @test Tachikoma.style_at(tb, user.x, user.y).bg == Tachikoma.ColorRGB(45, 59, 71)
+    @test Tachikoma.style_at(tb, 1, user.y).bg == Tachikoma.ColorRGB(45, 59, 71)
+    @test Tachikoma.style_at(tb, answer.x, answer.y).bg != Tachikoma.ColorRGB(45, 59, 71)
+    output = find_text(tb, "Julia output")
+    @test Tachikoma.style_at(tb, output.x, output.y).bg == Tachikoma.ColorRGB(36, 63, 48)
+    @test isnothing(find_text(tb, "You")) && isnothing(find_text(tb, "Agent"))
+    @test !isnothing(find_text(tb, pwd()))
+    @test !isnothing(find_text(tb, "Demo"))
+    app.session.usage.input_tokens = 120
+    app.session.usage.output_tokens = 18
+    app.session.usage.reported = true
+    Tachikoma.reset!(tb.buf)
+    Tachikoma.view(app, frame)
+    usage = find_text(tb, "↑120 ↓18")
+    provider = find_text(tb, "Demo")
+    @test !isnothing(usage) && !isnothing(provider) && usage.y == provider.y && usage.x < provider.x
+end
+
 @testset "Terminal rendering" begin
     app = App(default_kernel())
     tb = TestBackend(80, 24)

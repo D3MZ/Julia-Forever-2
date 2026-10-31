@@ -57,6 +57,35 @@ function router_request(url, body, headers)
 end
 
 OpenRouterProvider(api_key::AbstractString, model::AbstractString) = OpenRouterProvider(String(api_key), String(model), router_request)
+
+function record_usage!(session::Session, usage::AbstractDict)
+    input = get(usage, "prompt_tokens", nothing)
+    output = get(usage, "completion_tokens", nothing)
+    cost = get(usage, "cost", nothing)
+    lock(session.lock) do
+        if input isa Integer && !(input isa Bool) && input >= 0 && output isa Integer && !(output isa Bool) && output >= 0
+            session.usage.input_tokens += input
+            session.usage.output_tokens += output
+            session.usage.reported = true
+        else
+            session.usage.partial = true
+        end
+        if cost isa Real && !(cost isa Bool) && isfinite(cost) && cost >= 0
+            session.usage.cost += cost
+        else
+            session.usage.cost_known = false
+        end
+    end
+end
+
+function record_usage!(session::Session, usage)
+    lock(session.lock) do
+        session.usage.partial = true
+        session.usage.cost_known = false
+    end
+    return nothing
+end
+
 function OpenRouterProvider()
     saved = load_credentials(config_dir(), :openrouter)
     stored = isnothing(saved) ? "" : get(saved, "key", "")
@@ -74,6 +103,7 @@ function (provider::OpenRouterProvider)(messages::Vector{Message}, session::Sess
     response.status == 401 && return Reply(:error, "OpenRouter rejected the API key (HTTP 401). Check or replace the configured key.")
     200 <= response.status < 300 || return Reply(:error, "OpenRouter returned HTTP $(response.status).")
     parsed = JSON.parse(response.body)
+    record_usage!(session, get(parsed, "usage", nothing))
     reply = JSON.parse(parsed["choices"][1]["message"]["content"])
     reply isa AbstractDict && get(reply, "kind", nothing) isa AbstractString && get(reply, "content", nothing) isa AbstractString || return Reply(:error, "OpenRouter returned an invalid agent response.")
     return Reply(Symbol(reply["kind"]), String(reply["content"]))
