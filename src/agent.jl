@@ -24,6 +24,7 @@ function Session(kernel::Kernel)
     Core.eval(scope, :(const kernel = $(QuoteNode(kernel))))
     Core.eval(scope, :(const session = $(QuoteNode(session))))
     Core.eval(scope, :(const output = $(QuoteNode(output))))
+    Core.eval(scope, :(include(path) = Base.include(@__MODULE__, path)))
     Core.eval(scope, :(print(args...) = Base.print(output, args...)))
     Core.eval(scope, :(println(args...) = Base.println(output, args...)))
     return session

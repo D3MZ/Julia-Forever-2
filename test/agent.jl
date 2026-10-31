@@ -41,7 +41,7 @@ end
         path = joinpath(dir, "plugin.jl")
         write(path, "install!(kernel, ComponentSpec(:increment, x -> x + 1))")
         session = Session(Kernel())
-        result = JuliaForever2.evaluate!(session, "Base.include(session.scope, $(repr(path)))")
+        result = JuliaForever2.evaluate!(session, "include($(repr(path)))")
         @test result.ok
         @test Base.invokelatest(component(session.kernel, :increment), 41) == 42
     end

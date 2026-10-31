@@ -66,7 +66,7 @@ end
 
 function (provider::OpenRouterProvider)(messages::Vector{Message}, session::Session)
     isempty(provider.api_key) && return Reply(:error, "Set OPENROUTER_API_KEY before selecting OpenRouter.")
-    system = "You are the model for a Julia agent harness. Reply as a JSON object with kind and content. Use kind=code and Julia source when you need to act; the harness runs it and returns the result. Use kind=answer for your final response. A persistent Julia module provides kernel, session, and JuliaForever2 exports, including ComponentSpec, install!, component, and spawn_agent!. Code runs with the user's permissions."
+    system = "You are the model for a Julia agent harness. Reply as a JSON object with exactly the string fields kind and content. Use kind=code and Julia source when you need to act; the harness runs it and returns the result. Use kind=answer for your final response. A persistent Julia module provides kernel, session, include, and JuliaForever2 exports. Register a value with install!(kernel, ComponentSpec(:name, value)); retrieve it with component(kernel, :name). Dependencies use ComponentSpec(:name, value; requires=[:dependency]). A :loop component is called as (session, prompt, max_steps) and may delegate to JuliaForever2.default_loop!(session, prompt, max_steps). spawn_agent! starts a child session. Code runs with the user's permissions."
     transcript = join(["$(m.role): $(m.content)" for m in messages], "\n\n")
     body = JSON.json(Dict("model" => provider.model, "messages" => [Dict("role" => "system", "content" => system), Dict("role" => "user", "content" => transcript)], "response_format" => Dict("type" => "json_object")))
     headers = ["Authorization" => "Bearer $(provider.api_key)", "Content-Type" => "application/json"]
@@ -75,6 +75,7 @@ function (provider::OpenRouterProvider)(messages::Vector{Message}, session::Sess
     200 <= response.status < 300 || return Reply(:error, "OpenRouter returned HTTP $(response.status).")
     parsed = JSON.parse(response.body)
     reply = JSON.parse(parsed["choices"][1]["message"]["content"])
+    reply isa AbstractDict && get(reply, "kind", nothing) isa AbstractString && get(reply, "content", nothing) isa AbstractString || return Reply(:error, "OpenRouter returned an invalid agent response.")
     return Reply(Symbol(reply["kind"]), String(reply["content"]))
 end
 
