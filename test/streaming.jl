@@ -77,3 +77,32 @@ end
     @test length(events) == 1
     close(context)
 end
+
+@testset "Incremental SSE fields preserve framing, colons, and Unicode" begin
+    events = JuliaForever2.SSEEvent[]
+    decoder = JuliaForever2.SSEDecoder(event -> push!(events, event))
+
+    wire = "\ufeff: comment\r\nid: first\r\nevent: update\r\ndata: λ:one\r\ndata:two:three\r\n\r\n"
+    for byte in codeunits(wire)
+        write(decoder, byte)
+    end
+    @test length(events) == 1
+    @test events[1].event == "update"
+    @test events[1].data == "λ:one\ntwo:three"
+    @test events[1].id == "first"
+
+    write(decoder, "id\r\nevent\r\ndata\r\n\r\n")
+    @test length(events) == 2
+    @test events[2].event == "message"
+    @test events[2].data == ""
+    @test events[2].id == ""
+
+    write(decoder, "id: invalid\0id\nż: ignored\nretry: 1000\ndata:  leading space\n\n")
+    @test length(events) == 3
+    @test events[3].data == " leading space"
+    @test events[3].id == ""
+    @test events[3].event == "message"
+
+    write(decoder, ": comment\n\n")
+    @test length(events) == 3
+end
