@@ -577,7 +577,7 @@
       ],
       "limits": [
         "The oracle invokes the original hash-pinned DSH post-execute method in isolation with fixed success and failure results, not a complete upstream agent or policy pipeline.",
-        "Deferred contexts, value replacements, rich multimodal output rendering, finalization, audit events and full cross-stage ordering remain unverified.",
+        "Deferred contexts, complete post-policy value normalization, rich multimodal output rendering, finalization, audit events and full cross-stage ordering remain unverified.",
         "The pinned policy method receives an injected deterministic output contract; its value-replacement branch and actual upstream JSON Schema validator are exercised, but its full private normalization pipeline is not."
       ]
     }
