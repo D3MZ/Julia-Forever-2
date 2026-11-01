@@ -115,7 +115,7 @@ function finish_model_block!(state::ModelStreamState, index::Int)
         end
         model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))
     else
-        model_event!(state, kind * "_end"; contentIndex=index - 1, content=block[kind])
+        model_event!(state, string(kind, "_end"); contentIndex=index - 1, content=block[kind])
     end
     return nothing
 end

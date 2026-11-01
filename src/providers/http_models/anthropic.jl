@@ -74,7 +74,7 @@ function anthropic_block_start!(state::ModelStreamState, event::AbstractDict)
         state.arguments[index] = ""
         model_event!(state, "toolcall_start"; contentIndex=index - 1)
     else
-        model_event!(state, block["type"] * "_start"; contentIndex=index - 1)
+        model_event!(state, string(block["type"], "_start"); contentIndex=index - 1)
     end
     return nothing
 end
