@@ -19,6 +19,7 @@ public provider_id, provider_from_name, configured_provider, provider_name, prov
 public component_snapshot, provider_selection_snapshot, provider_settings_snapshot, select_provider!
 public ResponseProgress, protocol_progress, emit_protocol_progress!, operation_id
 public usage_snapshot, model_request, own_resource!
+public working_directory, set_working_directory!, workspace_path
 public AgentDecision, agent_decision, action_content, action_kind, action_payload
 public BoundComponent, bind_component, bound_dependency, fork_kernel
 public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileStore, compose_profiles, save_profile!, load_profile, profile_names
