@@ -19,10 +19,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
-      JULIAFOREVER_CONFIG_DIR: ${{ runner.temp }}/jf2-vhs-config
       JULIA_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
+      - name: Initialize isolated VHS configuration
+        run: echo "JULIAFOREVER_CONFIG_DIR=$RUNNER_TEMP/jf2-vhs-config" >> "$GITHUB_ENV"
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.13.3'
