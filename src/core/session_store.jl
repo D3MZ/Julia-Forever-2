@@ -92,8 +92,11 @@ function session_lineage(record::SessionRecord)
 end
 """Read a saved session's persistent identity without restoring its execution environment."""
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
-    record = saved_session_record(store, name)
-    return isnothing(record) ? nothing : record.lineage
+    path = session_file(store, name)
+    if isnothing(path) || !isfile(path)
+        return nothing
+    end
+    return session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
 end
 
 """Return stored descendants of a session identity in deterministic session-name order."""

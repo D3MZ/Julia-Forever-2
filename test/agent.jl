@@ -457,3 +457,35 @@ end
     @test isempty(JuliaForever2.tool_argument_violations(checked,
         (rows=[(id=1, name="named tuple")],)))
 end
+
+
+@testset "Persisted lineage avoids materializing unrelated session messages" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        root = uuid5(UUID("17cf245c-3b45-446d-97aa-550d286b98ac"), "root")
+        child = uuid5(root, "child")
+        for (name, identity, parent, version) in (
+                ("root", root, nothing, 2), ("child", child, root, 2),
+                ("legacy", root, nothing, 1))
+            data = Dict("format" => "JuliaForever2.session", "version" => version,
+                "name" => name, "working_directory" => directory,
+                "messages" => [Dict("role" => "user", "kind" => "text",
+                    "content" => repeat("unicode café λ record ", 32)) for _ in 1:24],
+                "lineage" => Dict("id" => string(identity),
+                    "parent_id" => isnothing(parent) ? nothing : string(parent),
+                    "root_id" => string(root)))
+            write(joinpath(directory, name * ".json"), JSON.json(data))
+        end
+        for name in ("root", "child", "legacy")
+            full = JuliaForever2.saved_session_record(store, name)
+            @test length(full.messages) == 24
+            @test JuliaForever2.session_lineage(store, name) == full.lineage
+            @test JuliaForever2.session_lineage(store, Symbol(name)) == full.lineage
+        end
+        @test JuliaForever2.session_descendants(store, "root") == ["child"]
+        @test JuliaForever2.session_descendants(store, "root"; include_self=true) ==
+            ["child", "root"]
+        @test isnothing(JuliaForever2.session_lineage(store, "missing"))
+        @test isnothing(JuliaForever2.session_lineage(store, "../invalid"))
+    end
+end
