@@ -6,7 +6,10 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity.",
+  "inventory_complete": false,
+  "verified_source_families": [],
+  "proof_rule": "superset_proven requires an exhaustive DSH source-family inventory, native Julia implementations with executable differential evidence for every material family, no outstanding unverified families or runtime delegation, and passing required regression, lint, quality and CI checks. Reference-only cases never count.",
+  "assessment": "A red-green-refactor cycle now targets native post-tool completion decisions against the exact pinned DSH policy stage. This remains an isolated projection: complete tool pipeline ordering and full result presentation are not proven. Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -516,6 +519,26 @@
       "limits": [
         "The test invokes the exact pinned DSH approval-resolution method with an isolated service stub, not the entire DSH execution pipeline.",
         "Julia uses scoped tool-approval events instead of DSH agent/UI services. Agent identity, audit logging, prompt presentation, policy interleaving and all end-to-end consent interactions remain unverified."
+      ]
+    },
+    {
+      "kind": "tool_completion",
+      "case_count": 9,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/pipeline.ts",
+          "symbols": ["ToolExecutionPipeline.postExecute"]
+        }
+      ],
+      "compares": [
+        "Successful results accepted unchanged or with rewritten presentation text",
+        "Post-execute blocking discards successful values",
+        "Failed guards and failed callback results stay failures unless explicitly blocked"
+      ],
+      "limits": [
+        "The oracle invokes the original hash-pinned DSH post-execute method in isolation with fixed success and failure results, not a complete upstream agent or policy pipeline.",
+        "Deferred contexts, value replacements, rich multimodal output rendering, finalization, audit events and full cross-stage ordering remain unverified."
       ]
     }
   ],
@@ -1051,7 +1074,8 @@
       "compared_subsets": [
         "tools",
         "events",
-        "tool_arguments"
+        "tool_arguments",
+        "tool_completion"
       ],
       "packages": [
         {
