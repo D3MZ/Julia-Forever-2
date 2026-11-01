@@ -37,11 +37,9 @@ function provider_models(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY; p
     result = ModelSpec[]
     for descriptor in descriptors
         isnothing(descriptor) && continue
-        if isnothing(provider) || descriptor.id == Symbol(provider)
-            for model in catalog_models(descriptor.create)
-                if kind == :all || model.kind == kind
-                    push!(result, model)
-                end
+        for model in catalog_models(descriptor.create)
+            if kind == :all || model.kind == kind
+                push!(result, model)
             end
         end
     end
