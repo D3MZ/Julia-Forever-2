@@ -37,3 +37,45 @@ end
     @test seen == [:second, :first]
     close(kernel)
 end
+
+@testset "Constructor-driven result and decision transitions" begin
+    result = ExecutionResult(true, "computed", (answer=42,))
+    @test ExecutionResult(result) === result
+    @test ExecutionResult((ok=true, text="computed", value=(answer=42,))).value == (answer=42,)
+    @test ExecutionResult(Answer("complete")).ok
+    @test !ExecutionResult(Failure("denied")).ok
+    @test Message(Answer("complete")).kind == :answer
+    @test Message(Answer("complete")).content == "complete"
+    @test Message(ActionDecision(RunJulia("1 + 1"))).kind == :code
+    @test JuliaForever2.AgentDecision(Reply(:answer, "complete")) isa Answer
+    @test JuliaForever2.AgentDecision(Reply(:code, "1 + 1")).action isa RunJulia
+    @test JuliaForever2.AgentDecision(Reply(:unsupported, "unused")) isa Failure
+end
+
+@testset "Usage report construction establishes canonical values" begin
+    report = JuliaForever2.UsageReport(-2, 4, Inf)
+    @test isnothing(report.input_tokens)
+    @test report.output_tokens == 4
+    @test isnothing(report.cost)
+    valid = JuliaForever2.UsageReport(2, 4, 0.25)
+    @test JuliaForever2.UsageReport(valid) === valid
+    @test JuliaForever2.UsageReport(Dict("input_tokens" => 2, "output_tokens" => 4, "cost" => 0.25)) === valid
+    @test JuliaForever2.UsageReport(nothing) === JuliaForever2.UsageReport()
+end
+
+@testset "Constructors compose definitions and independent profiles" begin
+    provider = (messages, session) -> Answer("constructed")
+    definition = AgentDefinition(provider)
+    kernel = Kernel(definition)
+    @test component(kernel, :provider) === provider
+    @test run_turn!(Session(kernel), "hello").text == "constructed"
+    close(kernel)
+    first = JuliaForever2.Profile(:first, [:alpha]; config=Dict(:alpha => Dict("value" => 1)))
+    second = JuliaForever2.Profile(:second, [:beta, :alpha]; bindings=Dict(:service => :alpha))
+    combined = JuliaForever2.Profile(:combined, first, second)
+    @test combined.plugins == [:alpha, :beta]
+    @test combined.bindings == Dict(:service => :alpha)
+    copied = JuliaForever2.Profile(combined)
+    copied.config[:alpha]["value"] = 2
+    @test combined.config[:alpha]["value"] == 1
+end

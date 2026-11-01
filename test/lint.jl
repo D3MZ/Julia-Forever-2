@@ -1,48 +1,96 @@
-function syntax_name(node)
-    node isa Symbol && return node
-    if node isa Expr && node.head === :. && length(node.args) == 2 && node.args[2] isa QuoteNode
-        return node.args[2].value
-    end
-    return nothing
+module SourceStyle
+
+struct Location
+    line::Int
+    scoped::Bool
+    terminal::Bool
 end
 
-function inspect_syntax!(issues, node, line=1)
-    node isa Expr || return
-    if node.head === :call && syntax_name(node.args[1]) in (:throw, :rethrow)
-        push!(issues, (line, string(syntax_name(node.args[1]))))
-    elseif node.head === :macrocall && syntax_name(node.args[1]) === Symbol("@assert")
-        push!(issues, (line, "@assert"))
+Location(line::Int=1) = Location(line, false, false)
+Location(location::Location, line::LineNumberNode) = Location(line.line, location.scoped, location.terminal)
+
+name(node) = nothing
+name(node::Symbol) = node
+name(node::QuoteNode) = node.value
+name(node::Expr) = node.head === :. && length(node.args) == 2 ? name(last(node.args)) : nothing
+
+signature(node) = false
+signature(node::Expr) = node.head === :call || (node.head in (:where, :(::)) && signature(first(node.args)))
+definition(node::Expr) = node.head in (:function, :macro, :->) || (node.head === :(=) && signature(first(node.args)))
+exits(node) = false
+exits(node::Expr) = node.head in (:return, :break, :continue) || (node.head in (:block, :&&, :||) && any(exits, node.args))
+
+function rule(node::Expr, location::Location)
+    if node.head === :call && name(first(node.args)) in (:throw, :rethrow)
+        string(name(first(node.args)))
+    elseif node.head === :macrocall && name(first(node.args)) === Symbol("@assert")
+        "@assert"
     elseif node.head === Symbol("try")
-        push!(issues, (line, "try"))
+        "try"
     elseif node.head in (:error, :incomplete)
-        push!(issues, (line, "parse error"))
+        "parse error"
+    elseif node.head === :return && location.scoped && !location.terminal
+        "early return"
+    elseif node.head in (:&&, :||) && any(exits, node.args)
+        "guard clause"
+    else
+        nothing
     end
-    for arg in node.args
-        if arg isa LineNumberNode
-            line = arg.line
+end
+
+record!(issues, ::Nothing, line) = issues
+record!(issues, issue::String, line) = push!(issues, (line, issue))
+inspect!(issues, node, location::Location) = issues
+
+function body!(issues, node::Expr, location::Location)
+    laststatement = findlast(argument -> !(argument isa LineNumberNode), node.args)
+    current = location
+    for (index, argument) in enumerate(node.args)
+        if argument isa LineNumberNode
+            current = Location(current, argument)
         else
-            inspect_syntax!(issues, arg, line)
+            inspect!(issues, argument, Location(current.line, current.scoped, current.terminal && index == laststatement))
         end
     end
+    issues
 end
 
-function forbidden_syntax(source)
-    issues = Tuple{Int, String}[]
-    inspect_syntax!(issues, Meta.parseall(source))
-    return issues
-end
-
-function lint_repository(root)
-    issues = Tuple{String, Int, String}[]
-    for (dir, dirs, files) in walkdir(root)
-        filter!(!=(".git"), dirs)
-        for file in files
-            endswith(file, ".jl") || continue
-            path = joinpath(dir, file)
-            for (line, kind) in forbidden_syntax(read(path, String))
-                push!(issues, (relpath(path, root), line, kind))
+function inspect!(issues, node::Expr, location::Location)
+    record!(issues, rule(node, location), location.line)
+    if definition(node) && length(node.args) >= 2
+        inspect!(issues, first(node.args), Location(location.line))
+        inspect!(issues, last(node.args), Location(location.line, true, true))
+    elseif node.head in (:block, :toplevel)
+        body!(issues, node, location)
+    else
+        current = Location(location.line, node.head === :quote ? false : location.scoped, false)
+        for argument in node.args
+            if argument isa LineNumberNode
+                current = Location(current, argument)
+            else
+                inspect!(issues, argument, current)
             end
         end
     end
-    return issues
+    issues
 end
+
+violations(source::AbstractString) = inspect!(Tuple{Int,String}[], Meta.parseall(source), Location())
+
+function audit(root)
+    issues = Tuple{String,Int,String}[]
+    for (directory, directories, files) in walkdir(root)
+        filter!(!=(".git"), directories)
+        for file in filter(name -> endswith(name, ".jl"), files)
+            path = joinpath(directory, file)
+            append!(issues, ((relpath(path, root), line, kind) for (line, kind) in violations(read(path, String))))
+        end
+    end
+    issues
+end
+
+end
+
+syntax_name(node) = SourceStyle.name(node)
+forbidden_syntax(source) = SourceStyle.violations(source)
+lint_repository(root) = SourceStyle.audit(root)
