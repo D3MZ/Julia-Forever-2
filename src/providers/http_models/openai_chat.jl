@@ -69,8 +69,10 @@ function openai_tool_delta!(state::ModelStreamState, tool::AbstractDict)
     isempty(block["name"]) && (block["name"] = get(function_data, "name", ""))
     delta = get(function_data, "arguments", "")
     state.arguments[index] *= delta
-    arguments = parse_json(state.arguments[index])
-    arguments isa AbstractDict && (block["arguments"] = arguments)
+    if possible_tool_object(state.arguments[index])
+        arguments = parse_json(state.arguments[index])
+        arguments isa AbstractDict && (block["arguments"] = arguments)
+    end
     model_event!(state, "toolcall_delta"; contentIndex=index - 1, delta)
     return nothing
 end

@@ -394,3 +394,46 @@ end
     @test all(call -> call.context === context, calls)
     close(context)
 end
+
+@testset "Streaming tool arguments avoid reparsing incomplete JSON" begin
+    @test !JuliaForever2.possible_tool_object("")
+    @test !JuliaForever2.possible_tool_object(" \t")
+    @test !JuliaForever2.possible_tool_object(raw"""{"text":"unfinished } brace""")
+    @test JuliaForever2.possible_tool_object("{\"ok\":true}  \t")
+    @test JuliaForever2.possible_tool_object("{\"ok\":true}\u2003")
+
+    fragments = [raw"""{"text":"inside } quoted text","nested":{"ok":""", "true", "}} \t"]
+    expected = JSON.parse(join(fragments))
+    for protocol in (:openai, :anthropic)
+        context = ExecutionContext()
+        state = JuliaForever2.ModelStreamState(
+            JuliaForever2.ModelSpec(:test, "synthetic-tool-model"), context)
+        if protocol == :anthropic
+            JuliaForever2.anthropic_block_start!(state,
+                Dict("index" => 0, "content_block" => Dict(
+                    "type" => "tool_use", "id" => "tool-1", "name" => "perform",
+                    "input" => Dict{String,Any}())))
+        end
+        for (position, fragment) in enumerate(fragments)
+            if protocol == :openai
+                JuliaForever2.openai_tool_delta!(state, Dict(
+                    "index" => 0, "id" => "tool-1",
+                    "function" => Dict("name" => "perform", "arguments" => fragment)))
+            else
+                JuliaForever2.anthropic_block_delta!(state, Dict(
+                    "index" => 0, "delta" => Dict(
+                        "type" => "input_json_delta", "partial_json" => fragment)))
+            end
+            @test state.arguments[1] == join(fragments[1:position])
+            arguments = state.message["content"][1]["arguments"]
+            if position < length(fragments)
+                @test isempty(arguments)
+            else
+                @test arguments == expected
+            end
+        end
+        JuliaForever2.finish_model_block!(state, 1)
+        @test state.message["content"][1]["arguments"] == expected
+        close(context)
+    end
+end
