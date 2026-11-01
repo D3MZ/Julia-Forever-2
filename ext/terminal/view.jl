@@ -20,6 +20,7 @@ function drawline!(buffer, x, y, width, text, style=:text)
         Tachikoma.set_string!(buffer, x, y, text, pi_style(style); max_x=x + width - 1)
     end
 end
+
 const WORKING_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 """Select the working indicator frame at an 80 millisecond interval."""
@@ -30,11 +31,12 @@ function draw_input_border!(buffer, x, y, width, app::App; ticks::Integer=time_n
     drawline!(buffer, x, y, width, repeat("─", width), :border)
     if app.busy && !isnothing(app.operations.active) && !app.operations.closing[]
         spinner = working_spinner(ticks)
-        label = spinner * " " * app.status
-        if textwidth(label) + 5 <= width
+        label = string(spinner, ' ', app.status)
+        label_width = textwidth(label)
+        if label_width + 5 <= width
             drawline!(buffer, x + 2, y, 1, " ", :border)
-            drawline!(buffer, x + 3, y, textwidth(label), label, :accent)
-            drawline!(buffer, x + 3 + textwidth(label), y, 1, " ", :border)
+            drawline!(buffer, x + 3, y, label_width, label, :accent)
+            drawline!(buffer, x + 3 + label_width, y, 1, " ", :border)
         elseif width >= 5
             drawline!(buffer, x + 3, y, 1, spinner, :accent)
         end
