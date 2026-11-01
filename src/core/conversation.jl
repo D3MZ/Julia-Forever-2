@@ -40,6 +40,12 @@ canonical(report::UsageReport) =
 usage_detail(data, field) = nothing
 usage_detail(data::AbstractDict, field) = get(data, field, nothing)
 
+"""Subtract cached prompt tokens without allowing negative totals or integer overflow."""
+function uncached_usage_tokens(input::Int, read, write)
+    remaining = input - min(input, something(read, 0))
+    return remaining - min(remaining, something(write, 0))
+end
+
 function UsageReport(data::AbstractDict)
     details = get(data, "prompt_tokens_details", get(data, "input_tokens_details", nothing))
     read = get(data, "cacheRead", get(data, "cache_read_input_tokens",
@@ -54,8 +60,8 @@ function UsageReport(data::AbstractDict)
         (haskey(data, "prompt_tokens") || haskey(data, "cached_input_tokens") || !isnothing(details))
     validated = canonical(input, output, get(data, "cost", nothing), read, write)
     exclusive = inclusive && !isnothing(validated.input_tokens) ?
-        max(0, validated.input_tokens - something(validated.cache_read_tokens, 0) -
-            something(validated.cache_write_tokens, 0)) : validated.input_tokens
+        uncached_usage_tokens(validated.input_tokens, validated.cache_read_tokens,
+            validated.cache_write_tokens) : validated.input_tokens
     return UsageReport(exclusive, validated.output_tokens, validated.cost,
         validated.cache_read_tokens, validated.cache_write_tokens)
 end

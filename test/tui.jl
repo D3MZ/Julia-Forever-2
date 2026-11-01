@@ -272,6 +272,54 @@ end
     @test !isnothing(find_text(tb, "OpenRouter"))
 end
 
+@testset "Editor border shows active work" begin
+    provider = StreamedTerminalProvider([Reply(:answer, "Response")])
+    app = App(default_kernel(provider))
+    backend = TestBackend(80, 24)
+    frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    @test Tachikoma.char_at(backend, 4, 20) == '─'
+
+    handle = Terminal.submit!(app, "Is the agent working?")
+    @test timedwait(() -> isready(provider.started), 5) == :ok
+    take!(provider.started)
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    working = find_text(backend, "Thinking…")
+    @test !isnothing(working) && working.y == 20
+    @test Tachikoma.style_at(backend, 4, 20).fg == Tachikoma.ColorRGB(167, 152, 215)
+
+    Tachikoma.reset!(backend.buf)
+    Terminal.draw_input_border!(backend.buf, 1, 20, 80, app; ticks=0)
+    @test Tachikoma.char_at(backend, 4, 20) == '⠋'
+    Tachikoma.reset!(backend.buf)
+    Terminal.draw_input_border!(backend.buf, 1, 20, 80, app; ticks=80_000_000)
+    @test Tachikoma.char_at(backend, 4, 20) == '⠙'
+    @test Terminal.working_spinner(800_000_000) == "⠋"
+
+    narrow = TestBackend(6, 6)
+    Terminal.draw_input_border!(narrow.buf, 1, 1, 6, app; ticks=0)
+    @test Tachikoma.char_at(narrow, 4, 1) == '⠋'
+    @test Tachikoma.char_at(narrow, 6, 1) == '─'
+    @test isnothing(find_text(narrow, "Thinking…"))
+
+    Terminal.cancel_command!(app, "")
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    cancelling = find_text(backend, "Cancelling…")
+    @test !isnothing(cancelling) && cancelling.y == 20
+
+    put!(provider.proceed, nothing)
+    @test finish_ui_operation!(app) == :ok
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    @test Tachikoma.char_at(backend, 4, 20) == '─'
+    @test isnothing(find_text(backend, "Thinking…"))
+    update!(app, TaskEvent(:turn, handle))
+    @test !app.busy
+    Terminal.finish_shutdown!(app)
+end
+
 @testset "Command filtering and history" begin
     app = App(default_kernel())
     for c in "/set"
@@ -500,11 +548,19 @@ end
     @test timedwait(() -> isready(started), 5) == :ok
     take!(started)
     @test !istaskdone(handle)
+    backend = TestBackend(80, 24)
+    frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    running = find_text(backend, "Running Julia…")
+    @test !isnothing(running) && running.y == 20
     @test app.session.messages[1].content == "/julia 6 * 7"
     put!(finish, nothing)
     @test finish_ui_operation!(app) == :ok
     @test completions == [42]
     @test !app.busy
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    @test Tachikoma.char_at(backend, 4, 20) == '─'
     @test isnothing(app.active_turn)
     @test app.session.messages[end].role == :code_result
     @test app.session.messages[end].content == "42"
@@ -942,7 +998,11 @@ end
     if !isnothing(left) && !isnothing(right)
         @test left.y == 24 && right.y == 24
         @test left.x < right.x
-        @test right.x + textwidth("(synthetic) reference-model • high") - 1 == 100
+        label = "(synthetic) reference-model • high"
+        row = Tachikoma.row_text(backend, right.y)
+        start = first(findfirst(label, row))
+        prefix = SubString(row, firstindex(row), prevind(row, start))
+        @test textwidth(prefix) + textwidth(label) == 100
     end
 
     compact = Terminal.footer_line_parts(app, 40)

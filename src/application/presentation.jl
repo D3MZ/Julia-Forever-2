@@ -27,11 +27,18 @@ function footer_one_decimal(count::Integer, scale::Integer, suffix::AbstractStri
 end
 
 function footer_tokens(count::Integer)
-    count < 1_000 && return string(count)
-    count < 10_000 && return footer_one_decimal(count, 1_000, "k")
-    count < 1_000_000 && return string(div(count, 1_000) + (mod(count, 1_000) >= 500), 'k')
-    count < 10_000_000 && return footer_one_decimal(count, 1_000_000, "M")
-    return string(div(count, 1_000_000) + (mod(count, 1_000_000) >= 500_000), 'M')
+    formatted = if count < 1_000
+        string(count)
+    elseif count < 10_000
+        footer_one_decimal(count, 1_000, "k")
+    elseif count < 1_000_000
+        string(div(count, 1_000) + (mod(count, 1_000) >= 500), 'k')
+    elseif count < 10_000_000
+        footer_one_decimal(count, 1_000_000, "M")
+    else
+        string(div(count, 1_000_000) + (mod(count, 1_000_000) >= 500_000), 'M')
+    end
+    return formatted
 end
 
 footer_context_window(value) = nothing
@@ -41,10 +48,12 @@ footer_context_window(value::Integer) = 0 < value <= typemax(Int) ? Int(value) :
 footer_thinking(metadata) = nothing
 function footer_thinking(metadata::AbstractDict)
     level = get(metadata, "thinkingLevel", get(metadata, "reasoningEffort", nothing))
-    if level isa AbstractString && !isempty(level)
-        return String(level)
+    thinking = if level isa AbstractString && !isempty(level)
+        String(level)
+    else
+        get(metadata, "reasoning", false) === true ? "off" : nothing
     end
-    return get(metadata, "reasoning", false) === true ? "off" : nothing
+    return thinking
 end
 
 """Return a stable model/status contract; external providers may extend this method."""
@@ -84,7 +93,8 @@ function session_footer_snapshot(session::Session)
     model = with_component(session.kernel, :provider) do provider
         Base.invokelatest(provider_footer_status, provider)
     end
-    return (usage=usage_snapshot(session), provider=model)
+    fallback = isnothing(model) ? provider_footer_status(nothing) : model
+    return (usage=usage_snapshot(session), provider=fallback)
 end
 
 """Format the model on the right; omit provider prefixes before sacrificing model text."""
