@@ -29,6 +29,16 @@ tool_concurrency_safe(policy, arguments) = Base.invokelatest(policy, arguments)
 tool_concurrency_safe(spec::ToolSpec, arguments) =
     tool_concurrency_safe(spec.concurrency_policy, arguments)
 
+"""Approval requests are values returned by tool guards; the authority remains a replaceable Julia service."""
+abstract type AbstractToolApprovalRequest end
+
+struct ToolApprovalRequest <: AbstractToolApprovalRequest
+    reason::Union{Nothing,String}
+end
+
+ToolApprovalRequest(reason::AbstractString) = ToolApprovalRequest(String(reason))
+ToolApprovalRequest() = ToolApprovalRequest(nothing)
+
 struct ToolRestriction
     allow::Union{Nothing,Set{Symbol}}
     deny::Union{Nothing,Set{Symbol}}
@@ -591,7 +601,7 @@ function retire_tool_guard!(entry::ToolGuardEntry)
     return nothing
 end
 
-"""Register a reversible, scope-inherited tool denial policy owned by a plugin or scope."""
+"""Register a reversible, scope-inherited tool denial or approval policy owned by a plugin."""
 function register_tool_guard!(scope::ExtensionScope, callback; owner=nothing)
     entry = ToolGuardEntry(scope, callback, owner, true)
     accepted = lock(scope.lock) do
@@ -623,12 +633,37 @@ function acquire_tool_guards(scope::ExtensionScope)
     end
 end
 
-"""Evaluate root-to-leaf guards; only `nothing` permits the next policy."""
-function first_tool_denial(invocations, call)
+"""The approval protocol is independently replaceable by dispatch on the request type."""
+tool_approval_reason(::AbstractToolApprovalRequest) = nothing
+tool_approval_reason(request::ToolApprovalRequest) = request.reason
+
+"""Resolve a request through Julia-owned scoped event listeners, never an external runtime."""
+tool_approval_outcome(scope::ExtensionScope, call, request::AbstractToolApprovalRequest) =
+    dispatch_event!(scope, :tool_approval, call, request; mode=:serial)
+
+"""Fail closed for missing, rejected, cancelled, or unsupported approval outcomes."""
+function tool_approval_denial(scope::ExtensionScope, call, request::AbstractToolApprovalRequest)
+    outcome = Base.invokelatest(tool_approval_outcome, scope, call, request)
+    outcome === :allowed_once && return nothing
+    outcome === :rejected && return "the user rejected tool \"$(call.name)\""
+    outcome === :cancelled && return "approval for tool \"$(call.name)\" was cancelled"
+    outcome === :unavailable && return "tool \"$(call.name)\" requires approval, but no approval channel is available"
+    if isnothing(outcome)
+        reason = Base.invokelatest(tool_approval_reason, request)
+        return isnothing(reason) ? "tool \"$(call.name)\" requires approval (not yet supported)" : String(reason)
+    end
+    return "Unsupported approval outcome for tool \"$(call.name)\""
+end
+
+"""Evaluate root-to-leaf tool guards; approval never grants an exemption from later guards."""
+function first_tool_denial(invocations, call, scope::ExtensionScope)
     for invocation in invocations
-        denial = Base.invokelatest(invocation.listener.callback, call)
+        decision = Base.invokelatest(invocation.listener.callback, call)
+        denial = decision isa AbstractToolApprovalRequest ?
+            tool_approval_denial(scope, call, decision) : decision
         isnothing(denial) && continue
-        return denial isa AbstractString ? String(denial) : "Tool guard must return a string or nothing"
+        return denial isa AbstractString ? String(denial) :
+            "Tool guard must return a string, an approval request, or nothing"
     end
     return nothing
 end
@@ -677,22 +712,30 @@ function checked_tool_result(spec::ToolSpec, returned)
 end
 
 """Invoke a tool only after all inherited plugin-owned guards permit its call."""
-function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
+function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context=current_context())
     invocation = acquire_tool!(scope, name)
     isnothing(invocation) && return ExecutionResult(false, "Unknown tool: $name")
     guards = acquire_tool_guards(scope)
     worker = spawn_scoped() do
         call = ToolCall(name, length(arguments) == 1 ? first(arguments) : arguments)
-        denial = first_tool_denial(guards, call)
-        if !isnothing(denial)
-            ExecutionResult(false, denial)
+        if cancelled(context)
+            ExecutionResult(false, "Tool call aborted before dispatch")
         else
-            violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
-            if isempty(violations)
-                returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
-                checked_tool_result(invocation.listener.spec, returned)
+            denial = first_tool_denial(guards, call, scope)
+            if !isnothing(denial)
+                ExecutionResult(false, denial)
+            elseif cancelled(context)
+                ExecutionResult(false, "Tool call aborted before dispatch")
             else
-                ExecutionResult(false, join(violations, "; "))
+                violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
+                if !isempty(violations)
+                    ExecutionResult(false, join(violations, "; "))
+                elseif cancelled(context)
+                    ExecutionResult(false, "Tool call aborted before dispatch")
+                else
+                    returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
+                    checked_tool_result(invocation.listener.spec, returned)
+                end
             end
         end
     end
@@ -729,7 +772,7 @@ close_executor!(executor::ToolExecutor) = executor.owns_scope ? close(executor.s
 """Execute a protocol-independent tool action through an injected scoped tool registry."""
 function execute!(executor::ToolExecutor, action::ToolCall, context::ExecutionContext)
     cancelled(context) && return ExecutionResult(false, "Cancelled")
-    result = invoke_tool!(executor.scope, action.name, action.arguments)
+    result = invoke_tool!(executor.scope, action.name, action.arguments; context)
     emit!(context, HarnessEvent(:tool_result, (name=action.name, result)))
     return result
 end

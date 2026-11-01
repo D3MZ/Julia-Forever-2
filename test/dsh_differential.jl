@@ -13,6 +13,7 @@ CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "sessi
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
+CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -693,6 +694,56 @@ function tool_outputs_result(input)
         "schema" => JuliaForever2.tool_schema_definition(schema)))
 end
 
+"""Compare Julia-owned approval routing against the original pinned upstream approval service outcomes."""
+function tool_approval_result(input)
+    root = JuliaForever2.ExtensionScope()
+    scope = JuliaForever2.ExtensionScope(root)
+    executed = Ref(0)
+    approvals = Ref(0)
+    observed = Ref{Any}(nothing)
+    registered = JuliaForever2.register_tool!(root,
+        JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
+            executed[] += 1
+            return "done"
+        end))
+    registered.ok || error(registered.reason)
+    guarded = JuliaForever2.register_tool_guard!(root,
+        call -> JuliaForever2.ToolApprovalRequest(get(input, "reason", nothing)))
+    guarded.ok || error(guarded.reason)
+    registration = if get(input, "channel", "present") == "missing"
+        nothing
+    else
+        JuliaForever2.on!((call, request) -> begin
+            approvals[] += 1
+            outcome = Symbol(approvals[] == 1 ? input["outcome"] :
+                get(input, "next_outcome", input["outcome"]))
+            observed[] = outcome
+            get(input, "async", false) ? (@async begin
+                yield()
+                outcome
+            end) : outcome
+        end, scope, :tool_approval)
+    end
+    function observe()
+        observed[] = nothing
+        result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}())
+        isnothing(result.value) || result.ok || error("Denied approval exposed a tool value")
+        return Dict("allowed" => result.ok, "reason" => result.ok ? nothing : result.text,
+            "approvalCancelled" => observed[] === :cancelled)
+    end
+    first = observe()
+    repeated = get(input, "withdraw", false) || haskey(input, "next_outcome")
+    if get(input, "withdraw", false)
+        isnothing(registration) || JuliaForever2.release!(registration)
+    end
+    outcomes = repeated ? [first, observe()] : first
+    expected_calls = repeated ? count(item -> item["allowed"], outcomes) : Int(first["allowed"])
+    executed[] == expected_calls || error("Approval was bypassed or incorrectly cached")
+    close(scope)
+    close(root)
+    return normalize(outcomes)
+end
+
 """Compare native tool-batch scheduling with the original pinned DSH scheduler."""
 function tool_batch_result(input)
     scope = JuliaForever2.ExtensionScope()
@@ -839,7 +890,7 @@ end
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
-            ("tool_batch", tool_batch_result),
+            ("tool_batch", tool_batch_result), ("tool_approval", tool_approval_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),

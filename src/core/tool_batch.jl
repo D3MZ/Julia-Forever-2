@@ -32,7 +32,7 @@ end
 function start_tool_batch!(pending::Dict{Int,Task}, completed::Channel{Int},
         scope::ExtensionScope, call::ToolCall, index::Int, context::ExecutionContext)
     worker = spawn_scoped(() -> cancelled(context) ? batch_aborted_result() :
-        invoke_tool!(scope, call.name, call.arguments))
+        invoke_tool!(scope, call.name, call.arguments; context))
     pending[index] = worker
     spawn_scoped() do
         wait(worker; throw=false)
@@ -69,7 +69,7 @@ function invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolC
                 collect_tool_batch!(pending, completed, results)
             end
             cancelled(execution) && continue
-            results[index] = invoke_tool!(scope, call.name, call.arguments)
+            results[index] = invoke_tool!(scope, call.name, call.arguments; context=execution)
             index += 1
         elseif length(pending) >= max_parallel
             collect_tool_batch!(pending, completed, results)

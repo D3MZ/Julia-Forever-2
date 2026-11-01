@@ -7,6 +7,13 @@ import { importSource, referenceSource, referenceRoot, cordisReference, scopedRe
 const { filterSessionEventDocuments } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
 const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
+const { ApprovalReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async serviceAsk(')
+  const end = source.indexOf('  /**\n   * Run `tools/post-execute`', start)
+  if (start < 0 || end < 0) throw new Error('Locked DSH approval method boundaries were not found')
+  return 'export class ApprovalReference { constructor(ctx) { this.ctx = ctx }\n'
+    + source.slice(start, end) + '\n}'
+})
 
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
@@ -30,6 +37,28 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
   return include.slice(patchStart, patchEnd) + '\n' + source.slice(start)
 })
 const settle = () => new Promise(resolve => setImmediate(resolve))
+
+/** Compare the original pinned upstream approval-resolution behavior in isolation. */
+async function toolApprovalCase(input) {
+  let available = input.channel !== 'missing'
+  let requests = 0
+  const service = { request: async () => {
+    requests++
+    return requests === 1 ? input.outcome : (input.next_outcome ?? input.outcome)
+  } }
+  const reference = new ApprovalReference({ get: key => key === 'approval' && available ? service : undefined })
+  const exec = { name: 'fixture', agent: {}, callId: 'fixture-call', signal: new AbortController().signal }
+  const ask = { kind: 'ask', ...Object.hasOwn(input, 'reason') ? { reason: input.reason } : {} }
+  const project = resolution => ({
+    allowed: resolution.decision.kind === 'allow',
+    reason: resolution.decision.kind === 'allow' ? null : resolution.decision.reason,
+    approvalCancelled: resolution.approvalCancelled,
+  })
+  const first = project(await reference.serviceAsk(exec, ask))
+  if (!input.withdraw && !input.next_outcome) return first
+  if (input.withdraw) available = false
+  return [first, project(await reference.serviceAsk(exec, ask))]
+}
 
 async function toolBatchCase(input) {
   const definitions = new Map(input.calls.filter(call => call.registered !== false).map(call => [call.id, call]))
@@ -624,6 +653,7 @@ function sessionQueryCase(input) {
 }
 
 async function execute(input) {
+  if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
   if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
   if (input.kind === 'tool_outputs') return input.cases.map(toolOutputsCase)
   if (input.kind === 'patches') return input.cases.map(patchCase)
