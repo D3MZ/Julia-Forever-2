@@ -115,6 +115,11 @@ tool_argument_violations(schema, arguments) = String[]
 tool_argument_violations(schema::CheckedJSONSchema, arguments) =
     checked_json_violations(schema.definition, arguments, "arguments")
 
+"""Plugins may specialize validation of successful values with their own output schema types."""
+tool_output_violations(schema, value) = String[]
+tool_output_violations(schema::CheckedJSONSchema, value) =
+    checked_json_violations(schema.definition, value, "result")
+
 quoted_json_path(path) = "\"$path\""
 json_value_violation(path) = [string(quoted_json_path(path), " must be a lossless JSON value")]
 

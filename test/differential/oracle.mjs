@@ -36,6 +36,12 @@ function toolArgumentsCase(input) {
   return { violations, accepted: violations.length === 0, schema: input.schema }
 }
 
+function toolOutputsCase(input) {
+  assertSupportedJsonSchema(input.schema)
+  const violations = validateJsonSchemaValue(input.schema, input.value, 'result').sort()
+  return { violations, accepted: violations.length === 0, schema: input.schema }
+}
+
 function patchCase(input) {
   const warnings = []
   const entries = applyEntryPatches(input.entries, input.patches ?? undefined, (...warning) => warnings.push(warning))
@@ -568,6 +574,7 @@ function sessionQueryCase(input) {
 
 async function execute(input) {
   if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
+  if (input.kind === 'tool_outputs') return input.cases.map(toolOutputsCase)
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
