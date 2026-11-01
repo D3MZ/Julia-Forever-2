@@ -80,6 +80,7 @@ function history_snapshot(conversation::Conversation, known_revision=nothing)
 end
 
 function record_usage!(conversation::Conversation, report::UsageReport)
+    report = UsageReport(usage_tokens(report.input_tokens), usage_tokens(report.output_tokens), usage_cost(report.cost))
     lock(conversation.lock) do
         usage = conversation.usage
         if !isnothing(report.input_tokens) && !isnothing(report.output_tokens)
