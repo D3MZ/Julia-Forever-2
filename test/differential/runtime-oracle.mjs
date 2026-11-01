@@ -294,10 +294,27 @@ async function web() {
       throw new Error('DSH Web did not serve its built static asset');
     }
     const cached = await httpObservation(origin + '/favicon.svg', { headers: { 'if-none-match': asset.observation.etag } });
+    // Live, pinned Web authority decisions, separate from the frontend's route layout.
+    const trustCases = [
+      ['plain', {}],
+      ['same-origin', { origin }],
+      ['same-site', { origin, 'sec-fetch-site': 'same-site' }],
+      ['foreign-origin', { origin: 'https://untrusted.invalid' }],
+      ['opaque-origin', { origin: 'null' }],
+      ['wrong-port-origin', { origin: 'http://127.0.0.1:1' }],
+      ['cross-site', { origin, 'sec-fetch-site': 'cross-site' }],
+      ['foreign-host', { host: 'untrusted.invalid' }],
+      ['lookalike-host', { host: '127.0.0.1.untrusted.invalid' }],
+    ];
+    const trust = [];
+    for (const [name, headers] of trustCases) {
+      const { observation } = await httpObservation(origin + '/api/', { headers: { cookie, ...headers } });
+      trust.push({ name, status: observation.status });
+    }
     child.kill('SIGTERM');
     const stopped = await settleChild(child, exit);
     return { release, referenceCommit, responses, authentication,
-      index: index.observation, asset: asset.observation, cached: cached.observation,
+      index: index.observation, asset: asset.observation, cached: cached.observation, trust,
       exit: stopped.code, signal: stopped.signal };
   } finally {
     clearTimeout(timer);
