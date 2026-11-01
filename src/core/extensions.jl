@@ -727,6 +727,11 @@ struct ToolResultText
 end
 ToolResultText(text::AbstractString) = ToolResultText(String(text))
 
+"""Replace a successful canonical value through the owning tool's validation and renderer."""
+struct ToolResultValue{T}
+    value::T
+end
+
 """Select a post-execution policy through scoped events or independent multiple dispatch."""
 tool_completion_decision(scope::ExtensionScope, call, result::ExecutionResult) =
     dispatch_event!(scope, :tool_completion, call, result; mode=:serial)
@@ -738,6 +743,19 @@ apply_tool_completion(decision::ToolResultText, result::ExecutionResult) =
     ExecutionResult(result.ok, decision.text, result.ok ? result.value : nothing)
 apply_tool_completion(decision, result::ExecutionResult) =
     ExecutionResult(false, "Unsupported tool completion decision")
+
+"""Keep the existing two-argument policy extension point for non-value decisions."""
+apply_tool_completion(decision, result::ExecutionResult, spec::ToolSpec, arguments) =
+    apply_tool_completion(decision, result)
+
+"""Reject attempts to revive a failure; validate and rerender substituted values."""
+function apply_tool_completion(decision::ToolResultValue, result::ExecutionResult,
+        spec::ToolSpec, arguments)
+    result.ok || return ExecutionResult(false, "Cannot replace a failed tool result")
+    value = decision.value
+    candidate = ExecutionResult(true, value isa AbstractString ? value : repr(value), value)
+    return checked_tool_result(spec, arguments, candidate)
+end
 
 """Render model-visible tool text independently of the validated canonical value."""
 tool_output_text(renderer, arguments, value) = Base.invokelatest(renderer, arguments, value)
@@ -777,9 +795,10 @@ function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, a
 end
 
 """Complete an admitted tool result using an independently replaceable Julia policy."""
-function complete_tool_result(scope::ExtensionScope, call, raw::ExecutionResult, context)
+function complete_tool_result(scope::ExtensionScope, call, raw::ExecutionResult,
+        context, spec::ToolSpec, arguments)
     decision = Base.invokelatest(tool_completion_decision, scope, call, raw)
-    settled = Base.invokelatest(apply_tool_completion, decision, raw)
+    settled = Base.invokelatest(apply_tool_completion, decision, raw, spec, arguments)
     return cancelled(context) && settled.ok ?
         ExecutionResult(false, "Tool call aborted") : settled
 end
@@ -795,7 +814,7 @@ function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context
             ExecutionResult(false, "Tool call aborted before dispatch")
         else
             raw = admitted_tool_result(invocation, guards, scope, call, arguments, context)
-            complete_tool_result(scope, call, raw, context)
+            complete_tool_result(scope, call, raw, context, invocation.listener.spec, call.arguments)
         end
     end
     wait(worker; throw=false)

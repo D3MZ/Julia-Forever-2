@@ -727,35 +727,56 @@ function tool_output_projection_result(input)
         "value" => result.ok ? result.value : nothing))
 end
 
-"""Compare post-tool acceptance, blocking, and presentation with the pinned DSH policy stage."""
+"""Produce an independently authored model-facing representation for completion fixtures."""
+function completion_display(input, value)
+    format = get(input, "format", "scalar")
+    format == "label" && return string(get(input, "prefix", ""), value["label"])
+    format == "joined" && return join(value["lines"], "|")
+    return string(value)
+end
+
+"""Compare post-execute decisions and replacement validation with the pinned DSH stage."""
 function tool_completion_result(input)
     root = JuliaForever2.ExtensionScope()
     scope = JuliaForever2.ExtensionScope(root)
     invoked = Ref(0)
+    rendered = Ref(0)
+    initial = get(input, "initial", "success")
+    policy = get(input, "policy", "none")
+    initial_value = get(input, "initial_value", "done")
+    schema = policy == "value" ? JuliaForever2.CheckedJSONSchema(input["schema"]) : nothing
+    renderer = policy == "value" ? ((arguments, value) -> begin
+        rendered[] += 1
+        completion_display(input, value)
+    end) : nothing
     specification = JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
         invoked[] += 1
-        return get(input, "initial", "success") == "failed" ?
-            ExecutionResult(false, "denied") : "done"
-    end)
+        return initial == "failed" ? ExecutionResult(false, "denied") : deepcopy(initial_value)
+    end; output_schema=schema, render_output=renderer)
     installed = JuliaForever2.register_tool!(root, specification)
     installed.ok || error(installed.reason)
-    if get(input, "initial", "success") == "guard"
+    if initial == "guard"
         guarded = JuliaForever2.register_tool_guard!(root, call -> "denied")
         guarded.ok || error(guarded.reason)
     end
-    policy = get(input, "policy", "none")
     if policy != "none"
         JuliaForever2.on!(scope, :tool_completion) do call, result
             policy == "block" && return JuliaForever2.ToolResultBlock(input["message"])
             policy == "replace" && return JuliaForever2.ToolResultText(input["message"])
+            policy == "value" && return JuliaForever2.ToolResultValue(deepcopy(input["value"]))
             return nothing
         end
     end
     result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}())
     close(scope)
     close(root)
-    return normalize(Dict("ok" => result.ok, "text" => result.text,
-        "retained" => result.ok ? result.value : nothing, "called" => invoked[] > 0))
+    observed = Dict("ok" => result.ok, "text" => result.text,
+        "retained" => result.ok ? result.value : nothing, "called" => invoked[] > 0)
+    if policy == "value"
+        observed["text"] = result.ok ? result.text : "completion rejected"
+        observed["replacementRenders"] = rendered[] - Int(initial == "success")
+    end
+    return normalize(observed)
 end
 
 """Compare Julia-owned approval routing against the original pinned upstream approval service outcomes."""
