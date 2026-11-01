@@ -1,0 +1,62 @@
+[
+  {
+    "name": "reject overlapping turns without discarding the first",
+    "operations": [
+      "submit",
+      "submit",
+      "settle",
+      "submit",
+      "settle"
+    ]
+  },
+  {
+    "name": "cancel active turn then reopen session",
+    "operations": [
+      "submit",
+      "cancel",
+      "settle",
+      "submit",
+      "settle"
+    ]
+  },
+  {
+    "name": "idle cancellation has no effect on next turn",
+    "operations": [
+      "cancel",
+      "submit",
+      "settle"
+    ]
+  },
+  {
+    "name": "repeated cancellation does not replay an interrupt",
+    "operations": [
+      "submit",
+      "cancel",
+      "cancel",
+      "settle",
+      "submit",
+      "settle"
+    ]
+  },
+  {
+    "name": "rejected overlapping turn does not steal cancellation",
+    "operations": [
+      "submit",
+      "submit",
+      "cancel",
+      "settle",
+      "submit",
+      "settle"
+    ]
+  },
+  {
+    "name": "cancel after prior turn settled",
+    "operations": [
+      "submit",
+      "settle",
+      "cancel",
+      "submit",
+      "settle"
+    ]
+  }
+]

@@ -78,6 +78,29 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
   const patchEnd = include.indexOf('/** Runtime patch applied to entries', patchStart)
   return include.slice(patchStart, patchEnd) + '\n' + source.slice(start)
 })
+const { AcpSessionControlReference } = await importSource('packages/acp/acp/src/session.ts', source => {
+  const prompt = source.indexOf('  async prompt(')
+  const guardStart = source.indexOf('    if (this.inflight !== undefined) throw invalidParams(', prompt)
+  const guardEnd = source.indexOf('\n    const completion', guardStart)
+  const cancelStart = source.indexOf('  cancel(): void {', guardEnd)
+  const cancelEnd = source.indexOf('\n  }', cancelStart) + 4
+  if ([prompt, guardStart, guardEnd, cancelStart].some(index => index < 0)) {
+    throw new Error('Pinned ACP prompt admission or cancellation method is unavailable')
+  }
+  return `const invalidParams = message => new Error(message)
+export class AcpSessionControlReference {
+  constructor(agent) { this.agent = agent; this.inflight = undefined }
+  admit() {
+${source.slice(guardStart, guardEnd)}
+    this.inflight = { cancelled: false }
+  }
+  cancelPrompt() {
+    if (this.inflight !== undefined) this.inflight.cancelled = true
+  }
+${source.slice(cancelStart, cancelEnd)}
+}`
+})
+
 const settle = () => new Promise(resolve => setImmediate(resolve))
 
 /** Render a deterministic test output projection, independent of the policy implementation. */
@@ -814,6 +837,32 @@ function sessionQueryCase(input) {
   })) }
 }
 
+/** Project the pinned ACP admission guard and cancel method without a DSH runtime. */
+function sessionControlCase(input) {
+  const reference = new AcpSessionControlReference({ cancel: () => {} })
+  return input.operations.map(operation => {
+    if (operation === 'submit') {
+      try {
+        reference.admit()
+        return { accepted: true }
+      } catch {
+        return { accepted: false }
+      }
+    }
+    if (operation === 'cancel') {
+      const alreadyCancelled = reference.inflight?.cancelled === true
+      reference.cancel()
+      return { cancelled: !alreadyCancelled && reference.inflight?.cancelled === true }
+    }
+    if (operation === 'settle') {
+      const cancelled = reference.inflight?.cancelled === true
+      reference.inflight = undefined
+      return { cancelled }
+    }
+    throw new Error(`Unsupported session-control fixture operation: ${operation}`)
+  })
+}
+
 async function execute(input) {
   if (input.kind === 'tool_completion') return Promise.all(input.cases.map(toolCompletionCase))
   if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
@@ -824,6 +873,7 @@ async function execute(input) {
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
   if (input.kind === 'session_query') return input.cases.map(sessionQueryCase)
+  if (input.kind === 'session_control') return input.cases.map(sessionControlCase)
   if (input.kind === 'transport') return Promise.all(input.cases.map(transportCase))
   if (input.kind === 'outgoing') return Promise.all(input.cases.map(outgoingCase))
   if (input.kind === 'recovery') return Promise.all(input.cases.map(recoveryCase))

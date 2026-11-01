@@ -162,19 +162,53 @@ end
 
 stored(f, api::SessionAPI, params) = isnothing(api.store) ? RpcError(-32601, "No persistent session store is configured") : apply(f, api_session(api, params))
 api_session_children(api::SessionAPI, params::AbstractDict) = stored(session -> session_descendants(api.store, session), api, params)
+"""Admit at most one active Julia turn per session without replacing its cancellation handle."""
 function api_session_turn!(api::SessionAPI, params::AbstractDict)
     apply(api_session(api, params)) do session
         prompt = api_parameter(params, "prompt")
-        if prompt isa AbstractString && !isempty(prompt)
-            handle = submit_turn!(session, prompt)
-            lock(api.lock) do
-                api.handles[String(params["session"])] = handle
-            end
-            Dict("accepted" => true)
-        else
+        name = String(params["session"])
+        if !(prompt isa AbstractString && !isempty(prompt))
             RpcError(-32602, "Prompt is required")
+        else
+            lock(api.lock) do
+                previous = get(api.handles, name, nothing)
+                if api.closed || get(api.sessions, name, nothing) !== session
+                    RpcError(-32000, "Session is not available: $name")
+                elseif !isnothing(previous) && !istaskdone(previous)
+                    RpcError(-32000, "Session already has an active turn: $name")
+                else
+                    api.handles[name] = submit_turn!(session, prompt)
+                    Dict("accepted" => true)
+                end
+            end
         end
     end
+end
+
+"""Cancel only the in-flight operation; preserve the Julia session and future turns."""
+function api_session_cancel!(api::SessionAPI, params::AbstractDict)
+    name = api_parameter(params, "session")
+    if !(name isa AbstractString && !isempty(name))
+        RpcError(-32602, "Expected a session identifier")
+    else
+        lock(api.lock) do
+            if api.closed
+                RpcError(-32000, "Session API is closed")
+            elseif !haskey(api.sessions, String(name))
+                Dict("cancelled" => false)
+            else
+                cancel_api_turn!(get(api.handles, String(name), nothing))
+            end
+        end
+    end
+end
+
+cancel_api_turn!(::Nothing) = Dict("cancelled" => false)
+
+function cancel_api_turn!(handle::TaskHandle)
+    active = !istaskdone(handle) && !cancelled(handle.context)
+    active && cancel!(handle)
+    return Dict("cancelled" => active)
 end
 function api_session_wait(api::SessionAPI, params::AbstractDict)
     apply(api_session(api, params)) do session
@@ -208,6 +242,7 @@ const SESSION_OPERATIONS = Dict(
     "session/save" => api_session_save,
     "session/children" => api_session_children,
     "session/turn" => api_session_turn!,
+    "session/cancel" => api_session_cancel!,
     "session/wait" => api_session_wait,
     "session/close" => api_close_session!,
 )
