@@ -145,7 +145,7 @@ end
     first_kernel, second_kernel = Kernel(), Kernel()
     @test first_kernel.entries !== second_kernel.entries
     @test Kernel(closed=true).closed
-    first_plugins, second_plugins = PluginRegistry(), PluginRegistry()
+    first_plugins, second_plugins = JuliaForever2.PluginRegistry(), JuliaForever2.PluginRegistry()
     @test first_plugins.plugins !== second_plugins.plugins
     first_providers, second_providers = JuliaForever2.ProviderRegistry(), JuliaForever2.ProviderRegistry()
     @test first_providers.descriptors !== second_providers.descriptors
