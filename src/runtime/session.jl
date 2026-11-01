@@ -123,6 +123,15 @@ Base.isopen(session::Session) = lock(() -> !session.runtime.closed, session.conv
 """Read stable session identity and ancestry without retaining its parent runtime."""
 session_lineage(session::Session) = (id=session.runtime.id, parent_id=session.runtime.parent_id, root_id=session.runtime.root_id)
 
+"""Fork a Julia message prefix into a separately owned session with a fresh root identity."""
+function fork_session(source::Session, messages::AbstractVector{<:Message})
+    inherited = deepcopy(Message[message for message in messages])
+    kernel = fork_kernel(source.kernel)
+    return Session(kernel; executor=fork_executor(source.runtime.executor),
+        messages=inherited, definition=source.definition, owns_kernel=true,
+        working_directory=working_directory(source))
+end
+
 """Read the session's workspace independently of the process-wide working directory."""
 working_directory(session::Session)::String = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
 

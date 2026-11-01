@@ -222,6 +222,59 @@ function status(handle::TaskHandle)
     result = fetch(handle)
     Dict("status" => "completed", "ok" => result.ok, "text" => result.text)
 end
+"""Fork a stable message prefix into an independently owned Julia session."""
+function api_session_fork!(api::SessionAPI, params::AbstractDict)
+    source = api_parameter(params, "session")
+    destination = get(params, "newSession", string(uuid4()))
+    boundary = api_parameter(params, "atIndex")
+    if !(source isa AbstractString && !isempty(source))
+        RpcError(-32602, "Expected a session identifier")
+    elseif !(destination isa AbstractString && !isempty(destination))
+        RpcError(-32602, "Invalid fork session identifier")
+    elseif !validindex(boundary)
+        RpcError(-32602, "Fork index must be a positive integer")
+    elseif !isnothing(api.store) && isnothing(session_file(api.store, destination))
+        RpcError(-32602, "Invalid persisted session identifier")
+    else
+        lock(api.lock) do
+            api_fork_locked!(api, String(source), String(destination), boundary)
+        end
+    end
+end
+
+function api_fork_locked!(api::SessionAPI, source::String, destination::String, boundary)
+    if api.closed
+        RpcError(-32000, "Session API is closed")
+    elseif !haskey(api.sessions, source)
+        RpcError(-32004, "Unknown session: $source")
+    elseif haskey(api.sessions, destination)
+        RpcError(-32000, "Session is already open: $destination")
+    else
+        original = api.sessions[source]
+        handle = get(api.handles, source, nothing)
+        if !isopen(original)
+            RpcError(-32000, "Session is not available: $source")
+        elseif !isnothing(handle) && !istaskdone(handle)
+            RpcError(-32000, "Cannot fork while a turn is active: $source")
+        else
+            api_fork_snapshot!(api, original, destination, boundary)
+        end
+    end
+end
+
+function api_fork_snapshot!(api::SessionAPI, source::Session, destination::String, boundary)
+    messages = history_snapshot(source).messages
+    last = something(boundary, length(messages))
+    if last < 1 || last > length(messages)
+        RpcError(-32602, "Fork index is outside the session history")
+    else
+        inherited = messages[1:Int(last)]
+        child = Base.invokelatest(fork_session, source, inherited)
+        api.sessions[destination] = child
+        api_session_summary(destination, child)
+    end
+end
+
 """Dispatch a Julia-native session API command, independently of protocol transports."""
 struct SessionCommand{F,P}
     method::String
@@ -241,6 +294,7 @@ const SESSION_OPERATIONS = Dict(
     "session/workspace/set" => (api, params) -> api_session_workspace(api, params; change=true),
     "session/save" => api_session_save,
     "session/children" => api_session_children,
+    "session/fork" => api_session_fork!,
     "session/turn" => api_session_turn!,
     "session/cancel" => api_session_cancel!,
     "session/wait" => api_session_wait,
