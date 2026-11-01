@@ -1,3 +1,5 @@
+import JSON
+
 """Filesystem-backed, named compositions of independently registered Julia plugins."""
 struct ProfileStore
     directory::String
@@ -44,7 +46,7 @@ function load_profile(store::ProfileStore, name::Union{Symbol,AbstractString})
     data["format"] == "JuliaForever2.profile" || error("Invalid profile format: $identity")
     data["version"] == 1 || error("Unsupported profile version: $identity")
     data["name"] == String(identity) || error("Profile identity mismatch: $identity")
-    return Profile(identity, data["plugins"]; config=data["config"], bindings=data["bindings"])
+    return Profile(identity, Symbol.(data["plugins"]); config=data["config"], bindings=data["bindings"])
 end
 
 """List valid saved profile names without opening or activating their plugins."""
