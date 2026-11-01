@@ -2,12 +2,11 @@ using JSON
 
 openai_request(url, method, body, headers, context::ExecutionContext=ExecutionContext(), sink=nothing) = http_request(url, method, body, headers, context; timeout=180.0, sink)
 
-mutable struct ModelCatalog
-    lock::ReentrantLock
-    models::Vector{String}
-    expires_at::Float64
+Base.@kwdef mutable struct ModelCatalog
+    lock::ReentrantLock = ReentrantLock()
+    models::Vector{String} = String[]
+    expires_at::Float64 = 0.0
 end
-ModelCatalog() = ModelCatalog(ReentrantLock(), String[], 0.0)
 
 struct OpenAIProvider{F,G,P}
     dir::String

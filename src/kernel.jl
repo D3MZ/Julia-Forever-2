@@ -16,13 +16,11 @@ mutable struct ComponentEntry{S}
     cleaned::Bool
 end
 
-mutable struct Kernel
-    lock::ReentrantLock
-    entries::Dict{Symbol,ComponentEntry}
-    closed::Bool
+Base.@kwdef mutable struct Kernel
+    lock::ReentrantLock = ReentrantLock()
+    entries::Dict{Symbol,ComponentEntry} = Dict{Symbol,ComponentEntry}()
+    closed::Bool = false
 end
-
-Kernel() = Kernel(ReentrantLock(), Dict{Symbol,ComponentEntry}(), false)
 
 mutable struct ComponentLease{T,E}
     kernel::Kernel

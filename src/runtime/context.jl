@@ -1,11 +1,11 @@
-mutable struct ResourceRegistration{T,F}
+Base.@kwdef mutable struct ResourceRegistration{T,F}
     value::T
     cleanup::F
-    lock::ReentrantLock
-    active::Bool
+    lock::ReentrantLock = ReentrantLock()
+    active::Bool = true
 end
 
-ResourceRegistration(value, cleanup) = ResourceRegistration(value, cleanup, ReentrantLock(), true)
+ResourceRegistration(value, cleanup) = ResourceRegistration(; value, cleanup)
 
 function release!(registration::ResourceRegistration)
     active = lock(registration.lock) do

@@ -7,11 +7,10 @@ struct ProviderDescriptor{F,A,S}
 end
 ProviderDescriptor(id::Symbol, label::AbstractString, create; auth=nothing, status=Returns("")) = ProviderDescriptor(id, String(label), create, auth, status)
 
-struct ProviderRegistry
-    lock::ReentrantLock
-    descriptors::Vector{ProviderDescriptor}
+Base.@kwdef struct ProviderRegistry
+    lock::ReentrantLock = ReentrantLock()
+    descriptors::Vector{ProviderDescriptor} = ProviderDescriptor[]
 end
-ProviderRegistry() = ProviderRegistry(ReentrantLock(), ProviderDescriptor[])
 const DEFAULT_PROVIDER_REGISTRY = ProviderRegistry()
 const PROVIDER_REGISTRY_LOCK = DEFAULT_PROVIDER_REGISTRY.lock
 const PROVIDER_REGISTRY = DEFAULT_PROVIDER_REGISTRY.descriptors

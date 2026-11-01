@@ -9,12 +9,10 @@ end
 PluginSpec(name, setup; provides=Symbol[], requires=Symbol[]) = PluginSpec(Symbol(name), setup, collect(Symbol, provides), unique(collect(Symbol, requires)))
 PluginSpec(setup::Function, name::Union{Symbol,AbstractString}; kwargs...) = PluginSpec(name, setup; kwargs...)
 
-mutable struct PluginRegistry
-    lock::ReentrantLock
-    plugins::Dict{Symbol,PluginSpec}
+Base.@kwdef mutable struct PluginRegistry
+    lock::ReentrantLock = ReentrantLock()
+    plugins::Dict{Symbol,PluginSpec} = Dict{Symbol,PluginSpec}()
 end
-
-PluginRegistry() = PluginRegistry(ReentrantLock(), Dict{Symbol,PluginSpec}())
 
 """Register an independently authored plugin without activating its effects."""
 function register_plugin!(registry::PluginRegistry, spec::PluginSpec; replace=false)

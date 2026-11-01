@@ -40,7 +40,8 @@ end
 nonempty(value) = false
 nonempty(value::AbstractString) = !isempty(value)
 lifetime(value) = false
-lifetime(value::Real) = !(value isa Bool) && isfinite(value) && value > 0
+lifetime(value::Real) = isfinite(value) && value > 0
+lifetime(::Bool) = false
 function authorization_url(::Val{:chatgpt}, attempt::OAuthAttempt)
     challenge = base64url(sha256(attempt.verifier))
     client = isempty(attempt.client_id) ? "dynamic_agent_client" : attempt.client_id

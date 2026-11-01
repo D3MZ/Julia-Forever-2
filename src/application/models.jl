@@ -7,12 +7,12 @@ struct ModelSpec{M}
 end
 ModelSpec(provider::Symbol, id::AbstractString; api="", kind=:chat, metadata=nothing) = ModelSpec(provider, String(id), String(api), Symbol(kind), metadata)
 
-struct ProviderFactory{C,M,S}
+Base.@kwdef struct ProviderFactory{C,M,S}
     create::C
-    models::M
-    select::S
+    models::M = Returns(ModelSpec[])
+    select::S = Returns(nothing)
 end
-ProviderFactory(create; models=Returns(ModelSpec[]), select=Returns(nothing)) = ProviderFactory(create, models, select)
+ProviderFactory(create; kwargs...) = ProviderFactory(; create, kwargs...)
 (factory::ProviderFactory)(directory) = Base.invokelatest(factory.create, directory)
 instantiate_provider(factory::ProviderFactory, directory, model::AbstractString) = Base.invokelatest(factory.select, directory, model)
 
@@ -93,11 +93,10 @@ select_model(provider::OpenAIProvider, model::AbstractString) = OpenAIProvider(p
 ProviderFactory(descriptor::ProviderDescriptor) = ProviderFactory(descriptor.create; select=(directory, model) -> select_model(Base.invokelatest(descriptor.create, directory), model))
 ProviderDescriptor(descriptor::ProviderDescriptor, factory::ProviderFactory) = ProviderDescriptor(descriptor.id, descriptor.label, factory; auth=descriptor.auth, status=descriptor.status)
 with_model_selection(descriptor::ProviderDescriptor) = ProviderDescriptor(descriptor, ProviderFactory(descriptor))
-struct MemoryModelStore
-    lock::ReentrantLock
-    entries::Dict{Symbol,Any}
+Base.@kwdef struct MemoryModelStore
+    lock::ReentrantLock = ReentrantLock()
+    entries::Dict{Symbol,Any} = Dict{Symbol,Any}()
 end
-MemoryModelStore() = MemoryModelStore(ReentrantLock(), Dict{Symbol,Any}())
 
 """Read an isolated catalog snapshot; persistent stores may implement the same three operations."""
 function read_model_catalog(store::MemoryModelStore, provider::Symbol)

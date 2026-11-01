@@ -255,11 +255,14 @@ function release!(invocation::EventInvocation)
     release!(invocation, invocation.pending)
 end
 
+pending_task(value) = nothing
+pending_task(value::Task) = value
+
 function pending(task::Union{Nothing,Task})
     current = task
     while !isnothing(current) && istaskdone(current)
         value = istaskfailed(current) ? nothing : fetch(current)
-        current = value isa Task ? value : nothing
+        current = pending_task(value)
     end
     current
 end
@@ -268,7 +271,7 @@ function release!(invocation::EventInvocation, task::Task)
     spawn_scoped() do
         wait(task; throw=false)
         value = istaskfailed(task) ? nothing : fetch(task)
-        invocation.pending = value isa Task ? value : nothing
+        invocation.pending = pending_task(value)
         release!(invocation)
     end
     nothing
@@ -324,11 +327,11 @@ event_bailed(value) = value !== nothing && value !== false
 
 invoke_listener(invocation::EventInvocation, arguments; awaited=false) = claim_listener!(invocation.listener) ? invoke(invocation, arguments, awaited) : nothing
 
+track_event_task!(invocation::EventInvocation, value) = value
+track_event_task!(invocation::EventInvocation, value::Task) = (invocation.pending = value; value)
+
 function invoke(invocation::EventInvocation, arguments, awaited::Bool)
-    value = Base.invokelatest(invocation.listener.callback, arguments...)
-    if value isa Task
-        invocation.pending = value
-    end
+    value = track_event_task!(invocation, Base.invokelatest(invocation.listener.callback, arguments...))
     awaited ? event_value(value) : value
 end
 function dispatch_listeners(::Val{:emit}, invocations, arguments)
@@ -369,15 +372,18 @@ function cascade(invocation::EventInvocation, invocations, index, arguments, inn
     if claim_listener!(invocation.listener)
         next = continuation(invocations, index + 1, arguments, inner)
         value = Base.invokelatest(invocation.listener.callback, arguments..., next)
-        if value isa Task
-            lock(invocation.listener.scope.lock) do
-                invocation.pending = value
-            end
-        end
-        value
+        track_waterfall_task!(invocation, value)
     else
         event_waterfall(invocations, index + 1, arguments, inner)
     end
+end
+
+track_waterfall_task!(invocation::EventInvocation, value) = value
+function track_waterfall_task!(invocation::EventInvocation, value::Task)
+    lock(invocation.listener.scope.lock) do
+        invocation.pending = value
+    end
+    value
 end
 
 function continuation(invocations, index, arguments, inner)
@@ -406,8 +412,13 @@ function waterfall_tasks(invocations)
     return tasks
 end
 
+waterfall_pending_tasks(returned) = Task[]
+waterfall_pending_tasks(returned::Task) = Task[returned]
+append_waterfall_task!(tasks::Vector{Task}, value) = tasks
+append_waterfall_task!(tasks::Vector{Task}, value::Task) = (push!(tasks, value); tasks)
+
 function settle_waterfall!(invocations, returned)
-    pending = returned isa Task ? Task[returned] : Task[]
+    pending = waterfall_pending_tasks(returned)
     seen = IdDict{Task,Nothing}()
     refresh!(pending, invocations, seen)
     while !isempty(pending)
@@ -416,7 +427,7 @@ function settle_waterfall!(invocations, returned)
         wait(worker; throw=false)
         if !istaskfailed(worker)
             value = fetch(worker)
-            value isa Task && push!(pending, value)
+            append_waterfall_task!(pending, value)
         end
         refresh!(pending, invocations, seen)
     end
@@ -427,8 +438,11 @@ function refresh!(pending::Vector{Task}, invocations, seen)
     append!(pending, waterfall_tasks(invocations))
     filter!(task -> !haskey(seen, task), pending)
 end
+waterfall_has_pending(invocations, returned) = !isempty(waterfall_tasks(invocations))
+waterfall_has_pending(invocations, returned::Task) = true
+
 function release_waterfall!(invocations, returned)
-    if returned isa Task || !isempty(waterfall_tasks(invocations))
+    if waterfall_has_pending(invocations, returned)
         spawn_scoped() do
             settle_waterfall!(invocations, returned)
             release_event_invocations!(invocations)

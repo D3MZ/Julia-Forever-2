@@ -21,8 +21,12 @@ end
 response_reply(result::StreamedCompletion) = result.reply
 response_usage(result::StreamedCompletion) = result.usage
 
-model_metadata(model::ModelSpec) = model.metadata isa AbstractDict ? model.metadata : Dict{String,Any}()
+model_metadata(model::ModelSpec) = model_metadata_value(model.metadata)
+model_metadata_value(metadata::AbstractDict) = metadata
+model_metadata_value(metadata) = Dict{String,Any}()
 model_option(options, name, fallback=nothing) = get(options, name, fallback)
+model_request_options(options::AbstractDict, model, request) = options
+model_request_options(options, model, request) = Base.invokelatest(options, model, request)
 
 function empty_model_message(model::ModelSpec)
     cost = Dict{String,Any}(name => 0 for name in ("input", "output", "cacheRead", "cacheWrite", "total"))
@@ -252,7 +256,7 @@ end
 
 function exchange!(backend::HTTPModelBackend, state::ModelStreamState, request::ModelRequest)
     model, context = state.model, state.context
-    options = backend.options isa AbstractDict ? backend.options : Base.invokelatest(backend.options, model, request)
+    options = model_request_options(backend.options, model, request)
     headers = Pair{String,String}["Content-Type" => "application/json"]
     append!(headers, model_protocol_headers(backend.protocol))
     append!(headers, Base.invokelatest(backend.credentials, model, context))

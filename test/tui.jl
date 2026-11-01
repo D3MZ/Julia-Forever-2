@@ -52,6 +52,27 @@ function finish_ui_operation!(app; timeout=5)
     end
 end
 
+@testset "Terminal state field defaults and independent buffers" begin
+    registry = JuliaForever2.ProviderRegistry()
+    settings = Terminal.SettingsState("configuration", registry)
+    @test settings.registry === registry
+    @test isempty(settings.providers)
+    @test isempty(settings.labels)
+    @test settings.auth_provider == :none
+    @test Terminal.SettingsState(; directory="configuration", registry, auth_provider=:test).auth_provider == :test
+
+    first_transcript, second_transcript = Terminal.TranscriptState(), Terminal.TranscriptState()
+    @test first_transcript.revision == typemax(UInt)
+    @test first_transcript.messages !== second_transcript.messages
+    @test first_transcript.preview === nothing
+    @test Terminal.TranscriptState(width=80).width == 80
+
+    first_operations, second_operations = Terminal.OperationState(), Terminal.OperationState()
+    @test !first_operations.closing[]
+    @test first_operations.watchers !== second_operations.watchers
+    @test Terminal.OperationState(active=nothing).active === nothing
+end
+
 mktempdir() do terminal_configuration
 withenv("JULIAFOREVER_CONFIG_DIR" => terminal_configuration, "OPENROUTER_API_KEY" => "") do
 

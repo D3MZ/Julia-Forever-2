@@ -1,12 +1,12 @@
-struct AgentDefinition{P,F,C,W}
+Base.@kwdef struct AgentDefinition{P,F,C,W}
     provider::P
-    executor_factory::F
-    protocol::C
-    wrappers::W
+    executor_factory::F = JuliaExecutor
+    protocol::C = provider_protocol(provider)
+    wrappers::W = ()
 end
 
 """Describe agent behavior; each Session constructs its own executor and conversation."""
-AgentDefinition(provider; executor_factory=JuliaExecutor, protocol=provider_protocol(provider), wrappers=()) = AgentDefinition(provider, executor_factory, protocol, Tuple(wrappers))
+AgentDefinition(provider; wrappers=(), kwargs...) = AgentDefinition(; provider, wrappers=Tuple(wrappers), kwargs...)
 
 function Kernel(definition::AgentDefinition)
     kernel = Kernel()
