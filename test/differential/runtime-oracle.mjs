@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 import { createRequire } from 'node:module';
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -230,6 +231,21 @@ async function configuration() {
   return { release, referenceCommit, profiles: results };
 }
 
+// Node fetch replaces a supplied Host header. Raw HTTP preserves the authority
+// deliberately sent by a browser after DNS rebinding, while connecting to loopback.
+function webTrustStatus(url, headers) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url, { method: 'GET', headers, timeout: 10000 }, response => {
+      response.resume();
+      response.once('end', () => resolve(response.statusCode));
+      response.once('error', reject);
+    });
+    request.once('timeout', () => request.destroy(new Error('Web trust probe timed out')));
+    request.once('error', reject);
+    request.end();
+  });
+}
+
 async function httpObservation(url, options = {}, replacements = []) {
   const response = await fetch(url, { ...options, redirect: 'manual', signal: AbortSignal.timeout(10000) });
   let body = Buffer.from(await response.arrayBuffer());
@@ -281,11 +297,8 @@ async function web() {
     for (const entry of trustCases) {
       const headers = Object.fromEntries(Object.entries(entry.headers).map(([name, value]) =>
         [name, value.replaceAll('<port>', new URL(origin).port)]));
-      const probe = await fetch(origin + '/api/', {
-        headers, redirect: 'manual', signal: AbortSignal.timeout(10000),
-      });
-      trust.push({ name: entry.name, admitted: probe.status !== 403 });
-      await probe.arrayBuffer();
+      const status = await webTrustStatus(origin + '/api/', headers);
+      trust.push({ name: entry.name, admitted: status !== 403 });
     }
     const exchange = await fetch(authenticatedUrl, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
     const cookie = exchange.headers.get('set-cookie')?.split(';')[0];
