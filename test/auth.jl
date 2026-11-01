@@ -50,6 +50,28 @@ end
     end
 end
 
+@testset "Credential storage stays within its configured directory" begin
+    mktempdir() do root
+        directory = joinpath(root, "credentials")
+        mkpath(directory)
+        outside = joinpath(root, "outside.json")
+        write(outside, JSON.json(Dict("access_token" => "outside")))
+        @test isnothing(load_credentials(directory, Symbol("../outside")))
+        @test_throws ArgumentError save_credentials!(directory, Symbol("../outside"),
+            Dict("access_token" => "overwritten"))
+        @test JSON.parsefile(outside)["access_token"] == "outside"
+        @test isnothing(load_credentials(directory, Symbol("nested\\escape")))
+        @test_throws ArgumentError save_credentials!(directory, Symbol("nested\\escape"),
+            Dict("access_token" => "nested"))
+        if !Sys.iswindows()
+            symlink(outside, joinpath(directory, "linked.json"))
+            @test isnothing(load_credentials(directory, :linked))
+        end
+        save_credentials!(directory, :ordinary, Dict("access_token" => "inside"))
+        @test load_credentials(directory, :ordinary)["access_token"] == "inside"
+    end
+end
+
 @testset "OpenAI stream completion" begin
     events = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\ndata: {\"type\":\"response.completed\"}\n\n"
     @test chatgpt_reply(events) == (ok=true, text="hello")
