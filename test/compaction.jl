@@ -46,9 +46,9 @@ end
     @test selected.reserve_tokens == 5000
     @test selected.keep_recent_tokens == 800
     @test resolved_compaction(custom, ModelSpec(:fixture, "else")).reserve_tokens == 1000
-    @test_throws ArgumentError CompactionSettings(; reserve_tokens=-1)
-    @test_throws ArgumentError CompactionSettings(; keep_recent_tokens=true)
-    @test_throws ArgumentError resolved_compaction(
+    @test_throws ErrorException CompactionSettings(; reserve_tokens=-1)
+    @test_throws ErrorException CompactionSettings(; keep_recent_tokens=true)
+    @test_throws ErrorException resolved_compaction(
         CompactionSettings(; model_overrides=Dict("fixture/code/large" =>
             Dict("reserveTokens" => "invalid"))), model)
 end
