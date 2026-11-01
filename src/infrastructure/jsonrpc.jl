@@ -177,10 +177,13 @@ dispatch_frame!(peer::JsonRpcPeer, frame) = nothing
 function feed!(peer::JsonRpcPeer, bytes::AbstractVector{UInt8})
     lines = lock(peer.lock) do
         isnothing(peer.failure) || return Vector{Vector{UInt8}}()
+        # The retained bytes have already been scanned and contain no newline.
+        # Only scan newly appended data to avoid quadratic work on fragmented frames.
+        scan_from = length(peer.buffer) + 1
         append!(peer.buffer, bytes)
         complete = Vector{Vector{UInt8}}()
         start = 1
-        for index in eachindex(peer.buffer)
+        for index in scan_from:length(peer.buffer)
             if peer.buffer[index] == 0x0a
                 push!(complete, peer.buffer[start:index-1])
                 start = index + 1
