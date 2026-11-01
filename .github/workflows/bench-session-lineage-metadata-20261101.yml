@@ -178,7 +178,7 @@ jobs:
           metadata = (baseline_sha=readchomp(Cmd(["git", "-C", baseline_directory, "rev-parse", "HEAD"])),
               candidate_sha=readchomp(Cmd(["git", "rev-parse", "HEAD"])),
               julia_version=string(VERSION), julia_threads=Threads.nthreads(),
-              blas_threads=Base.BLAS.get_num_threads(), cpu=Sys.CPU_NAME,
+              blas_threads=get(ENV, "OPENBLAS_NUM_THREADS", "unset"), cpu=Sys.CPU_NAME,
               logical_cpus=Sys.CPU_THREADS, architecture=string(Sys.ARCH),
               os=string(Sys.KERNEL), json_version=string(Base.pkgversion(JSON)),
               baseline_project_sha256=bytes2hex(sha256(read(joinpath(baseline_directory, "Project.toml")))),
