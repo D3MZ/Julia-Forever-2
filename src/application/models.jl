@@ -52,6 +52,19 @@ function provider_model(registry::ProviderRegistry, provider, id::AbstractString
     index = findfirst(model -> model.id == id, models)
     return isnothing(index) ? nothing : models[index]
 end
+"""Resolve one named provider's model without snapshotting unrelated provider descriptors."""
+function provider_model(registry::ProviderRegistry, provider::Union{Symbol,AbstractString},
+        id::AbstractString; kind=:chat)
+    descriptor = provider_descriptor(registry, Symbol(provider))
+    isnothing(descriptor) && return nothing
+    for model in catalog_models(descriptor.create)
+        if model.id == id && (kind == :all || model.kind == kind)
+            return model
+        end
+    end
+    return nothing
+end
+
 provider_model(provider, id::AbstractString; kwargs...) =
     provider_model(DEFAULT_PROVIDER_REGISTRY, provider, id; kwargs...)
 
