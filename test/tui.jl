@@ -156,6 +156,25 @@ end
     Tachikoma.disable_raw_capture!()
 end
 
+@testset "Page-specific keys remain independent of prompt editing" begin
+    mktempdir() do settings_directory
+        app = App(default_kernel(); settings_dir=settings_directory)
+        app.page = :settings
+        update!(app, KeyEvent(:down))
+        @test app.selected == 2
+        update!(app, KeyEvent(:enter))
+        @test app.page == :chat
+        @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.OpenAIProvider
+
+        app.page = :auth
+        update!(app, KeyEvent(:escape))
+        @test app.page == :auth
+        app.page = :components
+        update!(app, KeyEvent(:escape))
+        @test app.page == :chat
+    end
+end
+
 @testset "Cross-terminal prompt editing shortcuts" begin
     app = App(default_kernel())
     Tachikoma.set_text!(app.input, "alpha beta gamma")
