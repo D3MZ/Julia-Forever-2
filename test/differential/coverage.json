@@ -2578,7 +2578,7 @@
           "sdk-minimal"
         ],
         "comparisons": 2,
-        "projection": "Independent native Julia Session workspace against actual pinned DSH SDK observations: initial directory, relative navigation, rejection of nonexistent directories, preserved directory after failure, and relative path resolution. No DSH runtime is used by Julia production code."
+        "projection": "Independent native Julia Session workspace against actual pinned DSH SDK observations: initial directory, relative navigation, rejection of nonexistent directories, preserved directory after failure, relative path resolution, and nested Julia include resolution from the observed workspace. DSH does not execute Julia source; the include projection is a native Julia capability checked against DSH's reported directory."
       },
       {
         "profiles": [
@@ -2638,7 +2638,7 @@
     "unverified": [
       "External model responses, generated tool execution, approval and question interaction flows, other persistence histories and recovery/migration cases, jobs, goals, schedules, MCP and third-party package replacement behavior are not exercised by these runtime scenarios.",
       "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons.",
-      "Native session working-directory comparisons cover directory state and path resolution, not integration into third-party tool filesystem behavior or full native SDK functionality.",
+      "Native session working-directory comparisons cover directory state, path resolution and built-in Julia include resolution, not arbitrary filesystem operations, third-party tool filesystem behavior or full native SDK functionality.",
       "No native DSH SDK/application/Web implementation is supplied by the test-only DSH protocol adapters. Their successful forwarding and server startup are reference-only and do not establish product parity.",
       "Native session snapshots persist message roles, text and kinds plus working directory, not arbitrary message metadata, token accounting, in-flight operations, tool resources, or the complete DSH on-disk session format.",
       "Native SessionAPI supports independent Julia JSON-RPC sessions but has not been shown to implement every DSH SDK operation or wire shape; HTTP.jl extension serves a minimal native page and JSON-RPC endpoint rather than the full DSH Web application."
