@@ -6446,5 +6446,139 @@
         }
       }
     }
+  ],
+  "session_titles": [
+    {
+      "name": "simple title",
+      "input": "  A clear title  ",
+      "max_bytes": 120,
+      "max_words": 8
+    },
+    {
+      "name": "multiline whitespace",
+      "input": "  First\tsecond\nthird\r\nlast  ",
+      "max_bytes": 120,
+      "max_words": 3
+    },
+    {
+      "name": "csi color sequences",
+      "input": "\u001b[31mRed\u001b[0m notebook",
+      "max_bytes": 120,
+      "max_words": 2
+    },
+    {
+      "name": "osc with bell",
+      "input": "\u001b]0;injected title\u0007Visible name",
+      "max_bytes": 120,
+      "max_words": 4
+    },
+    {
+      "name": "osc with st",
+      "input": "\u001b]2;hidden\u001b\\Safe heading",
+      "max_bytes": 120,
+      "max_words": 4
+    },
+    {
+      "name": "unterminated osc",
+      "input": "Read before \u001b]2;hidden tail",
+      "max_bytes": 120,
+      "max_words": 5
+    },
+    {
+      "name": "control characters",
+      "input": "No\u0000\u0001\u001fisy  title",
+      "max_bytes": 120,
+      "max_words": 5
+    },
+    {
+      "name": "directional and invisible",
+      "input": "Hello‮​⁦ world‏!",
+      "max_bytes": 120,
+      "max_words": 5
+    },
+    {
+      "name": "unicode title",
+      "input": "  café 日本語 Δοκιμή  ",
+      "max_bytes": 120,
+      "max_words": 2
+    },
+    {
+      "name": "short unicode budget",
+      "input": "é😀漢字",
+      "max_bytes": 6,
+      "max_words": 3
+    },
+    {
+      "name": "single byte budget on multibyte",
+      "input": "😀 next",
+      "max_bytes": 1,
+      "max_words": 2
+    },
+    {
+      "name": "emoji boundary",
+      "input": "abc😀z",
+      "max_bytes": 7,
+      "max_words": 2
+    },
+    {
+      "name": "fallback word budget",
+      "input": "one two three four five six",
+      "max_bytes": 120,
+      "max_words": 3
+    },
+    {
+      "name": "whitespace only",
+      "input": " \t\n  ",
+      "max_bytes": 120,
+      "max_words": 3
+    },
+    {
+      "name": "controls only",
+      "input": "\u001b[1m​\u0000\u001b[0m",
+      "max_bytes": 120,
+      "max_words": 3
+    },
+    {
+      "name": "unicode space",
+      "input": "One Two Three",
+      "max_bytes": 120,
+      "max_words": 2
+    },
+    {
+      "name": "trailing whitespace after cap",
+      "input": "abcdef   ghij",
+      "max_bytes": 9,
+      "max_words": 3
+    },
+    {
+      "name": "two byte escape",
+      "input": "left\u001bMright",
+      "max_bytes": 120,
+      "max_words": 3
+    },
+    {
+      "name": "long first word",
+      "input": "supercalifragilisticexpialidocious small",
+      "max_bytes": 10,
+      "max_words": 3
+    },
+    {
+      "name": "title with C1 csi",
+      "input": "32mGreen0m end",
+      "max_bytes": 120,
+      "max_words": 4
+    },
+    {
+      "name": "leading control and small cap",
+      "input": "\u001b]8;;https://bad.invalid\u0007safe\u001b]8;;\u0007",
+      "max_bytes": 3,
+      "max_words": 2
+    },
+    {
+      "name": "mixed scripts whitespace",
+      "input": "  абв \t مرحبا \n 日本語 ",
+      "max_bytes": 18,
+      "max_words": 2
+    }
   ]
 }

@@ -2,6 +2,7 @@
   "repository": "https://github.com/deepseek-ai/deepseek-harness",
   "commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
   "sources": {
+    "packages/session/session-title/src/normalize.ts": "97ed4df405f793a9b7155d723b2ccaa77b57884a27965dc6376efb6cde25e080",
     "vendor/include/src/index.ts": "4c7c0e88928d0cd39141dcfabf1bb40c6a4b3389395b90fbf25334a6db1ab5bf",
     "packages/sdk/protocol/src/transport.ts": "ed13ba6e37ef84aadd684e97eb42a5369e56d08172e7d5928764c472ef152fab",
     "vendor/cordis/src/context.ts": "fd5a4f1d2bc6b8b34729c87fda7639a07759ce07fb070ab05374acbcb9ccdc0e",

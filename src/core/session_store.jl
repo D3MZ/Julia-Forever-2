@@ -21,10 +21,11 @@ function session_record(session::Session)
 end
 
 """Atomically persist a session's messages and workspace, excluding transient execution metadata."""
-save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session) = persist!(store, name, session, session_file(store, name))
-persist!(store::SessionStore, name, session::Session, ::Nothing) = (ok=false, reason="Invalid session name")
+save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session; title=nothing) =
+    persist!(store, name, session, session_file(store, name); title)
+persist!(store::SessionStore, name, session::Session, ::Nothing; title=nothing) = (ok=false, reason="Invalid session name")
 
-function persist!(store::SessionStore, name, session::Session, path::AbstractString)
+function persist!(store::SessionStore, name, session::Session, path::AbstractString; title=nothing)
     record = session_record(session)
     lineage = record.lineage
     data = Dict("format" => "JuliaForever2.session", "version" => 2, "name" => String(name),
@@ -32,6 +33,7 @@ function persist!(store::SessionStore, name, session::Session, path::AbstractStr
         "lineage" => Dict("id" => string(lineage.id),
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
+    isnothing(title) || (data["title"] = String(title))
     serialized = JSON.json(data) * "\n"
     lock(store.lock) do
         mkpath(store.directory; mode=0o700)
@@ -71,13 +73,16 @@ function validate(::Type{SessionRecord}, data, name::String)
         error("Session identity mismatch: $name")
     elseif !(data["messages"] isa AbstractVector)
         error("Invalid session messages: $name")
+    elseif !(isnothing(get(data, "title", nothing)) || get(data, "title", nothing) isa AbstractString)
+        error("Invalid session title: $name")
     end
     nothing
 end
 
 function session_record(record::SessionRecord)
     messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"])) for entry in record.data["messages"]]
-    (messages, directory=String(record.data["working_directory"]), lineage=session_lineage(record))
+    (messages, directory=String(record.data["working_directory"]), lineage=session_lineage(record),
+        title=get(record.data, "title", nothing))
 end
 
 function session_lineage(record::SessionRecord)

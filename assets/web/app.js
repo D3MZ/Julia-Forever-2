@@ -3,6 +3,7 @@
   const byId = id => document.getElementById(id);
   const fields = {
     sessionName: byId("session-name"), workspace: byId("workspace"),
+    title: byId("display-title"), rename: byId("rename"),
     sessions: byId("sessions"), history: byId("history"), prompt: byId("prompt"),
     status: byId("status"), open: byId("open"), resume: byId("resume"),
     refresh: byId("refresh"), save: byId("save"), close: byId("close"),
@@ -19,8 +20,8 @@
     const active = Boolean(fields.sessions.value);
     for (const field of [fields.open, fields.resume, fields.refresh, fields.sessions,
       fields.sessionName, fields.workspace]) field.disabled = busy;
-    for (const field of [fields.save, fields.close, fields.prompt, fields.send])
-      field.disabled = busy || !active;
+    for (const field of [fields.save, fields.close, fields.prompt, fields.send,
+      fields.title, fields.rename]) field.disabled = busy || !active;
   }
 
   async function rpc(method, params = {}) {
@@ -61,20 +62,24 @@
       return;
     }
     showMessages(await rpc("session/messages", { session: selected }));
+    const details = await rpc("session/title/get", { session: selected });
+    fields.title.value = details.title || "";
+    fields.sessions.selectedOptions[0].textContent = details.title || selected;
     status("Session: " + selected);
   }
 
   async function refreshSessions(preferred = fields.sessions.value) {
-    const names = await rpc("session/list");
+    const details = await rpc("session/list/details");
+    const names = details.map(entry => entry.session);
     fields.sessions.replaceChildren();
     const empty = document.createElement("option");
     empty.value = "";
     empty.textContent = "Select a session";
     fields.sessions.append(empty);
-    for (const name of names) {
+    for (const entry of details) {
       const option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
+      option.value = entry.session;
+      option.textContent = entry.title || entry.session;
       fields.sessions.append(option);
     }
     fields.sessions.value = names.includes(preferred) ? preferred : "";
@@ -117,6 +122,13 @@
   fields.sessions.addEventListener("change", () => action(async () => {
     fields.sessionName.value = fields.sessions.value;
     await loadMessages();
+  }));
+
+  fields.rename.addEventListener("click", () => action(async () => {
+    const selected = fields.sessions.value;
+    const renamed = await rpc("session/rename", { session: selected, title: fields.title.value });
+    await refreshSessions(selected);
+    status("Title updated: " + renamed.title);
   }));
 
   fields.save.addEventListener("click", () => action(async () => {

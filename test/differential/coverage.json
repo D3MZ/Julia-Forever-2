@@ -18,6 +18,31 @@
   },
   "native_comparisons": [
     {
+      "kind": "session_titles",
+      "case_count": 22,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/session/session-title/src/normalize.ts",
+          "symbols": [
+            "normalizeSessionTitle",
+            "fallbackSessionTitle",
+            "truncateTitleUtf8"
+          ]
+        }
+      ],
+      "compares": [
+        "untrusted control and terminal escape removal",
+        "single-line Unicode and whitespace normalization",
+        "UTF-8 code point boundary truncation",
+        "bounded first-prompt fallback",
+        "empty normalized results"
+      ],
+      "limits": [
+        "The original pinned title text helpers are executed directly. DSH event logs, automatic model-generated titles, session authority, title pinning and Web UI are not established by text normalization alone."
+      ]
+    },
+    {
       "kind": "patches",
       "case_count": 64,
       "status": "required-differential-cases",
@@ -2814,6 +2839,14 @@
     }
   ],
   "native_capability_assessment": [
+    {
+      "family": "sessions.display-titles",
+      "status": "native-implementation-unverified",
+      "implementation": "A replaceable Julia SessionTitles service normalizes untrusted titles, derives deterministic model-free first-prompt labels, supports stable-identity session/rename and session/list/details RPC, and preserves explicitly saved titles across native SessionStore resume. Optional Julia Web console exposes named titles and rename controls.",
+      "external_oracle": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447 (source-hash-checked test-only title normalizers)",
+      "differential": "test/dsh_differential.jl:session_title_result, test/differential/cases.json (22 title normalization/fallback/budget cases plus native API lifecycle checks)",
+      "limits": "Only DSH's pure title text normalization and fallback projection is compared. DSH log event sequence, pinned-user-title supersession, auto-generated model titles, workspace titles, notification delivery, saved format and complete browser flows are unverified. Final CI evidence pending."
+    },
     {
       "family": "web.request-authority-origin",
       "status": "native-implementation-unverified",

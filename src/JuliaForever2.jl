@@ -41,6 +41,8 @@ public SessionStore, save_session!, load_session, session_store_plugin, session_
 public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, search_history, session_names
 public session_markdown, session_markdown_entry
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer
+public SessionTitles, session_titles_plugin, session_title, rename_session_title!, forget_session_title!
+public normalize_session_title, fallback_session_title, truncate_session_title
 public start_web_server, web_server_plugin, web_url, web_launch_url
 
 include("kernel.jl")
@@ -48,6 +50,7 @@ include("agent.jl")
 include("core/plugins.jl")
 include("core/profile_store.jl")
 include("core/session_store.jl")
+include("core/session_titles.jl")
 include("core/session_query.jl")
 include("infrastructure/infrastructure.jl")
 include("infrastructure/jsonrpc.jl")

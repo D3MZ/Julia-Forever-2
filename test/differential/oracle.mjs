@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
 const { formatSessionMarkdown } = await importSource('packages/session-query/session-log-export/src/markdown.ts')
+const { normalizeSessionTitle, fallbackSessionTitle, truncateTitleUtf8 } = await importSource('packages/session/session-title/src/normalize.ts')
 const { filterSessionEventDocuments, filterSessionResults } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
 const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
@@ -1022,6 +1023,11 @@ async function execute(input) {
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
   if (input.kind === 'session_query') return input.cases.map(sessionQueryCase)
+  if (input.kind === 'session_titles') return input.cases.map(entry => ({
+    normalized: normalizeSessionTitle(entry.input, entry.max_bytes),
+    fallback: fallbackSessionTitle(entry.input, entry.max_words, entry.max_bytes),
+    truncated: truncateTitleUtf8(entry.input, entry.max_bytes),
+  }))
   if (input.kind === 'session_markdown') return input.cases.map(sessionMarkdownCase)
   if (input.kind === 'session_control') return input.cases.map(sessionControlCase)
   if (input.kind === 'session_fork') return input.cases.map(sessionForkCase)
