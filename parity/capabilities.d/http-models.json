@@ -1,0 +1,25 @@
+{
+  "baseline_commit": "2c8d1feb147f6b3d97e855da803bfe7b19f3c403",
+  "inventory_complete": false,
+  "projection": {
+    "wire": "Complete request body, method, path and authentication/content headers; full final message except clock values. Timestamp and durationMs are compared for presence and nonnegative-integer shape rather than value. Ordered event fields type/contentIndex/delta/content/toolCall/reason. SDK/platform headers and mutable partial snapshots excluded. Loopback HTTP only; no real credentials or model calls."
+  },
+  "capabilities": [
+    {
+      "id": "provider-protocol.openai-streaming",
+      "placement": "replaceable_extension",
+      "status": "differential",
+      "scope": "Real HTTP Chat Completions request serialization; streamed text/thinking/tool-call finals, usage, cache costs, stop/error reasons and event order for explicit compatibility options. Partial tool-argument snapshots, retries, OAuth and vendor-specific policies remain gaps.",
+      "sources": ["packages/ai/src/api/openai-completions.ts"],
+      "differential": "Execute both real adapters against the same loopback HTTP server and fragmented SSE bytes. Compare full request body/path/method/auth, final message, timing field shapes and ordered semantic events; omit only platform headers, clock values and partial snapshots."
+    },
+    {
+      "id": "provider-protocol.anthropic-streaming",
+      "placement": "replaceable_extension",
+      "status": "differential",
+      "scope": "Real Anthropic Messages HTTP serialization and streamed text, thinking/signatures, redacted thinking, interleaved tool finals, cache/usage preservation, refusal and incomplete-stream detection. OAuth, retries, strict-tool fallback, multimodal history and partial argument snapshots remain gaps.",
+      "sources": ["packages/ai/src/api/anthropic-messages.ts"],
+      "differential": "Execute Pi and Julia against identical loopback HTTP SSE fixtures, including fragmented Unicode, omitted usage fields, one-hour cache billing, out-of-order tool block closure, refusal details and missing stop markers. Compare captured requests, final messages and ordered semantic events."
+    }
+  ]
+}

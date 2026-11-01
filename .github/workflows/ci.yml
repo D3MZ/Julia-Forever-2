@@ -11,13 +11,31 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       JULIA_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
+      - name: Read reviewed Pi pin
+        id: pi
+        run: python3 -c 'import json, os; print("commit=" + json.load(open("parity/pi-lock.json"))["commit"], file=open(os.environ["GITHUB_OUTPUT"], "a"))'
+      - uses: actions/checkout@v4
+        with:
+          repository: earendil-works/pi
+          ref: ${{ steps.pi.outputs.commit }}
+          path: .pi-reference
+          persist-credentials: false
+      - name: Keep oracle outside package and lint trees
+        run: |
+          echo "PI_REFERENCE=$RUNNER_TEMP/pi-reference" >> "$GITHUB_ENV"
+          echo "PI_PARITY_REPORT=$RUNNER_TEMP/pi-parity.json" >> "$GITHUB_ENV"
+          mv .pi-reference "$RUNNER_TEMP/pi-reference"
       - uses: actions/setup-node@v4
         with:
           node-version: '24.22.1'
+      - name: Install pinned Pi dependencies without lifecycle scripts
+        working-directory: ${{ runner.temp }}/pi-reference
+        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --include-workspace-root --no-audit --no-fund
       - name: Fetch pinned DSH differential oracle
         shell: bash
         run: |
@@ -44,8 +62,20 @@ jobs:
         with:
           version: '1.13'
       - uses: julia-actions/cache@v2
-      - name: Run tests with coverage
-        run: julia --project -e 'using Pkg; Pkg.test(; coverage=true)'
+      - name: Run regression and real differential tests with coverage
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project -e 'using Pkg; Pkg.test(; coverage=true)' 2>&1 | tee "$RUNNER_TEMP/julia-tests.log"
+      - name: Upload Pi differential coverage and explicit gap report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-parity-report
+          path: |
+            ${{ runner.temp }}/pi-parity.json
+            ${{ runner.temp }}/julia-tests.log
+          if-no-files-found: warn
       - uses: julia-actions/julia-processcoverage@v1
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
