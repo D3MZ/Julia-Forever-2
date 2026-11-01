@@ -87,17 +87,26 @@ function session_descendants(store::SessionStore, ancestor::UUID; include_self=f
         lineage = session_lineage(store, name)
         isnothing(lineage) || (relationships[lineage.id] = (name, lineage.parent_id))
     end
+    # Build parent-to-child links once; repeated full scans are quadratic on deep
+    # lineage chains when a child sorts before its ancestor in the hash table.
+    children = Dict{UUID,Vector{UUID}}()
+    for (id, (_, parent)) in relationships
+        if !isnothing(parent)
+            push!(get!(Vector{UUID}, children, parent), id)
+        end
+    end
     reachable = Set{UUID}([ancestor])
+    pending = UUID[ancestor]
     names = String[]
-    changed = true
-    while changed
-        changed = false
-        for (id, (name, parent)) in relationships
-            if !(id in reachable) && !isnothing(parent) && parent in reachable
-                push!(reachable, id)
-                push!(names, name)
-                changed = true
-            end
+    while !isempty(pending)
+        parent = pop!(pending)
+        descendants = get(children, parent, nothing)
+        isnothing(descendants) && continue
+        for id in descendants
+            id in reachable && continue
+            push!(reachable, id)
+            push!(pending, id)
+            push!(names, relationships[id][1])
         end
     end
     if include_self && haskey(relationships, ancestor)
