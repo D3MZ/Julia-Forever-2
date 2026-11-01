@@ -39,8 +39,7 @@ function request(session::Session, context::ExecutionContext)
     with_component(session.kernel, :provider) do provider
         maybe_compact!(session, provider, context)
         protocol = operation_protocol(session.definition, provider)
-        messages = context_messages(session)
-        Base.invokelatest(respond_model, provider, model_request(protocol, messages, session), session, context)
+        Base.invokelatest(request_with_compaction, session, provider, protocol, context)
     end
 end
 
