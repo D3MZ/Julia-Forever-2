@@ -15,6 +15,29 @@ const { ApprovalReference } = await importSource('packages/core/tools/src/pipeli
     + source.slice(start, end) + '\n}'
 })
 
+const { ToolCancellationReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async dispatchToolBody(')
+  const end = source.indexOf('  /**\n   * Run around-dispatch', start)
+  const helpers = source.indexOf('function isAborted(')
+  const helpersEnd = source.indexOf('export { executeToolBatch }', helpers)
+  if (start < 0 || end < 0 || helpers < 0 || helpersEnd < 0) {
+    throw new Error('Locked DSH tool cancellation method boundaries were not found')
+  }
+  return `const TOOL_ABORTED = 'ABORTED'
+const TOOL_ABORTED_BEFORE_DISPATCH = 'ABORTED_BEFORE_DISPATCH'
+${source.slice(helpers, helpersEnd)}
+export class ToolCancellationReference {
+  constructor(tool) {
+    this.tool = tool
+    this.cancellationStates = new WeakMap()
+  }
+  resolveExecution() { return this.tool }
+  createSuccessResult(_execution, _tool, value) {
+    return { isError: false, value, content: [] }
+  }
+${source.slice(start, end)}
+}`
+})
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
   const end = source.indexOf('/** Runtime patch applied to entries', start)
@@ -58,6 +81,23 @@ async function toolApprovalCase(input) {
   if (!input.withdraw && !input.next_outcome) return first
   if (input.withdraw) available = false
   return [first, project(await reference.serviceAsk(exec, ask))]
+}
+
+/** Compare a real pinned DSH tool-body cancellation decision, not a runtime adapter. */
+async function toolCancellationCase(input) {
+  const controller = new AbortController()
+  let invoked = 0
+  const reference = new ToolCancellationReference({ execute: async () => {
+    invoked++
+    if (input.async) await settle()
+    if (input.cancel_during) controller.abort()
+    return input.value
+  } })
+  const exec = { name: 'fixture', arguments: {}, signal: controller.signal }
+  reference.cancellationStates.set(exec, { callerSignal: controller.signal, bodyInvoked: false })
+  if (input.cancel_before) controller.abort()
+  const result = await reference.dispatchToolBody(exec)
+  return { allowed: !result.isError, invoked, retained: result.isError ? null : result.value }
 }
 
 async function toolBatchCase(input) {
@@ -669,6 +709,7 @@ async function execute(input) {
   if (input.kind === 'events') return Promise.all(input.cases.map(eventCase))
   if (input.kind === 'tools') return Promise.all(input.cases.map(toolCase))
   if (input.kind === 'tool_batch') return Promise.all(input.cases.map(toolBatchCase))
+  if (input.kind === 'tool_cancellation') return Promise.all(input.cases.map(toolCancellationCase))
   if (input.kind === 'final_response') return input.cases.map(input => finalResponse(input.events))
   if (input.kind === 'launch') return input.cases.map(launchCase)
   throw new Error(`Unknown oracle operation: ${input.kind}`)
