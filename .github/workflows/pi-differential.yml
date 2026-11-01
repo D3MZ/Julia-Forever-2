@@ -5,6 +5,8 @@ on:
     paths:
       - 'parity/**'
       - 'src/**'
+      - 'ext/**'
+      - 'test/**'
       - 'Project.toml'
       - '.github/workflows/pi-differential.yml'
   pull_request:
@@ -44,7 +46,7 @@ jobs:
           node-version: '24.22.1'
       - name: Install pinned reference dependencies
         working-directory: ${{ runner.temp }}/pi-reference
-        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --workspace packages/tui --include-workspace-root --no-audit --no-fund
+        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --workspace packages/tui --workspace packages/coding-agent --include-workspace-root --no-audit --no-fund
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.13'
