@@ -627,3 +627,54 @@ end
         close(context)
     end
 end
+
+@testset "Anthropic text and thinking deltas retain content across block and stream completion" begin
+    for kind in ("text", "thinking")
+        for fragments in (String[], [""], ["a"], ["λ", "🚀", "中文", "e\u0301"],
+                [repeat("native Julia stream ", 10) for _ in 1:240])
+            events = HarnessEvent[]
+            context = ExecutionContext(; event_sink=event -> push!(events, event))
+            state = JuliaForever2.ModelStreamState(
+                JuliaForever2.ModelSpec(:synthetic, "text-buffer-probe"), context)
+            initial = "initial λ "
+            JuliaForever2.start_model_stream!(state)
+            JuliaForever2.anthropic_block_start!(state, Dict(
+                "index" => 0, "content_block" => Dict(
+                    "type" => kind, kind => initial)))
+            for fragment in fragments
+                JuliaForever2.anthropic_block_delta!(state, Dict(
+                    "index" => 0, "delta" => Dict(
+                        "type" => kind * "_delta", kind => fragment)))
+            end
+            JuliaForever2.finish_model_block!(state, 1)
+            @test state.message["content"][1][kind] == initial * join(fragments)
+            @test isempty(state.text_buffers)
+            JuliaForever2.finish_model_block!(state, 1)
+            state.message["stopReason"] = "stop"
+            JuliaForever2.finish_model_stream!(state)
+            @test state.message["content"][1][kind] == initial * join(fragments)
+            @test [event.data["delta"] for event in events
+                if event.kind == :model_stream && event.data["type"] == kind * "_delta"] ==
+                fragments
+            @test only([event.data["content"] for event in events
+                if event.kind == :model_stream && event.data["type"] == kind * "_end"]) ==
+                initial * join(fragments)
+            close(context)
+        end
+    end
+    for kind in ("text", "thinking")
+        context = ExecutionContext()
+        state = JuliaForever2.ModelStreamState(
+            JuliaForever2.ModelSpec(:synthetic, "missing-block-stop"), context)
+        JuliaForever2.anthropic_block_start!(state, Dict(
+            "index" => 0, "content_block" => Dict("type" => kind, kind => "")))
+        JuliaForever2.anthropic_block_delta!(state, Dict(
+            "index" => 0, "delta" => Dict(
+                "type" => kind * "_delta", kind => "partial λ 🚀")))
+        state.error = "stream interrupted"
+        JuliaForever2.finish_model_stream!(state)
+        @test state.message["content"][1][kind] == "partial λ 🚀"
+        @test isempty(state.text_buffers)
+        close(context)
+    end
+end

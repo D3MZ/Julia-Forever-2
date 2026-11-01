@@ -1,0 +1,59 @@
+name: Anthropic streamed text buffered paired performance experiment
+on:
+  push:
+    branches:
+      - perf/anthropic-text-buffering-20261101t1307
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: '26e2e0504b4b1eb1dcf9ccdaa215d92eff453312'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Record environment and exact main baseline worktree
+        shell: bash
+        run: |
+          mkdir -p benchmark-evidence
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/anthropic-text-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/anthropic-text-baseline" >> "$GITHUB_ENV"
+          julia --version | tee benchmark-evidence/julia-version.txt
+          git rev-parse HEAD > benchmark-evidence/candidate-sha.txt
+          git -C "$RUNNER_TEMP/anthropic-text-baseline" rev-parse HEAD > benchmark-evidence/baseline-sha.txt
+          lscpu > benchmark-evidence/runner-cpu.txt
+          uname -a > benchmark-evidence/runner-os.txt
+          env | grep -E '^(JULIA|OPENBLAS|GITHUB_SHA|RUNNER_OS|RUNNER_ARCH)=' > benchmark-evidence/environment-variables.txt || true
+      - name: Instantiate exactly shared Julia test dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()' 2>&1 | tee benchmark-evidence/packages.txt
+      - name: Focused provider/stream correctness, syntax lint, and Aqua
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl providers streaming lint aqua 2>&1 | tee benchmark-evidence/correctness-and-quality.log
+      - name: Nine alternating warmed-up paired trials with CPU/allocation profiles
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test benchmarks/anthropic_text_experiment.jl "$BASELINE_DIR" benchmark-evidence 2>&1 | tee benchmark-evidence/benchmark.log
+      - name: Upload raw evidence even when any gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anthropic-text-buffer-paired-evidence
+          path: benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30

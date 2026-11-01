@@ -94,7 +94,19 @@ function appenddelta!(state::ModelStreamState, index, delta)
     kind = delta["type"]
     if kind == "text_delta" || kind == "thinking_delta"
         field = kind == "text_delta" ? "text" : "thinking"
-        block[field] *= delta[field]
+        buffer = get(state.text_buffers, index, nothing)
+        if !isnothing(buffer)
+            write(buffer, delta[field])
+        elseif isempty(block[field])
+            # The common single-fragment case needs no buffer.
+            block[field] = String(delta[field])
+        else
+            # Only repeated deltas would otherwise copy the full prefix each time.
+            buffer = IOBuffer()
+            write(buffer, block[field])
+            write(buffer, delta[field])
+            state.text_buffers[index] = buffer
+        end
         model_event!(state, kind; contentIndex=index - 1, delta=delta[field])
     elseif kind == "signature_delta"
         block["thinkingSignature"] = get(block, "thinkingSignature", "") * delta["signature"]
