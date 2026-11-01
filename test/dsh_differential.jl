@@ -1212,39 +1212,40 @@ function session_fork_result(input)
     params = Dict{String,Any}("session" => "source", "newSession" => "branch")
     haskey(input, "at_index") && (params["atIndex"] = input["at_index"])
     forked = session_api_request!(api, "session/fork", params)
-    if forked isa RpcError
-        close(api)
-        return Dict("ok" => false, "messages" => Any[])
+    result = if forked isa RpcError
+        Dict("ok" => false, "messages" => Any[])
+    else
+        branch = api.sessions["branch"]
+        inherited = history_snapshot(branch).messages
+        actual = [Dict("role" => String(message.role), "content" => message.content)
+            for message in inherited]
+        @test branch !== source
+        @test branch.kernel !== source.kernel
+        @test working_directory(branch) == working_directory(source)
+        child_lineage = session_lineage(branch)
+        @test child_lineage.parent_id === nothing
+        @test child_lineage.root_id == child_lineage.id
+        @test child_lineage.id != session_lineage(source).id
+        @test length(inherited) > 0
+        push!(inherited[1].metadata["tags"], "branch")
+        @test history_snapshot(source).messages[1].metadata["tags"] == ["source"]
+        append_message!(branch, Message(:user, "branch-only"))
+        typed = [Message(:user, "specialized"; metadata=Dict("tags" => ["typed"]))]
+        separately_forked = JuliaForever2.fork_session(source, typed)
+        append_message!(separately_forked, Message(:assistant, "continuation"))
+        @test length(history_snapshot(separately_forked).messages) == 2
+        @test history_snapshot(separately_forked).messages[1].metadata["tags"] == ["typed"]
+        close(separately_forked)
+        @test length(history_snapshot(source).messages) == length(input["messages"])
+        @test length(history_snapshot(branch).messages) == length(inherited) + 1
+        invalid = session_api_request!(api, "session/fork",
+            Dict("session" => "source", "newSession" => "invalid", "atIndex" => length(input["messages"]) + 1))
+        @test invalid isa RpcError
+        @test !haskey(api.sessions, "invalid")
+        normalize(Dict("ok" => true, "messages" => actual))
     end
-    branch = api.sessions["branch"]
-    inherited = history_snapshot(branch).messages
-    actual = [Dict("role" => String(message.role), "content" => message.content)
-        for message in inherited]
-    @test branch !== source
-    @test branch.kernel !== source.kernel
-    @test working_directory(branch) == working_directory(source)
-    child_lineage = session_lineage(branch)
-    @test child_lineage.parent_id === nothing
-    @test child_lineage.root_id == child_lineage.id
-    @test child_lineage.id != session_lineage(source).id
-    @test length(inherited) > 0
-    push!(inherited[1].metadata["tags"], "branch")
-    @test history_snapshot(source).messages[1].metadata["tags"] == ["source"]
-    append_message!(branch, Message(:user, "branch-only"))
-    typed = [Message(:user, "specialized"; metadata=Dict("tags" => ["typed"]))]
-    separately_forked = JuliaForever2.fork_session(source, typed)
-    append_message!(separately_forked, Message(:assistant, "continuation"))
-    @test length(history_snapshot(separately_forked).messages) == 2
-    @test history_snapshot(separately_forked).messages[1].metadata["tags"] == ["typed"]
-    close(separately_forked)
-    @test length(history_snapshot(source).messages) == length(input["messages"])
-    @test length(history_snapshot(branch).messages) == length(inherited) + 1
-    invalid = session_api_request!(api, "session/fork",
-        Dict("session" => "source", "newSession" => "invalid", "atIndex" => length(input["messages"]) + 1))
-    @test invalid isa RpcError
-    @test !haskey(api.sessions, "invalid")
     close(api)
-    return normalize(Dict("ok" => true, "messages" => actual))
+    return result
 end
 
 @testset "DSH full-product proof requires complete native differential evidence" begin
