@@ -82,3 +82,28 @@ end
     @test JuliaForever2.history_snapshot(session).messages[end].metadata === queued
     close(session)
 end
+
+@testset "Accumulated provider costs remain representable" begin
+    conversation = Conversation()
+    maximum = floatmax(Float64)
+    JuliaForever2.record_usage!(conversation, JuliaForever2.UsageReport(2, 3, maximum))
+    @test JuliaForever2.usage_snapshot(conversation).cost_known
+
+    # Both reported values are finite, but their Float64 sum is not.
+    JuliaForever2.record_usage!(conversation, JuliaForever2.UsageReport(4, 5, maximum))
+    totals = JuliaForever2.usage_snapshot(conversation)
+    @test totals.input_tokens == 6
+    @test totals.output_tokens == 8
+    @test !totals.cost_known
+    @test isfinite(totals.cost)
+    @test totals.cost == maximum
+
+    JuliaForever2.record_usage!(conversation, JuliaForever2.UsageReport(1, 1, 0.25))
+    @test !JuliaForever2.usage_snapshot(conversation).cost_known
+
+    ordinary = Conversation()
+    JuliaForever2.record_usage!(ordinary, JuliaForever2.UsageReport(1, 2, 0.25))
+    JuliaForever2.record_usage!(ordinary, JuliaForever2.UsageReport(3, 4, 0.5))
+    @test JuliaForever2.usage_snapshot(ordinary).cost == 0.75
+    @test JuliaForever2.usage_snapshot(ordinary).cost_known
+end
