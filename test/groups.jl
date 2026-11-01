@@ -14,7 +14,8 @@ const UNIT_TEST_FILES = [
     "auth.jl",
     "smoke.jl",
 ]
-const TEST_FILES = vcat(UNIT_TEST_FILES, ["lint_tests.jl", "aqua.jl", "jet.jl"])
+const DIFFERENTIAL_TEST_FILES = ["dsh_differential.jl", "dsh_runtime_differential.jl"]
+const TEST_FILES = vcat(UNIT_TEST_FILES, DIFFERENTIAL_TEST_FILES, ["lint_tests.jl", "aqua.jl", "jet.jl"])
 
 const TEST_GROUPS = Dict(
     "selection" => ["selection.jl"],
@@ -31,6 +32,9 @@ const TEST_GROUPS = Dict(
     "providers" => ["providers.jl", "adapters_architecture.jl"],
     "auth" => ["auth.jl"],
     "smoke" => ["smoke.jl"],
+    "differential" => ["dsh_differential.jl"],
+    "differential-runtime" => ["dsh_runtime_differential.jl"],
+    "differential-all" => copy(DIFFERENTIAL_TEST_FILES),
     "lint" => ["lint_tests.jl"],
     "aqua" => ["aqua.jl"],
     "jet" => ["jet.jl"],

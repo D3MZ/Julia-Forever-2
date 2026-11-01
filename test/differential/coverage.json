@@ -1,0 +1,2424 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "repository": "https://github.com/deepseek-ai/deepseek-harness",
+    "commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
+    "source_lock": "reference-lock.json"
+  },
+  "superset_proven": false,
+  "assessment": "The required cases establish only the named observable projections. DSH as a complete feature set is not proven to be a subset of JuliaForever2.",
+  "oracle": {
+    "runner": "oracle.mjs",
+    "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
+    "source_scope": "Whole imported source files are hash-checked. Pure exported functions are extracted unchanged from those checked files.",
+    "dependency_resolution": "The tool-registry dependency on HarnessError is resolved to its original defining error.ts module, without loading unrelated model runtime code."
+  },
+  "native_comparisons": [
+    {
+      "kind": "patches",
+      "case_count": 64,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "vendor/include/src/index.ts",
+          "symbols": [
+            "applyEntryPatches"
+          ]
+        }
+      ],
+      "compares": [
+        "ordered overrides",
+        "nested group indexing",
+        "insert then configure",
+        "whole configuration replacement",
+        "expected-name guards",
+        "skipped-patch diagnostics",
+        "input and inserted-object alias effects"
+      ],
+      "limits": [
+        "JSON-safe entry lists and valid patch field shapes only; YAML parsing, JavaScript expression interpolation and live loader updates are not exercised."
+      ]
+    },
+    {
+      "kind": "layers",
+      "case_count": 5,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/boot/app-boot/src/profile.ts",
+          "symbols": [
+            "composeEntries"
+          ]
+        },
+        {
+          "path": "vendor/include/src/index.ts",
+          "symbols": [
+            "applyEntryPatches"
+          ]
+        }
+      ],
+      "compares": [
+        "ordered layer composition",
+        "cross-layer inserted entry lookup",
+        "stale lookup behavior",
+        "formatted diagnostics",
+        "caller data preservation"
+      ],
+      "limits": [
+        "Bundle/package discovery, YAML parsing, profile installation, hot reload and npm resolution are unverified."
+      ]
+    },
+    {
+      "kind": "transport",
+      "case_count": 125,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/sdk/protocol/src/transport.ts",
+          "symbols": [
+            "JsonRpcLineTransport"
+          ]
+        }
+      ],
+      "compares": [
+        "request and notification decoding",
+        "fragmentation at every UTF-8 byte boundary of the chosen frame",
+        "malformed lines",
+        "partial trailing frames",
+        "parameter normalization",
+        "numeric and string id rules",
+        "unknown methods",
+        "callback failures",
+        "request and notification callback order"
+      ],
+      "limits": [
+        "Representative newline JSON-RPC frames; no proof of all stream errors, maximum sizes, cancellation races, scheduling interleavings or network transport behavior."
+      ]
+    },
+    {
+      "kind": "outgoing",
+      "case_count": 14,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/sdk/protocol/src/transport.ts",
+          "symbols": [
+            "JsonRpcLineTransport.request",
+            "JsonRpcResponseError"
+          ]
+        }
+      ],
+      "compares": [
+        "outbound method and params",
+        "correlated success result",
+        "remote error code message and data",
+        "malformed error normalization"
+      ],
+      "limits": [
+        "Generated request ids are normalized to a fixed token; this tests correlation and payloads, not UUID identity. Timeout and cancellation diagnostics are not asserted equivalent."
+      ]
+    },
+    {
+      "kind": "lifecycle",
+      "case_count": 7,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "vendor/cordis/src/context.ts",
+          "symbols": [
+            "Context"
+          ]
+        },
+        {
+          "path": "vendor/cordis/src/registry.ts",
+          "symbols": [
+            "RegistryService.plugin"
+          ]
+        },
+        {
+          "path": "vendor/cordis/src/fiber.ts",
+          "symbols": [
+            "Fiber.effect",
+            "Fiber.dispose",
+            "Fiber.getEffects"
+          ]
+        }
+      ],
+      "compares": [
+        "activation ordering on valid dependency graphs",
+        "service values",
+        "reverse owned effect disposal",
+        "dependent-before-provider cleanup",
+        "asynchronous setup and effect cleanup settle before publication and teardown complete",
+        "explicit resource disposal unlinks owner registrations while the owner remains live, with idempotent disposal and reverse shutdown cleanup"
+      ],
+      "limits": [
+        "Shared lifecycle traces only. Native profiles preflight missing or cyclic dependencies; Cordis reactive pending, suspension and automatic reactivation are not implemented or claimed equivalent.",
+        "No equivalence claim for asynchronous generator plugins, configuration schema validation, intercepts or all isolation modes.",
+        "Live registration counts compare original Fiber.getEffects() with native ownership slots after fixture operations; these are dynamic disposal observations, not source declaration counts or a complete heap-leak proof."
+      ]
+    },
+    {
+      "kind": "recovery",
+      "case_count": 2,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/sdk/protocol/src/transport.ts",
+          "symbols": [
+            "JsonRpcLineTransport.request"
+          ]
+        }
+      ],
+      "compares": [
+        "failed write settles only its request",
+        "later request succeeds on same peer"
+      ],
+      "limits": [
+        "A deterministic writer fails before emitting bytes. Partial writes, asynchronous stream error events and blocked-write cancellation are unverified."
+      ]
+    },
+    {
+      "kind": "events",
+      "case_count": 39,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "vendor/cordis/src/events.ts",
+          "symbols": [
+            "EventsService.emit",
+            "EventsService.bail",
+            "EventsService.serial",
+            "EventsService.parallel",
+            "EventsService.waterfall",
+            "EventsService.on",
+            "EventsService.once"
+          ]
+        },
+        {
+          "path": "packages/core/scope/src/index.ts",
+          "symbols": [
+            "createScope",
+            "scopeTarget"
+          ]
+        }
+      ],
+      "compares": [
+        "root and ancestor admission",
+        "sibling exclusion",
+        "global listener bypass",
+        "prepend and once",
+        "explicit disposal",
+        "late event routing after scope disposal",
+        "bail value semantics",
+        "waterfall wrapping and veto",
+        "ExecutionContext event sink integration",
+        "completed outer waterfall task preserves downstream continuation and its resources until the longer callback finishes"
+      ],
+      "limits": [
+        "Test callbacks settle synchronously; arbitrary asynchronous listener interleavings, aggregate error details and in-flight teardown races are unverified.",
+        "Scope fixtures nest both ownership and routing. Cordis permits additional arrangements where those relationships differ.",
+        "The asynchronous waterfall lifetime case compares native deferred scope cleanup with an explicitly retained Cordis root disposed after all observed consumer Promises finish; it does not claim Cordis automatically retains roots during every dispatch."
+      ]
+    },
+    {
+      "kind": "final_response",
+      "case_count": 10,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/sdk/client/src/api.ts",
+          "symbols": [
+            "finalResponse"
+          ]
+        }
+      ],
+      "compares": [
+        "last assistant selection",
+        "text block concatenation",
+        "nontext exclusion",
+        "empty and Unicode responses"
+      ],
+      "limits": [
+        "Valid consumed event shapes; upstream envelope validation, malformed block fields and all event semantics are outside this comparison."
+      ]
+    },
+    {
+      "kind": "launch",
+      "case_count": 12,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/sdk/client/src/launch.ts",
+          "symbols": [
+            "resolveDshLaunch"
+          ]
+        }
+      ],
+      "compares": [
+        "explicit executable argv",
+        "profile names",
+        "ordered patches",
+        "lexical cwd and path resolution",
+        "selected environment and home overrides"
+      ],
+      "limits": [
+        "Explicit executable mode only; installed-package discovery, source-loader discovery and SDK timeout defaults are unverified.",
+        "Only caller-selected environment variables are compared. SDK options.env replaces its environment; native DSHProfile.environment adds overrides to the inherited environment.",
+        "The executable name is normalized to a fixed node token. Profile launch is not proof of every feature within the selected profile."
+      ]
+    },
+    {
+      "kind": "tools",
+      "case_count": 17,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/index.ts",
+          "symbols": [
+            "ToolsService.register",
+            "ToolsService.restrict",
+            "ToolsService.schemas",
+            "ToolsService.get"
+          ]
+        },
+        {
+          "path": "packages/core/scope/src/index.ts",
+          "symbols": [
+            "createScope"
+          ]
+        },
+        {
+          "path": "packages/core/scope/src/store.ts",
+          "symbols": [
+            "ScopedLayers",
+            "NamedEntries",
+            "AnonymousEntries"
+          ]
+        }
+      ],
+      "compares": [
+        "insertion order",
+        "visible input schemas",
+        "nearest-scope shadowing",
+        "ancestor revealed by removal",
+        "duplicate rejection",
+        "intersecting allow and deny restrictions",
+        "scope-local exemptions",
+        "restriction and registration disposal",
+        "selected callback result",
+        "native Session ToolExecutor integration"
+      ],
+      "limits": [
+        "Registry and selected-definition dispatch only; the reference invokes the actual selected definition execute callback directly. DSH executor admission, approval, guard, schema validation, output rendering, timeouts and parallel batches are not exercised.",
+        "Generic native ToolSpec does not impose DSH reserved names or mandatory output schemas. Invalid-registration comparisons cover acceptance, not language-specific exception messages."
+      ]
+    },
+    {
+      "kind": "replacements",
+      "case_count": 5,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "vendor/cordis/src/context.ts",
+          "symbols": [
+            "Context",
+            "Context.isolate"
+          ]
+        },
+        {
+          "path": "vendor/cordis/src/registry.ts",
+          "symbols": [
+            "RegistryService.plugin"
+          ]
+        },
+        {
+          "path": "vendor/cordis/src/fiber.ts",
+          "symbols": [
+            "Fiber.effect",
+            "Fiber.dispose"
+          ]
+        },
+        {
+          "path": "packages/core/tools/src/index.ts",
+          "symbols": [
+            "ToolsService.register",
+            "ToolsService.get"
+          ]
+        }
+      ],
+      "compares": [
+        "one service replaced while sibling service remains available",
+        "whole plugin generation staging and publication",
+        "failed staged initialization cleans effects and retains current composition",
+        "retained session invokes plugin-owned tool and event callbacks after profile replacement until its original generation is released",
+        "service binding retains its old plugin generation until a returned asynchronous callback task settles"
+      ],
+      "limits": [
+        "Whole-plugin staging is compared to explicitly separate Cordis contexts; this does not assert equivalence with reactive replacement of one fiber in one shared Cordis tree.",
+        "Per-service native bindings are compared to an explicit Cordis isolated service context. Retained native sessions and asynchronous service operations are compared to independently retained Cordis roots that dispose after their consumers finish. Concurrent activation races and arbitrary plugin side effects are outside these scenarios."
+      ]
+    },
+    {
+      "kind": "callback_close",
+      "case_count": 2,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/sdk/protocol/src/transport.ts",
+          "symbols": [
+            "JsonRpcLineTransport.onNotification",
+            "JsonRpcLineTransport.close",
+            "JsonRpcLineTransport.request"
+          ]
+        }
+      ],
+      "compares": [
+        "notification callback closes its own transport and owned process",
+        "pending request rejects on callback close",
+        "callback returns and process terminates without a reader-supervisor wait cycle",
+        "notification callback awaits a request serviced by the same transport before closing"
+      ],
+      "limits": [
+        "The child producer and reference client both execute the actual pinned transport. Fixture application handlers emit a requested notification or answer a follow-up request. This isolates transport lifetime and reentrancy; it is not a DSH model or SDK application scenario.",
+        "Bounded completion detects this specific notification-reader cycle, not all callback and shutdown interleavings."
+      ]
+    }
+  ],
+  "unverified_source_families": [
+    {
+      "family": "acp",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-acp",
+          "path": "packages/acp/acp"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "api",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-api-account-controller",
+          "path": "packages/api/account-controller"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-gateway",
+          "path": "packages/api/gateway"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-job-controller",
+          "path": "packages/api/job-controller"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-remote-access",
+          "path": "packages/api/remote-access"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-remotes",
+          "path": "packages/api/remotes"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-session-controller",
+          "path": "packages/api/session-controller"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-settings-controller",
+          "path": "packages/api/settings-controller"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-terminal-controller",
+          "path": "packages/api/terminal-controller"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-workspace-controller",
+          "path": "packages/api/workspace-controller"
+        },
+        {
+          "name": "@deepseek-ai/dsh-api-workspace-files",
+          "path": "packages/api/workspace-files"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "attachment",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-attachment",
+          "path": "packages/attachment/attachment"
+        },
+        {
+          "name": "@deepseek-ai/dsh-attachment-local",
+          "path": "packages/attachment/attachment-local"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "boot",
+      "status": "unverified-remainder",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [
+        "layers"
+      ],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-app-boot",
+          "path": "packages/boot/app-boot"
+        },
+        {
+          "name": "@deepseek-ai/dsh-cmdline",
+          "path": "packages/boot/cmdline"
+        },
+        {
+          "name": "@deepseek-ai/dsh-config-editor",
+          "path": "packages/boot/config-editor"
+        },
+        {
+          "name": "@deepseek-ai/dsh-hmr",
+          "path": "packages/boot/hmr"
+        },
+        {
+          "name": "@deepseek-ai/dsh-plugin-manager",
+          "path": "packages/boot/plugin-manager"
+        },
+        {
+          "name": "@deepseek-ai/dsh-plugin-market",
+          "path": "packages/boot/plugin-market"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "browser-use",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-browser-use",
+          "path": "packages/browser-use/browser-use"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "bundle",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-acp-app",
+          "path": "packages/bundle/acp-app"
+        },
+        {
+          "name": "@deepseek-ai/dsh-base",
+          "path": "packages/bundle/base"
+        },
+        {
+          "name": "@deepseek-ai/dsh-headless",
+          "path": "packages/bundle/headless"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sdk-app",
+          "path": "packages/bundle/sdk-app"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sdk-minimal",
+          "path": "packages/bundle/sdk-minimal"
+        },
+        {
+          "name": "@deepseek-ai/dsh-web-app",
+          "path": "packages/bundle/web-app"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "client",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-client-connection",
+          "path": "packages/client/connection"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-file-upload",
+          "path": "packages/client/file-upload"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-hmr",
+          "path": "packages/client/hmr"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-locale",
+          "path": "packages/client/locale"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-modules",
+          "path": "packages/client/modules"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-product-analytics",
+          "path": "packages/client/product-analytics"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-resources",
+          "path": "packages/client/resources"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-shortcuts",
+          "path": "packages/client/shortcuts"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-store",
+          "path": "packages/client/store"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-agent-preset",
+          "path": "packages/client/ui-agent-preset"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-approval",
+          "path": "packages/client/ui-approval"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-attachment",
+          "path": "packages/client/ui-attachment"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-brand-official",
+          "path": "packages/client/ui-brand-official"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-chat",
+          "path": "packages/client/ui-chat"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-commands",
+          "path": "packages/client/ui-commands"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-context-menu",
+          "path": "packages/client/ui-context-menu"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-conversation",
+          "path": "packages/client/ui-conversation"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-deliverables",
+          "path": "packages/client/ui-deliverables"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-directory-picker-browse",
+          "path": "packages/client/ui-directory-picker-browse"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-directory-picker-native",
+          "path": "packages/client/ui-directory-picker-native"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-dockkit",
+          "path": "packages/client/ui-dockkit"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-entry-customization",
+          "path": "packages/client/ui-entry-customization"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-file-actions",
+          "path": "packages/client/ui-file-actions"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-file-drag",
+          "path": "packages/client/ui-file-drag"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-goal",
+          "path": "packages/client/ui-goal"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-input-trigger",
+          "path": "packages/client/ui-input-trigger"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-jobs",
+          "path": "packages/client/ui-jobs"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-layout",
+          "path": "packages/client/ui-layout"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-message-feedback",
+          "path": "packages/client/ui-message-feedback"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-model-selection",
+          "path": "packages/client/ui-model-selection"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-open-in-app",
+          "path": "packages/client/ui-open-in-app"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-permission-presets",
+          "path": "packages/client/ui-permission-presets"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-plan",
+          "path": "packages/client/ui-plan"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-plugin-manager",
+          "path": "packages/client/ui-plugin-manager"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-plugin-market",
+          "path": "packages/client/ui-plugin-market"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-primitives",
+          "path": "packages/client/ui-primitives"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-reference",
+          "path": "packages/client/ui-reference"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-renderer",
+          "path": "packages/client/ui-renderer"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-schedule",
+          "path": "packages/client/ui-schedule"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-secret-mask",
+          "path": "packages/client/ui-secret-mask"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-session",
+          "path": "packages/client/ui-session"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings",
+          "path": "packages/client/ui-settings"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-account",
+          "path": "packages/client/ui-settings-account"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-agent-loop",
+          "path": "packages/client/ui-settings-agent-loop"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-general",
+          "path": "packages/client/ui-settings-general"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-models",
+          "path": "packages/client/ui-settings-models"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-plugin-inventory",
+          "path": "packages/client/ui-settings-plugin-inventory"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-plugins",
+          "path": "packages/client/ui-settings-plugins"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-session-log",
+          "path": "packages/client/ui-settings-session-log"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-shell",
+          "path": "packages/client/ui-settings-shell"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-subagent",
+          "path": "packages/client/ui-settings-subagent"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-settings-web-search",
+          "path": "packages/client/ui-settings-web-search"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-shortcuts",
+          "path": "packages/client/ui-shortcuts"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-sidebar",
+          "path": "packages/client/ui-sidebar"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-sidebar-browser",
+          "path": "packages/client/ui-sidebar-browser"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
+          "path": "packages/client/ui-sidebar-documentpreview"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-sidebar-files",
+          "path": "packages/client/ui-sidebar-files"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-sidebar-right",
+          "path": "packages/client/ui-sidebar-right"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-sidebar-terminal",
+          "path": "packages/client/ui-sidebar-terminal"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-skill",
+          "path": "packages/client/ui-skill"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-slots",
+          "path": "packages/client/ui-slots"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-subagent",
+          "path": "packages/client/ui-subagent"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-theme",
+          "path": "packages/client/ui-theme"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-tool",
+          "path": "packages/client/ui-tool"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-trajectory",
+          "path": "packages/client/ui-trajectory"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-user-questions",
+          "path": "packages/client/ui-user-questions"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-workflow-run",
+          "path": "packages/client/ui-workflow-run"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-workspace",
+          "path": "packages/client/ui-workspace"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-web",
+          "path": "packages/client/web"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "compaction",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-command-compact",
+          "path": "packages/compaction/command-compact"
+        },
+        {
+          "name": "@deepseek-ai/dsh-compaction",
+          "path": "packages/compaction/compaction"
+        },
+        {
+          "name": "@deepseek-ai/dsh-compaction-basic",
+          "path": "packages/compaction/compaction-basic"
+        },
+        {
+          "name": "@deepseek-ai/dsh-compaction-image-offload",
+          "path": "packages/compaction/compaction-image-offload"
+        },
+        {
+          "name": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+          "path": "packages/compaction/compaction-tool-result-pruner"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "computer-use",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-computer-use",
+          "path": "packages/computer-use/computer-use"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "context",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-agent-instructions",
+          "path": "packages/context/agent-instructions"
+        },
+        {
+          "name": "@deepseek-ai/dsh-file-reference",
+          "path": "packages/context/file-reference"
+        },
+        {
+          "name": "@deepseek-ai/dsh-file-reference-local",
+          "path": "packages/context/file-reference-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-harness-dev-context",
+          "path": "packages/context/harness-dev-context"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-reference",
+          "path": "packages/context/session-reference"
+        },
+        {
+          "name": "@deepseek-ai/dsh-time-context",
+          "path": "packages/context/time-context"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tmux-context",
+          "path": "packages/context/tmux-context"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "core",
+      "status": "unverified-remainder",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [
+        "tools",
+        "events"
+      ],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-agent",
+          "path": "packages/core/agent"
+        },
+        {
+          "name": "@deepseek-ai/dsh-agent-default-model",
+          "path": "packages/core/agent-default-model"
+        },
+        {
+          "name": "@deepseek-ai/dsh-agent-loop",
+          "path": "packages/core/agent-loop"
+        },
+        {
+          "name": "@deepseek-ai/dsh-agent-tool-presentation",
+          "path": "packages/core/agent-tool-presentation"
+        },
+        {
+          "name": "@deepseek-ai/dsh-scope",
+          "path": "packages/core/scope"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session",
+          "path": "packages/core/session"
+        },
+        {
+          "name": "@deepseek-ai/dsh-system-prompt",
+          "path": "packages/core/system-prompt"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-executor-native",
+          "path": "packages/core/tool-executor-native"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-executor-ptc",
+          "path": "packages/core/tool-executor-ptc"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tools",
+          "path": "packages/core/tools"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "credentials",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-authorization",
+          "path": "packages/credentials/authorization"
+        },
+        {
+          "name": "@deepseek-ai/dsh-credentials",
+          "path": "packages/credentials/credentials"
+        },
+        {
+          "name": "@deepseek-ai/dsh-credentials-local",
+          "path": "packages/credentials/credentials-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-deepseek-account",
+          "path": "packages/credentials/deepseek-account"
+        },
+        {
+          "name": "@deepseek-ai/dsh-deepseek-account-platform",
+          "path": "packages/credentials/deepseek-account-platform"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "deliverables",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-deliverable-file-references",
+          "path": "packages/deliverables/deliverable-file-references"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-present",
+          "path": "packages/deliverables/tool-present"
+        },
+        {
+          "name": "@deepseek-ai/dsh-workspace-changes",
+          "path": "packages/deliverables/workspace-changes"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "document",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-office-to-pdf",
+          "path": "packages/document/office-to-pdf"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "experimental",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-action-cards",
+          "path": "packages/experimental/action-cards"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-agent-team",
+          "path": "packages/experimental/agent-team"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-agent-team-profile",
+          "path": "packages/experimental/agent-team-profile"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-api-speech-to-text",
+          "path": "packages/experimental/api-speech-to-text"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-auto-review",
+          "path": "packages/experimental/auto-review"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-badge-skill-bundle",
+          "path": "packages/experimental/badge-skill-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp",
+          "path": "packages/experimental/browser-use-chrome-devtools-mcp"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-browser-use-playwright-mcp",
+          "path": "packages/experimental/browser-use-playwright-mcp"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-browser-use-runtime",
+          "path": "packages/experimental/browser-use-runtime"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-browser-use-stagehand-native",
+          "path": "packages/experimental/browser-use-stagehand-native"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-claude-code-mods",
+          "path": "packages/experimental/claude-code-mods"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-action-cards",
+          "path": "packages/experimental/client-ui-action-cards"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-client-ui-agent-team",
+          "path": "packages/experimental/client-ui-agent-team"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-client-ui-claude-code-mods",
+          "path": "packages/experimental/client-ui-claude-code-mods"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-client-ui-cot-translation",
+          "path": "packages/experimental/client-ui-cot-translation"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-creation-recommendations",
+          "path": "packages/experimental/client-ui-creation-recommendations"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-client-ui-forge",
+          "path": "packages/experimental/client-ui-forge"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-plugin-recommendations",
+          "path": "packages/experimental/client-ui-plugin-recommendations"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-client-ui-stats",
+          "path": "packages/experimental/client-ui-stats"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-client-ui-voice-input",
+          "path": "packages/experimental/client-ui-voice-input"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-computer-use-cua-driver-mcp",
+          "path": "packages/experimental/computer-use-cua-driver-mcp"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-computer-use-cua-driver-native",
+          "path": "packages/experimental/computer-use-cua-driver-native"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-cot-translation-bundle",
+          "path": "packages/experimental/cot-translation-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-creation-recommendations",
+          "path": "packages/experimental/creation-recommendations"
+        },
+        {
+          "name": "@deepseek-ai/dsh-cua",
+          "path": "packages/experimental/cua"
+        },
+        {
+          "name": "@deepseek-ai/dsh-cua-bundle",
+          "path": "packages/experimental/cua-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-cua-macos",
+          "path": "packages/experimental/cua-macos"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-forge",
+          "path": "packages/experimental/forge"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-forge-bundle",
+          "path": "packages/experimental/forge-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-forge-github",
+          "path": "packages/experimental/forge-github"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-forge-session",
+          "path": "packages/experimental/forge-session"
+        },
+        {
+          "name": "@deepseek-ai/dsh-hook-protocol",
+          "path": "packages/experimental/hook-protocol"
+        },
+        {
+          "name": "@deepseek-ai/dsh-hooks-claude-code",
+          "path": "packages/experimental/hooks-claude-code"
+        },
+        {
+          "name": "@deepseek-ai/dsh-hooks-codex",
+          "path": "packages/experimental/hooks-codex"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-inspector",
+          "path": "packages/experimental/inspector"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-inspector-profile",
+          "path": "packages/experimental/inspector-profile"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-liveshare",
+          "path": "packages/experimental/liveshare"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-liveshare-protocol",
+          "path": "packages/experimental/liveshare-protocol"
+        },
+        {
+          "name": "@deepseek-ai/dsh-personalized-recommendations",
+          "path": "packages/experimental/personalized-recommendations"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-plugin-market-bundle",
+          "path": "packages/experimental/plugin-market-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-plugin-recommendations",
+          "path": "packages/experimental/plugin-recommendations"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-ptc-runtime-python",
+          "path": "packages/experimental/ptc-runtime-python"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-ralph-bundle",
+          "path": "packages/experimental/ralph-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-session-inspector",
+          "path": "packages/experimental/session-inspector"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-session-search",
+          "path": "packages/experimental/session-search"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-title-all-prompts-llm",
+          "path": "packages/experimental/session-title-all-prompts-llm"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-session-titles-bundle",
+          "path": "packages/experimental/session-titles-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-skill-badge",
+          "path": "packages/experimental/skill-badge"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-speech-to-text",
+          "path": "packages/experimental/speech-to-text"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-speech-to-text-sensevoice",
+          "path": "packages/experimental/speech-to-text-sensevoice"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-subagent-oar",
+          "path": "packages/experimental/subagent-oar"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-terminal-bundle",
+          "path": "packages/experimental/terminal-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-tool-agent-team",
+          "path": "packages/experimental/tool-agent-team"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-ralph",
+          "path": "packages/experimental/tool-ralph"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-session-query",
+          "path": "packages/experimental/tool-session-query"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-tool-subagent-oar",
+          "path": "packages/experimental/tool-subagent-oar"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-terminal",
+          "path": "packages/experimental/tool-terminal"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-tool-worktree",
+          "path": "packages/experimental/tool-worktree"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-translator",
+          "path": "packages/experimental/translator"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-voice-input-bundle",
+          "path": "packages/experimental/voice-input-bundle"
+        },
+        {
+          "name": "@deepseek-ai/dsh-webhook",
+          "path": "packages/experimental/webhook"
+        },
+        {
+          "name": "@deepseek-ai/dsh-webhook-github",
+          "path": "packages/experimental/webhook-github"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-webworker-packer",
+          "path": "packages/experimental/webworker-packer"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-webworker-runtime",
+          "path": "packages/experimental/webworker-runtime"
+        },
+        {
+          "name": "@deepseek-ai/dsh-experimental-worktree",
+          "path": "packages/experimental/worktree"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "extensions",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-cordis-client-runner",
+          "path": "packages/extensions/cordis-client-runner"
+        },
+        {
+          "name": "@deepseek-ai/dsh-cordis-host-runner",
+          "path": "packages/extensions/cordis-host-runner"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-cordis",
+          "path": "packages/extensions/tool-cordis"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-ui-cordis",
+          "path": "packages/extensions/ui-cordis"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "feedback",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-command-feedback",
+          "path": "packages/feedback/command-feedback"
+        },
+        {
+          "name": "@deepseek-ai/dsh-message-feedback",
+          "path": "packages/feedback/message-feedback"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "fs",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-fs",
+          "path": "packages/fs/fs"
+        },
+        {
+          "name": "@deepseek-ai/dsh-fs-local",
+          "path": "packages/fs/fs-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-fs-observation-policy",
+          "path": "packages/fs/fs-observation-policy"
+        },
+        {
+          "name": "@deepseek-ai/dsh-fs-patch",
+          "path": "packages/fs/fs-patch"
+        },
+        {
+          "name": "@deepseek-ai/dsh-fs-sandbox",
+          "path": "packages/fs/fs-sandbox"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-fs",
+          "path": "packages/fs/tool-fs"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-fs-search",
+          "path": "packages/fs/tool-fs-search"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-str-replace-editor",
+          "path": "packages/fs/tool-str-replace-editor"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "goal",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-command-goal",
+          "path": "packages/goal/command-goal"
+        },
+        {
+          "name": "@deepseek-ai/dsh-goal",
+          "path": "packages/goal/goal"
+        },
+        {
+          "name": "@deepseek-ai/dsh-goal-round-driver",
+          "path": "packages/goal/goal-round-driver"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-goal",
+          "path": "packages/goal/tool-goal"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "guard",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-repeat-tool-reminder",
+          "path": "packages/guard/repeat-tool-reminder"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
+          "path": "packages/guard/timeout-policy"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "host",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-host-directory-picker",
+          "path": "packages/host/directory-picker"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-directory-picker-auto",
+          "path": "packages/host/directory-picker-auto"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-directory-picker-browse",
+          "path": "packages/host/directory-picker-browse"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-directory-picker-native",
+          "path": "packages/host/directory-picker-native"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-frontend-static",
+          "path": "packages/host/frontend-static"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-open-in-app",
+          "path": "packages/host/open-in-app"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-plugin-inventory",
+          "path": "packages/host/plugin-inventory"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-product-telemetry-otel",
+          "path": "packages/host/product-telemetry-otel"
+        },
+        {
+          "name": "@deepseek-ai/dsh-host-webserver",
+          "path": "packages/host/webserver"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "identity",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-anonymous-user-id",
+          "path": "packages/identity/anonymous-user-id"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "interaction",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-commands",
+          "path": "packages/interaction/commands"
+        },
+        {
+          "name": "@deepseek-ai/dsh-permission-presets",
+          "path": "packages/interaction/permission-presets"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-ask-user",
+          "path": "packages/interaction/tool-ask-user"
+        },
+        {
+          "name": "@deepseek-ai/dsh-user-approval",
+          "path": "packages/interaction/user-approval"
+        },
+        {
+          "name": "@deepseek-ai/dsh-user-questions",
+          "path": "packages/interaction/user-questions"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "jobs",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-jobs",
+          "path": "packages/jobs/jobs"
+        },
+        {
+          "name": "@deepseek-ai/dsh-jobs-local",
+          "path": "packages/jobs/jobs-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-jobs",
+          "path": "packages/jobs/tool-jobs"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "llm",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-deepseek-llm-api-extensions",
+          "path": "packages/llm/deepseek-llm-api-extensions"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm",
+          "path": "packages/llm/llm"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm-deepseek",
+          "path": "packages/llm/llm-deepseek"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm-deepseek-account",
+          "path": "packages/llm/llm-deepseek-account"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm-deepseek-api-key",
+          "path": "packages/llm/llm-deepseek-api-key"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm-pi-ai",
+          "path": "packages/llm/llm-pi-ai"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm-retry",
+          "path": "packages/llm/llm-retry"
+        },
+        {
+          "name": "@deepseek-ai/dsh-plugin-package-inventory-deepseek",
+          "path": "packages/llm/plugin-package-inventory-deepseek"
+        },
+        {
+          "name": "@deepseek-ai/dsh-token-meter",
+          "path": "packages/llm/token-meter"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "lsp",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-lsp",
+          "path": "packages/lsp/lsp"
+        },
+        {
+          "name": "@deepseek-ai/dsh-lsp-stdio",
+          "path": "packages/lsp/lsp-stdio"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-lsp",
+          "path": "packages/lsp/tool-lsp"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "mcp",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-mcp-client",
+          "path": "packages/mcp/mcp-client"
+        },
+        {
+          "name": "@deepseek-ai/dsh-mcp-resources",
+          "path": "packages/mcp/mcp-resources"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "plan",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-plan-mode",
+          "path": "packages/plan/plan-mode"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "preset",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-agent-preset",
+          "path": "packages/preset/agent-preset"
+        },
+        {
+          "name": "@deepseek-ai/dsh-agent-preset-registry",
+          "path": "packages/preset/agent-preset-registry"
+        },
+        {
+          "name": "@deepseek-ai/dsh-persona",
+          "path": "packages/preset/persona"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "ptc-runtime",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-ptc-runtime",
+          "path": "packages/ptc-runtime/ptc-runtime"
+        },
+        {
+          "name": "@deepseek-ai/dsh-ptc-runtime-node",
+          "path": "packages/ptc-runtime/ptc-runtime-node"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "sandbox",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-sandbox",
+          "path": "packages/sandbox/sandbox"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sandbox-local",
+          "path": "packages/sandbox/sandbox-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sandbox-policy",
+          "path": "packages/sandbox/sandbox-policy"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sandbox-windows-acl",
+          "path": "packages/sandbox/sandbox-windows-acl"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "schedule",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-schedule",
+          "path": "packages/schedule/schedule"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-schedule",
+          "path": "packages/schedule/tool-schedule"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "sdk",
+      "status": "unverified-remainder",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [
+        "transport",
+        "outgoing",
+        "recovery",
+        "final_response",
+        "launch"
+      ],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-sdk-client",
+          "path": "packages/sdk/client"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sdk-protocol",
+          "path": "packages/sdk/protocol"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sdk-jsonrpc-server",
+          "path": "packages/sdk/server"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "session",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-message-quotes",
+          "path": "packages/session/message-quotes"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-checkpoint-policy",
+          "path": "packages/session/session-checkpoint-policy"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-format",
+          "path": "packages/session/session-format"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-format-catalog",
+          "path": "packages/session/session-format-catalog"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-format-v0-to-v1",
+          "path": "packages/session/session-format-v0-to-v1"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-format-v1-to-v2",
+          "path": "packages/session/session-format-v1-to-v2"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-format-v2-to-v3",
+          "path": "packages/session/session-format-v2-to-v3"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-format-v3-to-v4",
+          "path": "packages/session/session-format-v3-to-v4"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-log-deepseek",
+          "path": "packages/session/session-log-deepseek"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-persistence",
+          "path": "packages/session/session-persistence"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+          "path": "packages/session/session-persistence-jsonl"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-projection",
+          "path": "packages/session/session-projection"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-projection-cache",
+          "path": "packages/session/session-projection-cache"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-stats",
+          "path": "packages/session/session-stats"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-telemetry",
+          "path": "packages/session/session-telemetry"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-telemetry-otel",
+          "path": "packages/session/session-telemetry-otel"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-title",
+          "path": "packages/session/session-title"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-title-first-prompt-llm",
+          "path": "packages/session/session-title-first-prompt-llm"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-title-llm",
+          "path": "packages/session/session-title-llm"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-turn-outline",
+          "path": "packages/session/session-turn-outline"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-working-directory",
+          "path": "packages/session/tool-working-directory"
+        },
+        {
+          "name": "@deepseek-ai/dsh-working-directory",
+          "path": "packages/session/working-directory"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "session-query",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-session-log-export",
+          "path": "packages/session-query/session-log-export"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-query",
+          "path": "packages/session-query/session-query"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-query-sqlite",
+          "path": "packages/session-query/session-query-sqlite"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "settings",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-settings",
+          "path": "packages/settings/settings"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "shell",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-bash-local",
+          "path": "packages/shell/bash-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-bash-sandbox",
+          "path": "packages/shell/bash-sandbox"
+        },
+        {
+          "name": "@deepseek-ai/dsh-pwsh-local",
+          "path": "packages/shell/pwsh-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-pwsh-sandbox",
+          "path": "packages/shell/pwsh-sandbox"
+        },
+        {
+          "name": "@deepseek-ai/dsh-shell",
+          "path": "packages/shell/shell"
+        },
+        {
+          "name": "@deepseek-ai/dsh-shell-env",
+          "path": "packages/shell/shell-env"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-bash",
+          "path": "packages/shell/tool-bash"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-bash-persistent",
+          "path": "packages/shell/tool-bash-persistent"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-pwsh",
+          "path": "packages/shell/tool-pwsh"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-pwsh-persistent",
+          "path": "packages/shell/tool-pwsh-persistent"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "skill",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-skill",
+          "path": "packages/skill/skill"
+        },
+        {
+          "name": "@deepseek-ai/dsh-skill-filesystem",
+          "path": "packages/skill/skill-filesystem"
+        },
+        {
+          "name": "@deepseek-ai/dsh-skill-office",
+          "path": "packages/skill/skill-office"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-skill",
+          "path": "packages/skill/tool-skill"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-workspace-dependencies",
+          "path": "packages/skill/tool-workspace-dependencies"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "spill",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-spill",
+          "path": "packages/spill/spill"
+        },
+        {
+          "name": "@deepseek-ai/dsh-spill-local",
+          "path": "packages/spill/spill-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-spill-policy",
+          "path": "packages/spill/spill-policy"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "ssh",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-fs-ssh",
+          "path": "packages/ssh/fs-ssh"
+        },
+        {
+          "name": "@deepseek-ai/dsh-sandbox-ssh",
+          "path": "packages/ssh/sandbox-ssh"
+        },
+        {
+          "name": "@deepseek-ai/dsh-ssh",
+          "path": "packages/ssh/ssh"
+        },
+        {
+          "name": "@deepseek-ai/dsh-ssh-helper-runtime",
+          "path": "packages/ssh/ssh-helper-runtime"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subprocess-ssh",
+          "path": "packages/ssh/subprocess-ssh"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "storage",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-storage",
+          "path": "packages/storage/storage"
+        },
+        {
+          "name": "@deepseek-ai/dsh-storage-domain",
+          "path": "packages/storage/storage-domain"
+        },
+        {
+          "name": "@deepseek-ai/dsh-storage-json",
+          "path": "packages/storage/storage-json"
+        },
+        {
+          "name": "@deepseek-ai/dsh-storage-sqlite",
+          "path": "packages/storage/storage-sqlite"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "subagent",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-subagent",
+          "path": "packages/subagent/subagent"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subagent-acp",
+          "path": "packages/subagent/subagent-acp"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subagent-claude-code",
+          "path": "packages/subagent/subagent-claude-code"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subagent-codex",
+          "path": "packages/subagent/subagent-codex"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subagent-dsh-sdk",
+          "path": "packages/subagent/subagent-dsh-sdk"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subagent-fork-in-process",
+          "path": "packages/subagent/subagent-fork-in-process"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subagent-spawn-in-process",
+          "path": "packages/subagent/subagent-spawn-in-process"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-subagent",
+          "path": "packages/subagent/tool-subagent"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-subagent-control",
+          "path": "packages/subagent/tool-subagent-control"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "subprocess",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-subprocess",
+          "path": "packages/subprocess/subprocess"
+        },
+        {
+          "name": "@deepseek-ai/dsh-subprocess-local",
+          "path": "packages/subprocess/subprocess-local"
+        },
+        {
+          "name": "@deepseek-ai/dsh-win32-process",
+          "path": "packages/subprocess/win32-process"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "telemetry",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-otel",
+          "path": "packages/telemetry/otel"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "terminal",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-terminal",
+          "path": "packages/terminal/terminal"
+        },
+        {
+          "name": "@deepseek-ai/dsh-terminal-bash",
+          "path": "packages/terminal/terminal-bash"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "test-support",
+      "status": "unverified",
+      "compatibility_route": "reference-support",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-agent-loop-testkit",
+          "path": "packages/test-support/agent-loop-testkit"
+        },
+        {
+          "name": "@deepseek-ai/dsh-client-test-runtime",
+          "path": "packages/test-support/client-runtime"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm-mock-server",
+          "path": "packages/test-support/llm-mock-server"
+        },
+        {
+          "name": "@deepseek-ai/dsh-llm-replay",
+          "path": "packages/test-support/llm-replay"
+        },
+        {
+          "name": "@deepseek-ai/dsh-loader-smoke",
+          "path": "packages/test-support/loader-smoke"
+        },
+        {
+          "name": "@deepseek-ai/dsh-remote-mock",
+          "path": "packages/test-support/remote-mock"
+        },
+        {
+          "name": "@deepseek-ai/dsh-session-snapshot",
+          "path": "packages/test-support/session-snapshot"
+        },
+        {
+          "name": "@deepseek-ai/dsh-tool-testkit",
+          "path": "packages/test-support/tool-testkit"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "todo",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-tool-todo",
+          "path": "packages/todo/tool-todo"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "typert",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-typert-generator",
+          "path": "packages/typert/generator"
+        },
+        {
+          "name": "@deepseek-ai/dsh-typert-loader",
+          "path": "packages/typert/loader"
+        },
+        {
+          "name": "@deepseek-ai/dsh-typert-protocol",
+          "path": "packages/typert/protocol"
+        },
+        {
+          "name": "@deepseek-ai/dsh-typert-registry",
+          "path": "packages/typert/registry"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "util",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-atomic-write",
+          "path": "packages/util/atomic-write"
+        },
+        {
+          "name": "@deepseek-ai/dsh-brand",
+          "path": "packages/util/brand"
+        },
+        {
+          "name": "@deepseek-ai/dsh-chunked-list",
+          "path": "packages/util/chunked-list"
+        },
+        {
+          "name": "@deepseek-ai/dsh-util-code-language",
+          "path": "packages/util/code-language"
+        },
+        {
+          "name": "@deepseek-ai/dsh-util-crypto",
+          "path": "packages/util/crypto"
+        },
+        {
+          "name": "@deepseek-ai/dsh-deque",
+          "path": "packages/util/deque"
+        },
+        {
+          "name": "@deepseek-ai/dsh-util-file-drag",
+          "path": "packages/util/file-drag"
+        },
+        {
+          "name": "@deepseek-ai/dsh-home-paths",
+          "path": "packages/util/home-paths"
+        },
+        {
+          "name": "@deepseek-ai/dsh-http-proxy",
+          "path": "packages/util/http-proxy"
+        },
+        {
+          "name": "@deepseek-ai/dsh-launch-environment",
+          "path": "packages/util/launch-environment"
+        },
+        {
+          "name": "@deepseek-ai/dsh-lazy-require",
+          "path": "packages/util/lazy-require"
+        },
+        {
+          "name": "@deepseek-ai/dsh-native-command",
+          "path": "packages/util/native-command"
+        },
+        {
+          "name": "@deepseek-ai/dsh-official-bundles",
+          "path": "packages/util/official-bundles"
+        },
+        {
+          "name": "@deepseek-ai/dsh-output-retention",
+          "path": "packages/util/output-retention"
+        },
+        {
+          "name": "@deepseek-ai/dsh-package-manifest",
+          "path": "packages/util/package-manifest"
+        },
+        {
+          "name": "@deepseek-ai/dsh-plugin-detail",
+          "path": "packages/util/plugin-detail"
+        },
+        {
+          "name": "@deepseek-ai/dsh-plugin-market-index",
+          "path": "packages/util/plugin-market-index"
+        },
+        {
+          "name": "@deepseek-ai/dsh-util-time",
+          "path": "packages/util/time"
+        },
+        {
+          "name": "@deepseek-ai/dsh-timeout",
+          "path": "packages/util/timeout"
+        },
+        {
+          "name": "@deepseek-ai/dsh-util-values",
+          "path": "packages/util/values"
+        },
+        {
+          "name": "@deepseek-ai/dsh-util-workspace-path",
+          "path": "packages/util/workspace-path"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "web",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-tool-web",
+          "path": "packages/web/tool-web"
+        },
+        {
+          "name": "@deepseek-ai/dsh-web",
+          "path": "packages/web/web"
+        },
+        {
+          "name": "@deepseek-ai/dsh-web-deepseek-api",
+          "path": "packages/web/web-deepseek-api"
+        },
+        {
+          "name": "@deepseek-ai/dsh-web-fetch-http",
+          "path": "packages/web/web-fetch-http"
+        },
+        {
+          "name": "@deepseek-ai/dsh-web-search-deepseek",
+          "path": "packages/web/web-search-deepseek"
+        },
+        {
+          "name": "@deepseek-ai/dsh-web-search-exa",
+          "path": "packages/web/web-search-exa"
+        },
+        {
+          "name": "@deepseek-ai/dsh-web-search-perplexity",
+          "path": "packages/web/web-search-perplexity"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "workflow",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-tool-workflow",
+          "path": "packages/workflow/tool-workflow"
+        },
+        {
+          "name": "@deepseek-ai/dsh-workflow",
+          "path": "packages/workflow/workflow"
+        },
+        {
+          "name": "@deepseek-ai/dsh-workflow-ptc",
+          "path": "packages/workflow/workflow-ptc"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    },
+    {
+      "family": "workspace",
+      "status": "unverified",
+      "compatibility_route": "delegated-candidate",
+      "compared_subsets": [],
+      "packages": [
+        {
+          "name": "@deepseek-ai/dsh-workspace",
+          "path": "packages/workspace/workspace"
+        }
+      ],
+      "required_evidence": "Behavioral scenarios executing this family through the Julia-facing capability, compared with the pinned upstream implementation."
+    }
+  ],
+  "runtime_evidence": {
+    "runner": "../dsh_runtime_differential.jl",
+    "reference_commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
+    "scope": "Direct processes built from the pinned DSH checkout are compared with Julia SDK helpers and native frontend plugins launching the same checkout. These forwarding comparisons do not imply native reimplementation or verification of every enabled plugin.",
+    "required_comparisons": 10,
+    "guards": [
+      "The CLI must be built at apps/cli/lib/bin.js in an unmodified tracked source checkout at the pinned revision; the same-version published npm package is not accepted.",
+      "Both SDK profiles must initialize, reject an uninitialized prompt, and validate session/query input. Unknown-method failures do not count as query support.",
+      "All five shipped profiles must appear in the configuration comparison.",
+      "The Web process must become ready, exchange its own launch token for a browser cookie, serve authenticated HTML with status 200, and serve a nonempty built static asset. Matching startup failures cannot pass.",
+      "Successful-turn scenarios use the pinned upstream llm-mock-server on IPv4 loopback with four scripted success requests. The original SDK must produce the exact fixture response and its resumed model request must contain the original user prompt, assistant response, and continuation prompt."
+    ],
+    "scenarios": [
+      {
+        "profiles": [
+          "sdk",
+          "sdk-minimal"
+        ],
+        "comparisons": 2,
+        "projection": "Thirteen request outcomes per profile: prompt before initialization, initialization, directory get/set/get, idle wait, empty and blank query validation, missing directory and unchanged directory, absent-session resume, unknown method, and shutdown; ordered notification method/session/type trace; process exit."
+      },
+      {
+        "profiles": [
+          "web",
+          "headless",
+          "sdk",
+          "sdk-minimal",
+          "acp"
+        ],
+        "comparisons": 5,
+        "projection": "Complete --dump-config stdout, stderr, and exit status through the native process-launcher/frontend plugin composition."
+      },
+      {
+        "profiles": [
+          "web"
+        ],
+        "comparisons": 1,
+        "projection": "Loopback server startup on an OS-selected port; seven unauthenticated/method/path responses; token-cookie redirect metadata; authenticated HTML and public SVG body lengths and SHA256 digests, content types, cache headers and ETags; conditional asset request; owned process shutdown and exit signal."
+      },
+      {
+        "profiles": [
+          "sdk"
+        ],
+        "comparisons": 2,
+        "projection": "Actual upstream HarnessClient versus Julia helpers: successful prompt, wait, exact final response and finish reason; a fresh process resumes the persisted session despite a different initialization directory, then completes another turn. Compare ordered notification projections and complete model-request messages, model/output-cap/stream options, local server outcomes, and the restored user/assistant history."
+      }
+    ],
+    "normalization": [
+      "SDK session events retain method, sessionId and event type, excluding event bodies containing generated identifiers or timestamps.",
+      "Configuration output replaces each isolated DSH_HOME with <home> and normalizes CRLF.",
+      "Authenticated Web HTML replaces the isolated home and ephemeral listener origin before comparing its complete byte length and SHA256 digest.",
+      "Each Web launch token and signed cookie is used only against its own isolated process; their random values and expiry times are excluded from comparison.",
+      "Successful prompt receipts compare the presence of a nonempty message identifier, excluding its generated value. Provider-request message payloads retain all blocks and content, replacing only the time-context plugin's sampled timestamp and elapsed-time values. Provider credentials, generated HTTP metadata, and system-prompt metadata are outside that comparison."
+    ],
+    "unverified": [
+      "External model responses, generated tool execution, approval and question interaction flows, other persistence histories and recovery/migration cases, jobs, goals, schedules, MCP and third-party package replacement behavior are not exercised by these runtime scenarios.",
+      "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons."
+    ],
+    "included_in_native_case_counts": false
+  },
+  "interpretation": {
+    "required-differential-cases": "The suite requires these comparisons on every run; current pass or fail is determined by execution, not by this metadata.",
+    "unverified": "No behavioral parity for the complete family has been established.",
+    "unverified-remainder": "The explicitly listed projections have differential cases; all other behavior in the family remains unverified.",
+    "delegated-candidate": "An optional DSH composition may expose the family. Presence in the source tree or a profile does not establish operational parity.",
+    "reference-support": "Upstream test helpers or support code, not an automatically verified user capability."
+  }
+}

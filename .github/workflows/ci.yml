@@ -15,6 +15,31 @@ jobs:
       JULIA_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Fetch pinned DSH differential oracle
+        shell: bash
+        run: |
+          DSH_REFERENCE_ROOT="$RUNNER_TEMP/deepseek-harness"
+          echo "DSH_REFERENCE_ROOT=$DSH_REFERENCE_ROOT" >> "$GITHUB_ENV"
+          echo "DSH_BIN=$DSH_REFERENCE_ROOT/apps/cli/lib/bin.js" >> "$GITHUB_ENV"
+          git init "$DSH_REFERENCE_ROOT"
+          git -C "$DSH_REFERENCE_ROOT" remote add origin https://github.com/deepseek-ai/deepseek-harness.git
+          git -C "$DSH_REFERENCE_ROOT" fetch --depth 1 origin ce7073d51254c26cd63b22a60835b8f948deb447
+          git -C "$DSH_REFERENCE_ROOT" checkout --detach FETCH_HEAD
+      - name: Build the pinned DSH runtime oracle
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          npm install --prefix "$RUNNER_TEMP/dsh-build-tools" --ignore-scripts --no-audit --no-fund pnpm@11.28.5
+          export PATH="$RUNNER_TEMP/dsh-build-tools/node_modules/.bin:$PATH"
+          pnpm --dir "$DSH_REFERENCE_ROOT" install --frozen-lockfile --ignore-scripts
+          pnpm --dir "$DSH_REFERENCE_ROOT" run build:native-system
+          pnpm --dir "$DSH_REFERENCE_ROOT" exec tsx scripts/compile-referenced-projects.ts host-libraries
+          pnpm --dir "$DSH_REFERENCE_ROOT" run build:lib:client
+          pnpm --dir "$DSH_REFERENCE_ROOT" run build:web
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.13'

@@ -21,14 +21,34 @@ public ResponseProgress, protocol_progress, emit_protocol_progress!, operation_i
 public usage_snapshot, model_request, own_resource!
 public AgentDecision, agent_decision, action_content, action_kind, action_payload
 public BoundComponent, bind_component, bound_dependency, fork_kernel
+public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile
+public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
+public ExtensionScope, on!, dispatch_event!, event_scope_plugin
+public ToolSpec, ToolCall, ToolExecutor, register_tool!, restrict_tools!, tools_snapshot, tool, invoke_tool!
+public RpcError, RpcResult, JsonRpcPeer, request!, notify!, feed!, start!, drain!
+public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!, start_runtime, finish_runtime!
+public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
+public DSHProfile, DSHClient, DSHSession, dsh_command, connect_dsh, subscribe_runtime!
+public dsh_prompt!, dsh_query!, dsh_resume!, dsh_wait!, dsh_working_directory, dsh_working_directory!, dsh_final_response
+public runtime_transport_plugin, process_launcher_plugin, dsh_sdk_plugin, dsh_frontend_plugin
 
 include("kernel.jl")
 include("agent.jl")
+include("core/plugins.jl")
+include("core/extensions.jl")
+include("core/event_context.jl")
 include("features/code_mode/streaming.jl")
 include("infrastructure/infrastructure.jl")
+include("infrastructure/jsonrpc.jl")
+include("runtime/backends.jl")
+include("compatibility/dsh_profiles.jl")
+include("compatibility/dsh_runtime.jl")
 include("auth.jl")
 include("providers.jl")
 include("application/presentation.jl")
+
+"""Create a session retaining the currently active plugin composition."""
+Session(host::PluginHost; kwargs...) = Session(fork_kernel(host); owns_kernel=true, kwargs...)
 
 """Run an installed frontend."""
 function main end
