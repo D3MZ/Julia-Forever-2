@@ -18,6 +18,8 @@ public ProviderRegistry, builtin_provider_registry
 public ModelSpec, ProviderFactory, ModelProvider, respond_model, select_model, provider_models, provider_model
 public HTTPModelBackend, OpenAIChatProtocol, AnthropicMessagesProtocol, StreamedCompletion
 public MemoryModelStore, read_model_catalog, write_model_catalog!, delete_model_catalog!
+public model_context_window, model_output_limit, refresh_pi_model_catalog!
+public CompactionSettings, resolved_compaction, compact!, context_messages, compaction_snapshot
 public provider_id, provider_from_name, configured_provider, provider_name, provider_detail, usage_label, main
 public ProviderIdentity, provider_identity
 public component_snapshot, provider_selection_snapshot, provider_settings_snapshot, select_provider!
@@ -60,6 +62,7 @@ include("runtime/backends.jl")
 include("core/profile_patches.jl")
 include("auth.jl")
 include("providers.jl")
+include("core/compaction.jl")
 include("application/presentation.jl")
 
 """Create a session retaining the currently active plugin composition."""
