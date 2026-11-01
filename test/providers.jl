@@ -394,3 +394,44 @@ end
     @test all(call -> call.context === context, calls)
     close(context)
 end
+
+
+@testset "OpenAI streamed text and thinking chunks preserve completed content" begin
+    deltas = [isodd(index) ? repeat("Julia answer λ 🚀 ", 10) :
+        repeat("model tool output: ", 11) for index in 1:120]
+    thinking = [isodd(index) ? "reasoning λ " : "reasoning 🚀 " for index in 1:120]
+    frames = ["data: " * JSON.json(Dict("choices" => [
+        Dict("delta" => Dict("content" => deltas[index],
+            "reasoning_content" => thinking[index]), "finish_reason" => nothing)])) * "\n\n"
+        for index in eachindex(deltas)]
+    push!(frames, "data: " * JSON.json(Dict("choices" =>
+        [Dict("delta" => Dict{String,Any}(), "finish_reason" => "stop")])) * "\n\n")
+    transport = (url, method, body, headers, context, decoder) -> begin
+        for frame in frames
+            write(decoder, frame)
+        end
+        (status=200, reason="OK")
+    end
+    events = HarnessEvent[]
+    context = ExecutionContext(; event_sink=event -> push!(events, event))
+    backend = JuliaForever2.HTTPModelBackend(JuliaForever2.OpenAIChatProtocol(),
+        "https://offline.invalid"; transport)
+    request = JuliaForever2.ModelRequest([Message(:user, "Generate a long answer")],
+        "", nothing, nothing, nothing)
+    completion = JuliaForever2.respond_model(backend,
+        JuliaForever2.ModelSpec(:synthetic, "test-model"), request, context)
+    content = completion.message["content"]
+    @test completion.reply == Reply(:answer, join(deltas))
+    @test length(content) == 2
+    @test content[1]["thinking"] == join(thinking)
+    @test content[2]["text"] == join(deltas)
+    @test all(block -> block["type"] in ("thinking", "text"), content)
+    @test completion.message["stopReason"] == "stop"
+    emitted = [event.data for event in events if event.kind == :model_stream]
+    @test count(event -> event["type"] == "text_delta", emitted) == length(deltas)
+    @test count(event -> event["type"] == "thinking_delta", emitted) == length(thinking)
+    @test only(filter(event -> event["type"] == "text_end", emitted))["content"] == join(deltas)
+    @test only(filter(event -> event["type"] == "thinking_end", emitted))["content"] == join(thinking)
+    @test last(emitted)["type"] == "done"
+    close(context)
+end
