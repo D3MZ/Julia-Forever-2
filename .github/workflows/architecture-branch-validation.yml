@@ -1,0 +1,28 @@
+name: Temporary offline architecture validation
+on:
+  push:
+    branches:
+      - automation/architecture-plugin-composition-split-20261101
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      JULIA_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Install test environment
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate()'
+      - name: Full offline Julia suite including differential, lint, Aqua, and JET
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl all
