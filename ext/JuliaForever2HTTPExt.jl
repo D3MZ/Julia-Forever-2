@@ -89,7 +89,7 @@ end
 web_session_cookie(access::WebAccess, request::HTTP.Request) = any(part -> strip(part) == "juliaforever2_session=$(access.cookie)", split(HTTP.header(request, "Cookie"), ';'))
 
 
-const LOCAL_WEB_AUTHORITY = r"^(127\\.0\\.0\\.1|localhost|\\[::1\\])(?::([0-9]{1,5}))?$"i
+const LOCAL_WEB_AUTHORITY = r"^(127\.0\.0\.1|localhost|\[::1\])(?::([0-9]{1,5}))?$"i
 
 """Parse the literal loopback HTTP authority, rejecting remote and ambiguous host spellings."""
 function local_web_authority(value::AbstractString, scheme::AbstractString)
@@ -121,7 +121,7 @@ end
 
 function authorize_web_request(api, access::WebAccess, handler, trust, request::HTTP.Request)
     Base.invokelatest(trust, request) === true ||
-        return response(403, "{\\"error\\":\\"Untrusted browser authority\\"}")
+        return response(403, "{\"error\":\"Untrusted browser authority\"}")
     uri = HTTP.URI(String(request.target))
     query = HTTP.queryparams(uri)
     if request.method == "GET" && uri.path == "/" && haskey(query, "access")
