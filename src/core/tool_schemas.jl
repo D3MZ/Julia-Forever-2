@@ -210,7 +210,7 @@ function checked_json_violations(::Val{:null}, node, value, path)
 end
 
 """Validate a canonical tool output independently of its input argument schema."""
-tool_output_violations(schema, value) = String[]
+tool_output_violations(schema, value) = ["No tool output validator for schema type $(typeof(schema))"]
 tool_output_violations(schema::CheckedJSONSchema, value) =
     checked_json_violations(schema.definition, value, "output")
 
