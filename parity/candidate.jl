@@ -105,8 +105,7 @@ end
 function wire_scenario(scenario)
     metadata = scenario["model"]
     model = fixture_model(metadata)
-    protocol = scenario["protocol"] == "anthropic" ? JuliaForever2.AnthropicMessagesProtocol() :
-        JuliaForever2.OpenAIChatProtocol(; compatibility=metadata["compat"])
+    protocol = scenario["protocol"] == "anthropic" ? JuliaForever2.AnthropicMessagesProtocol() : JuliaForever2.OpenAIChatProtocol(; compatibility=metadata["compat"])
     headers = scenario["protocol"] == "anthropic" ? ["x-api-key" => "fixture-only"] : ["Authorization" => "Bearer fixture-only"]
     backend = JuliaForever2.HTTPModelBackend(protocol, scenario["endpoint"];
         credentials=Returns(headers), options=scenario["options"])
