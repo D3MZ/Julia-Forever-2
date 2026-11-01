@@ -98,7 +98,7 @@ function clear_history!(conversation::Conversation)
         conversation.usage.context_tokens = nothing
         changed_history!(conversation, 1)
     end
-    return nothing
+    conversation
 end
 
 function replace_message!(conversation::Conversation, index::Integer, message)
@@ -181,7 +181,7 @@ function record_usage!(conversation::Conversation, report::UsageReport)
         accumulate!(accumulate!(conversation.usage, report.input_tokens, report.output_tokens), report.cost)
         accumulate_cache!(conversation.usage, report)
     end
-    nothing
+    conversation
 end
 
 record_usage!(conversation::Conversation, data) = record_usage!(conversation, normalize_usage(data))
