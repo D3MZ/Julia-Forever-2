@@ -278,3 +278,36 @@ end
     @test JuliaForever2.normalize_usage(Dict("cost" => BigFloat("1.25"))).cost == 1.25
     @test isnothing(JuliaForever2.normalize_usage(Dict("cost" => -1)).cost)
 end
+
+@testset "Extension scope liveness checks avoid per-ancestor allocations" begin
+    shallow = JuliaForever2.ExtensionScope()
+    root = JuliaForever2.ExtensionScope()
+    deep = root
+    for _ in 1:128
+        deep = JuliaForever2.ExtensionScope(deep)
+    end
+
+    function open_calls(scope, repetitions)
+        alive = 0
+        for _ in 1:repetitions
+            alive += isopen(scope)
+        end
+        return alive
+    end
+
+    repetitions = 100
+    @test open_calls(shallow, repetitions) == repetitions
+    @test open_calls(deep, repetitions) == repetitions
+    GC.gc()
+    shallow_bytes = @allocated open_calls(shallow, repetitions)
+    GC.gc()
+    deep_bytes = @allocated open_calls(deep, repetitions)
+    println("Extension scope liveness allocations across ", repetitions, " warmed calls: ",
+        "depth 0=", shallow_bytes, " bytes; depth 128=", deep_bytes,
+        " bytes; target growth <= 32768 bytes")
+    @test deep_bytes <= shallow_bytes + 32_768
+
+    close(root)
+    @test !isopen(deep)
+    close(shallow)
+end
