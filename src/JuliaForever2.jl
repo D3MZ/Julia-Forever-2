@@ -34,8 +34,10 @@ public RpcError, RpcResult, JsonRpcPeer, request!, notify!, feed!, start!, drain
 public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!, start_runtime, finish_runtime!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
 public runtime_transport_plugin, process_launcher_plugin
-public SessionStore, save_session!, load_session, session_store_plugin
-public SessionQuery, session_query_plugin, search_history, session_names
+public SessionStore, save_session!, load_session, session_store_plugin, session_lineage, session_descendants
+public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, search_history, session_names
+public SessionAPI, session_api_plugin, session_api_request!, session_api_peer
+public start_web_server, web_server_plugin, web_url
 
 include("kernel.jl")
 include("agent.jl")
@@ -43,6 +45,7 @@ include("core/plugins.jl")
 include("core/profile_store.jl")
 include("core/session_store.jl")
 include("core/session_query.jl")
+include("core/session_api.jl")
 include("core/tool_schemas.jl")
 include("core/extensions.jl")
 include("core/event_context.jl")
@@ -57,6 +60,11 @@ include("application/presentation.jl")
 
 """Create a session retaining the currently active plugin composition."""
 Session(host::PluginHost; kwargs...) = Session(fork_kernel(host); owns_kernel=true, kwargs...)
+
+"""Start an independently implemented Julia web frontend when its optional HTTP extension is installed."""
+function start_web_server end
+function web_server_plugin end
+function web_url end
 
 """Run an installed frontend."""
 function main end

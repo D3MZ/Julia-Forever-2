@@ -703,6 +703,43 @@ function session_query_result(input)
     end
 end
 
+
+"""Check reindexing against upstream text-query results after each native persisted rewrite."""
+function indexed_rewrite_differential()
+    fixtures = [
+        Dict("name" => "initial", "text" => "sapphire", "sessions" => [
+            Dict("name" => "rewritten", "messages" => [
+                Dict("role" => "user", "content" => "one sapphire")])]),
+        Dict("name" => "updated", "text" => "sapphire", "sessions" => [
+            Dict("name" => "rewritten", "messages" => [
+                Dict("role" => "user", "content" => "no match"),
+                Dict("role" => "assistant", "content" => "SAPPHIRE restored")])]),
+    ]
+    expected = reference_results("session_query", fixtures)
+    return mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        index = JuliaForever2.SessionSearchIndex(store)
+        observations = Any[]
+        for fixture in fixtures
+            specification = only(fixture["sessions"])
+            messages = Message[Message(Symbol(entry["role"]), entry["content"]) for entry in specification["messages"]]
+            session = Session(Kernel(); messages, owns_kernel=true)
+            JuliaForever2.save_session!(store, specification["name"], session)
+            close(session)
+            matches = JuliaForever2.search_history(index, fixture["text"])
+            push!(observations, normalize(Dict("ok" => true, "hits" => [
+                Dict("session" => hit.session, "index" => hit.index, "role" => String(hit.role),
+                    "kind" => String(hit.kind), "content" => hit.content) for hit in matches])))
+        end
+        return observations, expected
+    end
+end
+
+@testset "Indexed search revision differentials against pinned upstream predicates" begin
+    actual, expected = indexed_rewrite_differential()
+    @test actual == expected
+end
+
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
