@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified.",
+  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Native opt-in tool batches now have bounded DSH scheduler differentials for exclusive barriers, ordered settlement and safe parallelism; full admission, approval and dynamic scheduling remain unverified. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -400,6 +400,29 @@
         "The reference receives simple semantic text documents; Julia searches user/assistant message text. Full DSH event extraction, index-backed ranking, lineage, other event types and complete session-query service parity are unverified.",
         "Only the eleven pinned differential fixtures are checked.",
         "Index is an independent Julia implementation: current store writes invalidate it, while external file modifications require explicit refresh_index!; no DSH indexing algorithm equivalence is claimed."
+      ]
+    },
+    {
+      "kind": "tool_batches",
+      "case_count": 12,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/batch.ts",
+          "symbols": [
+            "executeToolBatch"
+          ]
+        }
+      ],
+      "compares": [
+        "ordered one-result-per-call settlement including unknown calls and callback failures",
+        "explicit per-tool concurrency safety and bounded parallel pool peak",
+        "exclusive calls do not overlap adjacent safe calls",
+        "native ToolExecutor and Session evaluation with a batch action"
+      ],
+      "limits": [
+        "Pinned DSH's original executeToolBatch scheduler runs against a scripted prepare/dispatch/complete pipeline. Julia uses its actual scoped registry and callbacks. This proves a bounded scheduling projection, not complete DSH tool-executor behavior.",
+        "DSH policy, approval, cancellation, dynamic replacement, output presentation and exact event timing remain unverified; Julia concurrency safety is an opt-in static declaration and does not implement DSH's argument-dependent classifier."
       ]
     },
     {

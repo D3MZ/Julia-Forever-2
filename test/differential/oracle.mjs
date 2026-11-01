@@ -7,6 +7,13 @@ import { importSource, referenceSource, referenceRoot, cordisReference, scopedRe
 const { filterSessionEventDocuments } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
 
+const { executeToolBatch } = await importSource('packages/core/tools/src/batch.ts', source => {
+  const start = source.indexOf('export async function executeToolBatch(')
+  if (start < 0) throw new Error('Locked DSH tool batch scheduler was not found')
+  return source.slice(start)
+})
+
+
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
   const end = source.indexOf('/** Runtime patch applied to entries', start)
@@ -40,6 +47,58 @@ function toolOutputsCase(input) {
   assertSupportedJsonSchema(input.schema)
   const violations = validateJsonSchemaValue(input.schema, input.value, 'result').sort()
   return { violations, accepted: violations.length === 0, schema: input.schema }
+}
+
+
+async function toolBatchCase(input) {
+  const definitions = new Map(input.tools.map(tool => [tool.name, tool]))
+  let active = 0
+  let exclusive = 0
+  let peak = 0
+  let exclusiveOverlap = false
+  const pipeline = {
+    executionMode(exec) {
+      return { kind: definitions.get(exec.name)?.parallel === true ? 'parallel' : 'exclusive' }
+    },
+    async prepare(exec) {
+      if (definitions.has(exec.name)) return { kind: 'dispatch', exec }
+      return { kind: 'post-result', exec, result: {
+        content: [{ type: 'text', text: 'unknown tool' }], isError: true,
+      } }
+    },
+    async dispatch(exec) {
+      const safe = definitions.get(exec.name).parallel === true
+      if ((safe && exclusive > 0) || (!safe && active > 0)) exclusiveOverlap = true
+      active++
+      if (!safe) exclusive++
+      peak = Math.max(peak, active)
+      await new Promise(resolve => setTimeout(resolve, exec.arguments.delay_ms))
+      active--
+      if (!safe) exclusive--
+      return { kind: 'post-result', result: {
+        content: [{ type: 'text', text: String(exec.arguments.value) }],
+        isError: exec.arguments.fail === true,
+      } }
+    },
+    async complete(slot) { return slot.result },
+  }
+  const calls = input.calls.map((call, index) => ({
+    id: String(index + 1),
+    name: call.name,
+    arguments: JSON.stringify({
+      value: call.value, delay_ms: call.delay_ms ?? 0, fail: call.fail === true,
+    }),
+  }))
+  const settled = await executeToolBatch({
+    calls, signal: new AbortController().signal, maxParallelToolCalls: input.max_parallel,
+  }, pipeline, () => 1)
+  return {
+    results: settled.results.map(({ callId, result }) => ({
+      id: callId, ok: !result.isError,
+      value: result.isError ? null : result.content[0].text,
+    })),
+    peak, exclusiveOverlap,
+  }
 }
 
 function patchCase(input) {
@@ -575,6 +634,7 @@ function sessionQueryCase(input) {
 async function execute(input) {
   if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
   if (input.kind === 'tool_outputs') return input.cases.map(toolOutputsCase)
+  if (input.kind === 'tool_batches') return Promise.all(input.cases.map(toolBatchCase))
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)

@@ -12,6 +12,7 @@ CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "prof
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
+CASES["tool_batches"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batches.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -619,6 +620,61 @@ function profile_group_result(input)
     end
 end
 
+
+"""Compare an independent Julia tool batch to pinned DSH's actual batch scheduler."""
+function tool_batches_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    monitor = ReentrantLock()
+    active = Ref(0)
+    exclusive = Ref(0)
+    peak = Ref(0)
+    violated = Ref(false)
+    for definition in input["tools"]
+        safe = get(definition, "parallel", false)
+        callback = let safe = safe
+            arguments -> begin
+                lock(monitor) do
+                    violated[] |= (safe && exclusive[] > 0) || (!safe && active[] > 0)
+                    active[] += 1
+                    safe || (exclusive[] += 1)
+                    peak[] = max(peak[], active[])
+                end
+                sleep(get(arguments, "delay_ms", 0) / 1000)
+                lock(monitor) do
+                    active[] -= 1
+                    safe || (exclusive[] -= 1)
+                end
+                return get(arguments, "fail", false) ?
+                    ExecutionResult(false, "fixture failed") : arguments["value"]
+            end
+        end
+        registered = JuliaForever2.register_tool!(scope,
+            JuliaForever2.ToolSpec(Symbol(definition["name"]), Dict("type" => "object"), callback; parallel=safe))
+        registered.ok || error(registered.reason)
+    end
+    calls = JuliaForever2.ToolCall[
+        JuliaForever2.ToolCall(Symbol(call["name"]),
+            Dict("value" => call["value"], "delay_ms" => get(call, "delay_ms", 0),
+                "fail" => get(call, "fail", false))) for call in input["calls"]]
+    limit = input["max_parallel"]
+    if get(input, "session", false)
+        kernel = Kernel()
+        session = Session(kernel; executor=JuliaForever2.ToolExecutor(scope))
+        overall = evaluate!(session, JuliaForever2.ToolBatch(calls; max_parallel=limit))
+        results = overall.value
+        close(session)
+        close(kernel)
+    else
+        results = JuliaForever2.invoke_tool_batch!(scope, calls; max_parallel=limit)
+    end
+    close(scope)
+    return normalize(Dict("results" => [
+        Dict("id" => string(index), "ok" => result.ok,
+            "value" => result.ok ? result.value : nothing)
+        for (index, result) in enumerate(results)],
+        "peak" => peak[], "exclusiveOverlap" => violated[]))
+end
+
 final_response_result(input) = dsh_final_response(input["events"])
 
 function launch_result(input)
@@ -772,6 +828,7 @@ end
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
+            ("tool_batches", tool_batches_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),

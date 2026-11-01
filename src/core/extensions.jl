@@ -8,15 +8,21 @@ struct ToolSpec{S,F,O}
     call::F
     description::String
     output_schema::O
+    parallel::Bool
 end
 
 """Describe a tool independently of its executor, provider schema, or presentation protocol."""
-ToolSpec(name, schema, callback; description="", output_schema=nothing) =
-    ToolSpec(Symbol(name), schema, callback, String(description), output_schema)
+ToolSpec(name, schema, callback; description="", output_schema=nothing, parallel=false) =
+    ToolSpec(Symbol(name), schema, callback, String(description), output_schema, parallel === true)
 ToolSpec(name::Symbol, schema, callback, description::AbstractString) =
-    ToolSpec(name, schema, callback, String(description), nothing)
-ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing) =
-    ToolSpec(name, schema, callback; description, output_schema)
+    ToolSpec(name, schema, callback, String(description), nothing, false)
+ToolSpec(name::Symbol, schema, callback, description::String, output_schema) =
+    ToolSpec(name, schema, callback, description, output_schema, false)
+ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, parallel=false) =
+    ToolSpec(name, schema, callback; description, output_schema, parallel)
+
+"""Only explicitly concurrency-safe tools may overlap sibling calls."""
+tool_concurrency_safe(spec::ToolSpec, arguments) = spec.parallel
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}, schema; kwargs...) = ToolSpec(name, schema, callback; kwargs...)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}; kwargs...) = ToolSpec(name, callback; kwargs...)
 
@@ -667,10 +673,8 @@ function checked_tool_result(spec::ToolSpec, returned)
     return ExecutionResult(false, string("Invalid tool result: ", join(violations, "; ")))
 end
 
-"""Invoke a tool only after all inherited plugin-owned guards permit its call."""
-function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
-    invocation = acquire_tool!(scope, name)
-    isnothing(invocation) && return ExecutionResult(false, "Unknown tool: $name")
+"""Invoke a retained tool only after all inherited plugin-owned guards permit its call."""
+function invoke_tool_entry!(scope::ExtensionScope, invocation::EventInvocation, arguments...)
     guards = acquire_tool_guards(scope)
     worker = spawn_scoped() do
         call = ToolCall(name, length(arguments) == 1 ? first(arguments) : arguments)
@@ -698,12 +702,82 @@ function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
     return tool_result(fetch(worker))
 end
 
+"""Acquire and invoke the currently visible tool generation."""
+function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
+    invocation = acquire_tool!(scope, name)
+    isnothing(invocation) && return ExecutionResult(false, "Unknown tool: $name")
+    return invoke_tool_entry!(scope, invocation, arguments...)
+end
+
 struct ToolCall{A}
     name::Symbol
     arguments::A
 end
 
 ToolCall(name, arguments) = ToolCall(Symbol(name), arguments)
+
+"""A sequence of independent tool calls, with explicit bounded concurrency."""
+struct ToolBatch
+    calls::Vector{ToolCall}
+    max_parallel::Int
+end
+
+function ToolBatch(calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4)
+    1 <= max_parallel <= typemax(Int) || error("max_parallel must be a positive Int")
+    return ToolBatch(ToolCall[call for call in calls], Int(max_parallel))
+end
+
+function tool_batch_task_result(task::Task)
+    wait(task; throw=false)
+    istaskfailed(task) && return ExecutionResult(false, sprint(showerror, TaskFailedException(task)))
+    return tool_result(fetch(task))
+end
+
+"""Drain started bodies in call order before crossing an exclusive boundary."""
+function finish_tool_batch!(results::Vector{ExecutionResult}, running::Vector{Pair{Int,Task}})
+    for (index, worker) in running
+        results[index] = tool_batch_task_result(worker)
+    end
+    empty!(running)
+    return nothing
+end
+
+"""Invoke independent calls with exclusive barriers, retained tool generations, and ordered results.
+
+Only a tool's explicit concurrency-safe declaration permits parallel dispatch.
+Unknown tools and tools without that declaration are exclusive. Every started
+callback is drained before returning, and cancellation skips unstarted calls.
+"""
+function invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolCall};
+        max_parallel::Integer=4, context=nothing)
+    1 <= max_parallel <= typemax(Int) || error("max_parallel must be a positive Int")
+    results = ExecutionResult[ExecutionResult(false, "Cancelled") for _ in calls]
+    running = Pair{Int,Task}[]
+    for (index, call) in enumerate(calls)
+        !isnothing(context) && cancelled(context) && continue
+        retained = acquire_tool!(scope, call.name)
+        safe = !isnothing(retained) && tool_concurrency_safe(retained.listener.spec, call.arguments) === true
+        if !safe
+            isnothing(retained) || release_tool!(retained)
+            finish_tool_batch!(results, running)
+            !isnothing(context) && cancelled(context) && continue
+            results[index] = invoke_tool!(scope, call.name, call.arguments)
+        else
+            if length(running) >= max_parallel
+                oldest = popfirst!(running)
+                results[oldest.first] = tool_batch_task_result(oldest.second)
+            end
+            if !isnothing(context) && cancelled(context)
+                release_tool!(retained)
+            else
+                worker = spawn_scoped(() -> invoke_tool_entry!(scope, retained, call.arguments))
+                push!(running, index => worker)
+            end
+        end
+    end
+    finish_tool_batch!(results, running)
+    return results
+end
 
 struct ToolExecutor
     scope::ExtensionScope
@@ -724,6 +798,20 @@ function execute!(executor::ToolExecutor, action::ToolCall, context::ExecutionCo
     emit!(context, HarnessEvent(:tool_result, (name=action.name, result)))
     return result
 end
+
+"""Execute a batch through the injected tool executor, publishing results in call order."""
+function execute!(executor::ToolExecutor, action::ToolBatch, context::ExecutionContext)
+    results = invoke_tool_batch!(executor.scope, action.calls; max_parallel=action.max_parallel, context)
+    for (call, result) in zip(action.calls, results)
+        emit!(context, HarnessEvent(:tool_result, (name=call.name, result)))
+    end
+    return ExecutionResult(all(result.ok for result in results),
+        join((result.text for result in results), "\n"), results)
+end
+
+action_kind(::ToolBatch) = :tool_batch
+action_content(action::ToolBatch) = string(length(action.calls), " tool calls")
+agent_decision(action::ToolBatch) = ActionDecision(action)
 
 action_kind(::ToolCall) = :tool_call
 action_content(action::ToolCall) = string(action.name, "(", repr(action.arguments), ")")
