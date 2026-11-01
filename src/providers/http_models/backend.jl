@@ -37,22 +37,22 @@ function empty_model_message(model::ModelSpec)
         "stopReason" => "pending", "timestamp" => round(Int, time() * 1000))
 end
 
-mutable struct ModelStreamState{M,C}
+Base.@kwdef mutable struct ModelStreamState{M,C}
     model::M
     context::C
     message::Dict{String,Any}
-    blocks::Dict{Any,Int}
-    arguments::Dict{Int,String}
-    text_buffers::Dict{Int,IOBuffer}
-    closed_blocks::Set{Int}
-    received_start::Bool
-    received_stop::Bool
-    started::Bool
-    finished::Bool
-    error::String
-    started_at::UInt64
+    blocks::Dict{Any,Int} = Dict{Any,Int}()
+    arguments::Dict{Int,String} = Dict{Int,String}()
+    text_buffers::Dict{Int,IOBuffer} = Dict{Int,IOBuffer}()
+    closed_blocks::Set{Int} = Set{Int}()
+    received_start::Bool = false
+    received_stop::Bool = false
+    started::Bool = false
+    finished::Bool = false
+    error::String = ""
+    started_at::UInt64 = time_ns()
 end
-ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns())
+ModelStreamState(model, context) = ModelStreamState(; model, context, message=empty_model_message(model))
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
