@@ -20,6 +20,6 @@ jobs:
       - name: Instantiate package
         run: julia --project -e 'using Pkg; Pkg.instantiate()'
       - name: Run compaction, core, and provider regression tests
-        run: julia --project test/runtests.jl compaction core providers selection
+        run: julia --project test/runtests.jl compaction core providers selection tui
       - name: Run Julia source lint
         run: julia --project test/runtests.jl lint

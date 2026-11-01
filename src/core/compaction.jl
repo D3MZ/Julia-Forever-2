@@ -214,3 +214,14 @@ function request_with_compaction(session::Session, provider, protocol, context::
         original
     end
 end
+
+
+"""Submit cancellable manual compaction through the session's normal managed operation lifecycle."""
+function submit_compaction!(session::Session; instructions="", context=ExecutionContext())
+    submit_managed!(session, session, context) do owned_context
+        result = compact!(session; instructions, context=owned_context)
+        success = result.status == :compacted
+        ExecutionResult(success, success ? "Conversation compacted." :
+            "Compaction: " * String(result.status))
+    end
+end

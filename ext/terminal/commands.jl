@@ -39,6 +39,18 @@ function settings_command!(app::App, arguments)
 end
 components_command!(app::App, arguments) = (app.page = :components; nothing)
 
+"""Compact earlier session context without blocking terminal input or losing archival history."""
+function compact_command!(app::App, instructions::AbstractString)
+    if app.busy || app.operations.closing[]
+        app.status = "Finish or cancel the active operation first."
+    else
+        handle = submit_compaction!(app.session;
+            instructions=String(instructions), context=ui_context(app))
+        track_operation!(app, handle, :compaction_done, "Compacting…")
+    end
+    nothing
+end
+
 function clear_command!(app::App, arguments)
     if !app.busy
         clear_history!(app.session)
