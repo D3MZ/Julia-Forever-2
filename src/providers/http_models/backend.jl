@@ -110,9 +110,9 @@ function text_model_block!(state::ModelStreamState, kind::String, delta::Abstrac
             state.text_buffers = buffers
         end
         output = get!(buffers, index) do
-            output = IOBuffer()
-            write(output, block[kind])
-            output
+            initial = IOBuffer()
+            write(initial, block[kind])
+            initial
         end
         write(output, delta)
     end
@@ -203,12 +203,13 @@ finish_protocol_stream!(protocol, state::ModelStreamState) = finish_model_blocks
 
 function finish_model_stream!(state::ModelStreamState)
     state.finished && return nothing
-    if !isnothing(state.text_buffers)
-        for (index, output) in state.text_buffers
+    buffers = state.text_buffers
+    if !isnothing(buffers)
+        for (index, output) in buffers
             block = state.message["content"][index]
             block[block["type"]] = String(take!(output))
         end
-        empty!(state.text_buffers)
+        empty!(buffers)
     end
     state.finished = true
     state.message["durationMs"] = Int((time_ns() - state.started_at) ÷ 1_000_000)
