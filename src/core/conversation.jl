@@ -92,7 +92,12 @@ function record_usage!(conversation::Conversation, report::UsageReport)
         if isnothing(report.cost)
             usage.cost_known = false
         else
-            usage.cost += report.cost
+            next_cost = usage.cost + report.cost
+            if isfinite(next_cost)
+                usage.cost = next_cost
+            else
+                usage.cost_known = false
+            end
         end
     end
     return nothing
