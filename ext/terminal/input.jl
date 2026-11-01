@@ -1,3 +1,17 @@
+"""Apply Pi-style Tab completion to a command, retaining a trailing argument space."""
+function complete_input!(app::App)
+    text = Tachikoma.text(app.input)
+    if startswith(text, "/") && !occursin(' ', text)
+        matches = matching_commands(app)
+        if !isempty(matches)
+            selected = matches[clamp(app.selected, 1, length(matches))][1]
+            Tachikoma.set_text!(app.input, "/" * selected * " ")
+            app.menu = false
+        end
+    end
+    return nothing
+end
+
 function default_input!(app::App, event::KeyEvent)
     if event.key == :ctrl_c
         quit_command!(app, "")
@@ -13,7 +27,9 @@ function page_input!(app::App, page::Val, event::KeyEvent)
 end
 
 function page_input!(app::App, ::Val{:chat}, event::KeyEvent)
-    if app.menu
+    if event.key == :tab
+        complete_input!(app)
+    elseif app.menu
         matches = matching_commands(app)
         if event.key == :escape
             app.menu = false
