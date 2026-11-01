@@ -198,3 +198,20 @@ end
         @test isempty(peer.buffer)
     end
 end
+
+
+function escapeallocations(policy, text)
+    JuliaForever2.protocol_progress(policy, text)
+    @allocated JuliaForever2.protocol_progress(policy, text)
+end
+
+@testset "Escaped previews retain bounded allocation after constructor composition" begin
+    policy = JuliaForever2.CodeModePolicy()
+    content = repeat("quoted \"text\"\n\tpath\\segment", 120)
+    text = JSON.json((kind="answer", content))
+    escapeallocations(policy, text)
+    allocated = minimum(escapeallocations(policy, text) for _ in 1:3)
+    println("Warmed escaped preview: ", allocated, " bytes; allocation budget <= 32768 bytes")
+    @test JuliaForever2.protocol_progress(policy, text).text == content
+    @test allocated <= 32768
+end

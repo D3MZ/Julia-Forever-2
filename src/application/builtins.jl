@@ -8,6 +8,10 @@ function builtin_provider_registry()
     return registry
 end
 
-for descriptor in provider_descriptors(builtin_provider_registry())
-    register_provider!(descriptor)
+"""Install built-in descriptors outside global scope to preserve a function barrier."""
+function register_builtin_providers!()
+    foreach(register_provider!, provider_descriptors(builtin_provider_registry()))
+    nothing
 end
+
+register_builtin_providers!()

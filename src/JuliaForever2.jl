@@ -19,6 +19,7 @@ public ModelSpec, ProviderFactory, ModelProvider, respond_model, select_model, p
 public HTTPModelBackend, OpenAIChatProtocol, AnthropicMessagesProtocol, StreamedCompletion
 public MemoryModelStore, read_model_catalog, write_model_catalog!, delete_model_catalog!
 public provider_id, provider_from_name, configured_provider, provider_name, provider_detail, usage_label, main
+public ProviderIdentity, provider_identity
 public component_snapshot, provider_selection_snapshot, provider_settings_snapshot, select_provider!
 public ResponseProgress, protocol_progress, emit_protocol_progress!, operation_id
 public usage_snapshot, model_request, own_resource!
@@ -29,7 +30,9 @@ public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileSt
 public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
 public ToolSpec, ToolCall, ToolExecutor, ToolBatch, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!, invoke_tool_batch!, tool_concurrency_safe
-public CheckedJSONSchema, tool_argument_violations, tool_output_violations, tool_schema_definition
+public CheckedJSONSchema, tool_argument_violations, tool_output_violations, tool_schema_definition, tool_output_text
+public AbstractToolApprovalRequest, ToolApprovalRequest, tool_approval_reason, tool_approval_outcome
+public ToolResultBlock, ToolResultText, ToolResultValue, tool_completion_decision, apply_tool_completion
 public RpcError, RpcResult, JsonRpcPeer, request!, notify!, feed!, start!, drain!
 public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!, start_runtime, finish_runtime!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
@@ -37,7 +40,7 @@ public runtime_transport_plugin, process_launcher_plugin
 public SessionStore, save_session!, load_session, session_store_plugin, session_lineage, session_descendants
 public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, search_history, session_names
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer
-public start_web_server, web_server_plugin, web_url
+public start_web_server, web_server_plugin, web_url, web_launch_url
 
 include("kernel.jl")
 include("agent.jl")
@@ -45,14 +48,14 @@ include("core/plugins.jl")
 include("core/profile_store.jl")
 include("core/session_store.jl")
 include("core/session_query.jl")
+include("infrastructure/infrastructure.jl")
+include("infrastructure/jsonrpc.jl")
 include("core/session_api.jl")
 include("core/tool_schemas.jl")
 include("core/extensions.jl")
 include("core/tool_batch.jl")
 include("core/event_context.jl")
 include("features/code_mode/streaming.jl")
-include("infrastructure/infrastructure.jl")
-include("infrastructure/jsonrpc.jl")
 include("runtime/backends.jl")
 include("core/profile_patches.jl")
 include("auth.jl")
@@ -66,6 +69,7 @@ Session(host::PluginHost; kwargs...) = Session(fork_kernel(host); owns_kernel=tr
 function start_web_server end
 function web_server_plugin end
 function web_url end
+function web_launch_url end
 
 """Run an installed frontend."""
 function main end

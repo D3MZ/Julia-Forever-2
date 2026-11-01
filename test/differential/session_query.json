@@ -339,5 +339,347 @@
         ]
       }
     ]
+  },
+  {
+    "name": "live-middle-message-only",
+    "source": "live",
+    "text": "quartz",
+    "from_index": 2,
+    "to_index": 2,
+    "sessions": [
+      {
+        "name": "active",
+        "messages": [
+          {
+            "role": "user",
+            "content": "quartz first"
+          },
+          {
+            "role": "assistant",
+            "content": "QUARTZ second"
+          },
+          {
+            "role": "user",
+            "content": "quartz third"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "range-from-index-inclusive",
+    "text": "signal",
+    "from_index": 3,
+    "sessions": [
+      {
+        "name": "trace",
+        "messages": [
+          {
+            "role": "user",
+            "content": "signal one"
+          },
+          {
+            "role": "assistant",
+            "content": "signal two"
+          },
+          {
+            "role": "user",
+            "content": "signal three"
+          },
+          {
+            "role": "assistant",
+            "content": "signal four"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "range-to-index-inclusive",
+    "text": "signal",
+    "to_index": 2,
+    "sessions": [
+      {
+        "name": "trace",
+        "messages": [
+          {
+            "role": "user",
+            "content": "signal one"
+          },
+          {
+            "role": "assistant",
+            "content": "signal two"
+          },
+          {
+            "role": "user",
+            "content": "signal three"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "range-exact-index",
+    "text": "alpha",
+    "from_index": 2,
+    "to_index": 2,
+    "sessions": [
+      {
+        "name": "trace",
+        "messages": [
+          {
+            "role": "user",
+            "content": "alpha 1"
+          },
+          {
+            "role": "assistant",
+            "content": "alpha 2"
+          },
+          {
+            "role": "user",
+            "content": "alpha 3"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "selected-session-subset",
+    "text": "shared",
+    "selected_sessions": [
+      "zulu"
+    ],
+    "sessions": [
+      {
+        "name": "zulu",
+        "messages": [
+          {
+            "role": "user",
+            "content": "shared z"
+          }
+        ]
+      },
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "user",
+            "content": "shared a"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "selected-session-empty",
+    "text": "shared",
+    "selected_sessions": [],
+    "sessions": [
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "user",
+            "content": "shared a"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "selected-session-absent",
+    "text": "shared",
+    "selected_sessions": [
+      "not-present"
+    ],
+    "sessions": [
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "user",
+            "content": "shared a"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "selected-session-deduplicated",
+    "text": "shared",
+    "selected_sessions": [
+      "zulu",
+      "zulu",
+      "alpha"
+    ],
+    "sessions": [
+      {
+        "name": "zulu",
+        "messages": [
+          {
+            "role": "user",
+            "content": "shared z"
+          }
+        ]
+      },
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "shared a"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "range-per-session-not-global",
+    "text": "range",
+    "from_index": 2,
+    "to_index": 2,
+    "sessions": [
+      {
+        "name": "z",
+        "messages": [
+          {
+            "role": "user",
+            "content": "range z1"
+          },
+          {
+            "role": "assistant",
+            "content": "range z2"
+          }
+        ]
+      },
+      {
+        "name": "a",
+        "messages": [
+          {
+            "role": "user",
+            "content": "range a1"
+          },
+          {
+            "role": "assistant",
+            "content": "range a2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "combined-role-range-session-and-limit",
+    "text": "pulse",
+    "roles": [
+      "assistant"
+    ],
+    "from_index": 2,
+    "to_index": 3,
+    "selected_sessions": [
+      "zeta",
+      "alpha"
+    ],
+    "limit": 1,
+    "sessions": [
+      {
+        "name": "zeta",
+        "messages": [
+          {
+            "role": "user",
+            "content": "pulse z1"
+          },
+          {
+            "role": "assistant",
+            "content": "pulse z2"
+          },
+          {
+            "role": "assistant",
+            "content": "pulse z3"
+          }
+        ]
+      },
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "pulse a1"
+          },
+          {
+            "role": "user",
+            "content": "pulse a2"
+          },
+          {
+            "role": "assistant",
+            "content": "PULSE a3"
+          }
+        ]
+      },
+      {
+        "name": "beta",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "pulse b1"
+          },
+          {
+            "role": "assistant",
+            "content": "pulse b2"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "unicode-session-selection",
+    "text": "café",
+    "selected_sessions": [
+      "日本語"
+    ],
+    "from_index": 2,
+    "sessions": [
+      {
+        "name": "日本語",
+        "messages": [
+          {
+            "role": "user",
+            "content": "café first"
+          },
+          {
+            "role": "assistant",
+            "content": "CAFÉ second"
+          }
+        ]
+      },
+      {
+        "name": "other",
+        "messages": [
+          {
+            "role": "user",
+            "content": "CAFÉ excluded"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "empty-range-over-all",
+    "text": "marker",
+    "from_index": 10,
+    "sessions": [
+      {
+        "name": "only",
+        "messages": [
+          {
+            "role": "user",
+            "content": "marker"
+          },
+          {
+            "role": "assistant",
+            "content": "marker"
+          }
+        ]
+      }
+    ]
   }
 ]

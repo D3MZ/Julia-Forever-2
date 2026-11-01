@@ -12,7 +12,11 @@ CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "prof
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
+CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
+CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
+CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
+CASES["tool_completion"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_completion.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -88,8 +92,13 @@ function outgoing_result(input)
     if ready !== :ok
         close(peer)
         wait(pending)
-        return Dict("request" => nothing, "result" => "outbound frame was not emitted")
+        Dict("request" => nothing, "result" => "outbound frame was not emitted")
+    else
+        outgoing_response(input, peer, pending, output)
     end
+end
+
+function outgoing_response(input, peer, pending, output)
     frame = lock(peer.write_lock) do
         JSON.parse(String(take!(output)))
     end
@@ -126,8 +135,13 @@ function recovery_result(input)
     if ready !== :ok
         close(peer)
         wait(pending)
-        return Dict("failed" => failed, "request" => nothing, "result" => "outbound frame was not emitted")
+        Dict("failed" => failed, "request" => nothing, "result" => "outbound frame was not emitted")
+    else
+        recovered_response(input, peer, pending, output, failed)
     end
+end
+
+function recovered_response(input, peer, pending, output, failed)
     frame = lock(peer.write_lock) do
         JSON.parse(String(take!(output.buffer)))
     end
@@ -182,8 +196,9 @@ function asynchronous_fixture(callback, arguments...)
     end
 end
 
-function lifecycle_result(input)
-    get(input, "ownership", false) && return ownership_result(input)
+lifecycle_result(input) = get(input, "ownership", false) ? ownership_result(input) : registered_lifecycle_result(input)
+
+function registered_lifecycle_result(input)
     trace = Any[]
     registry = JuliaForever2.PluginRegistry()
     for specification in input["plugins"]
@@ -222,8 +237,13 @@ end
 function ownership_fixture(mode)
     if mode == "scope"
         scope = JuliaForever2.ExtensionScope()
-        return (owner=scope, finish=() -> close(scope))
+        (owner=scope, finish=() -> close(scope))
+    else
+        plugin_ownership_fixture()
     end
+end
+
+function plugin_ownership_fixture()
     reference = Ref{Any}(nothing)
     registry = JuliaForever2.PluginRegistry()
     JuliaForever2.register_plugin!(registry, JuliaForever2.PluginSpec(:owner, context -> begin
@@ -286,8 +306,16 @@ function replacement_specification(specification, trace)
 end
 
 function replacement_result(input)
-    input["kind"] == "retained" && return retained_replacement_result(input)
-    input["kind"] == "async_binding" && return retained_async_binding_result(input)
+    if input["kind"] == "retained"
+        retained_replacement_result(input)
+    elseif input["kind"] == "async_binding"
+        retained_async_binding_result(input)
+    else
+        registered_replacement_result(input)
+    end
+end
+
+function registered_replacement_result(input)
     trace = Any[]
     registry = JuliaForever2.PluginRegistry()
     JuliaForever2.register_plugin!(registry, replacement_specification(input["initial"], trace))
@@ -300,19 +328,23 @@ function replacement_result(input)
         JuliaForever2.activate!(host, JuliaForever2.Profile(:differential, [initial_name, replacement_name];
             bindings=Dict(Symbol(input["service"]) => replacement_name)))
         services = Dict(name => component(host, Symbol(name)) for name in input["services"])
-        close(host)
-        close(kernel)
-        return normalize(Dict("services" => services, "trace" => trace))
+        result = Dict("services" => services, "trace" => trace)
+    else
+        result = replacement_profile_result(input, host, registry, initial_name, trace)
     end
+    close(host)
+    close(kernel)
+    normalize(result)
+end
+
+function replacement_profile_result(input, host, registry, initial_name, trace)
     profile = JuliaForever2.Profile(:differential, [initial_name])
     JuliaForever2.activate!(host, profile)
     before = Dict(name => component(host, Symbol(name)) for name in input["services"])
     JuliaForever2.register_plugin!(registry, replacement_specification(input["replacement"], trace); replace=true)
     accepted = JuliaForever2.activate!(host, profile).ok
     after = Dict(name => component(host, Symbol(name)) for name in input["services"])
-    close(host)
-    close(kernel)
-    return normalize(Dict("accepted" => accepted, "before" => before, "after" => after, "trace" => trace))
+    Dict("accepted" => accepted, "before" => before, "after" => after, "trace" => trace)
 end
 
 function retained_async_binding_result(input)
@@ -406,8 +438,9 @@ function retained_replacement_result(input)
         "afterRelease" => project(released_result), "trace" => trace))
 end
 
-function event_result(input)
-    get(input, "retained_waterfall", false) && return retained_waterfall_result(input)
+event_result(input) = get(input, "retained_waterfall", false) ? retained_waterfall_result(input) : registered_event_result(input)
+
+function registered_event_result(input)
     root = JuliaForever2.ExtensionScope()
     scopes = Dict("root" => root)
     for specification in get(input, "scopes", [])
@@ -422,9 +455,10 @@ function event_result(input)
             push!(trace, Dict("listener" => specification["id"], "arguments" => values))
             if get(specification, "waterfall", false) && !get(specification, "veto", false)
                 result = next()
-                return haskey(specification, "suffix") ? result * specification["suffix"] : result
+                haskey(specification, "suffix") ? result * specification["suffix"] : result
+            else
+                get(specification, "result", nothing)
             end
-            return get(specification, "result", nothing)
         end
         scope = scopes[get(specification, "scope", "root")]
         listeners[specification["id"]] = JuliaForever2.on!(callback, scope, Symbol(get(specification, "event", "fixture"));
@@ -578,10 +612,15 @@ function profile_group_result(input)
         config=get(layer, "config", Dict())) for layer in input["profiles"]]
     if !get(input, "stored", false)
         profile = JuliaForever2.compose_profiles(:composed, layers...)
-        return normalize(Dict("plugins" => String.(profile.plugins),
+        normalize(Dict("plugins" => String.(profile.plugins),
             "config" => Dict(String(plugin) => value for (plugin, value) in profile.config),
             "originalProfiles" => original))
+    else
+        stored_profile_group_result(input, original, layers)
     end
+end
+
+function stored_profile_group_result(input, original, layers)
     return mktempdir() do directory
         store = JuliaForever2.ProfileStore(directory)
         for (index, layer) in enumerate(layers)
@@ -693,6 +732,175 @@ function tool_outputs_result(input)
         "schema" => JuliaForever2.tool_schema_definition(schema)))
 end
 
+"""Use Julia tool output renderers without converting canonical values to display text."""
+function tool_output_projection_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    invoked = Ref(0)
+    rendered = Ref(0)
+    function renderer(arguments, value)
+        rendered[] += 1
+        format = input["format"]
+        if format == "label"
+            string(get(arguments, "prefix", ""), value["label"])
+        elseif format == "joined"
+            join(value["lines"], "|")
+        elseif format == "summary"
+            string(value["label"], " (", value["count"], ")")
+        elseif format == "silent"
+            ""
+        elseif format == "scalar"
+            string(value)
+        else
+            error("Unknown fixture presentation")
+        end
+    end
+    specification = JuliaForever2.ToolSpec(:projection, Dict("type" => "object"),
+        arguments -> begin
+            invoked[] += 1
+            return deepcopy(input["value"])
+        end; output_schema=JuliaForever2.CheckedJSONSchema(input["schema"]), render_output=renderer)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    result = JuliaForever2.invoke_tool!(scope, :projection, input["arguments"])
+    result.ok || isnothing(result.value) || error("Tool failure exposed the canonical value")
+    close(scope)
+    return normalize(Dict("accepted" => result.ok, "invoked" => invoked[],
+        "rendered" => rendered[], "display" => result.ok ? result.text : nothing,
+        "value" => result.ok ? result.value : nothing))
+end
+
+"""Produce an independently authored model-facing representation for completion fixtures."""
+function completion_display(input, value)
+    format = get(input, "format", "scalar")
+    if format == "label"
+        string(get(input, "prefix", ""), value["label"])
+    elseif format == "joined"
+        join(value["lines"], "|")
+    else
+        string(value)
+    end
+end
+"""Compare post-execute decisions and replacement validation with the pinned DSH stage."""
+function tool_completion_result(input)
+    root = JuliaForever2.ExtensionScope()
+    scope = JuliaForever2.ExtensionScope(root)
+    invoked = Ref(0)
+    rendered = Ref(0)
+    initial = get(input, "initial", "success")
+    policy = get(input, "policy", "none")
+    initial_value = get(input, "initial_value", "done")
+    schema = policy == "value" ? JuliaForever2.CheckedJSONSchema(input["schema"]) : nothing
+    renderer = policy == "value" ? ((arguments, value) -> begin
+        rendered[] += 1
+        completion_display(input, value)
+    end) : nothing
+    specification = JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
+        invoked[] += 1
+        return initial == "failed" ? ExecutionResult(false, "denied") : deepcopy(initial_value)
+    end; output_schema=schema, render_output=renderer)
+    installed = JuliaForever2.register_tool!(root, specification)
+    installed.ok || error(installed.reason)
+    if initial == "guard"
+        guarded = JuliaForever2.register_tool_guard!(root, call -> "denied")
+        guarded.ok || error(guarded.reason)
+    end
+    if policy != "none"
+        JuliaForever2.on!(scope, :tool_completion) do call, result
+            if policy == "block"
+                JuliaForever2.ToolResultBlock(input["message"])
+            elseif policy == "replace"
+                JuliaForever2.ToolResultText(input["message"])
+            elseif policy == "value"
+                JuliaForever2.ToolResultValue(deepcopy(input["value"]))
+            else
+                nothing
+            end
+        end
+    end
+    result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}())
+    close(scope)
+    close(root)
+    observed = Dict("ok" => result.ok, "text" => result.text,
+        "retained" => result.ok ? result.value : nothing, "called" => invoked[] > 0)
+    if policy == "value"
+        observed["text"] = result.ok ? result.text : "completion rejected"
+        observed["replacementRenders"] = rendered[] - Int(initial == "success")
+    end
+    return normalize(observed)
+end
+
+"""Compare Julia-owned approval routing against the original pinned upstream approval service outcomes."""
+function tool_approval_result(input)
+    root = JuliaForever2.ExtensionScope()
+    scope = JuliaForever2.ExtensionScope(root)
+    executed = Ref(0)
+    approvals = Ref(0)
+    observed = Ref{Any}(nothing)
+    registered = JuliaForever2.register_tool!(root,
+        JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
+            executed[] += 1
+            return "done"
+        end))
+    registered.ok || error(registered.reason)
+    guarded = JuliaForever2.register_tool_guard!(root,
+        call -> JuliaForever2.ToolApprovalRequest(get(input, "reason", nothing)))
+    guarded.ok || error(guarded.reason)
+    registration = if get(input, "channel", "present") == "missing"
+        nothing
+    else
+        JuliaForever2.on!((call, request) -> begin
+            approvals[] += 1
+            selected = approvals[] == 1 ? input["outcome"] :
+                get(input, "next_outcome", input["outcome"])
+            outcome = selected == "allowed-once" ? :allowed_once : Symbol(selected)
+            observed[] = outcome
+            get(input, "async", false) ? (@async begin
+                yield()
+                outcome
+            end) : outcome
+        end, scope, :tool_approval)
+    end
+    function observe()
+        observed[] = nothing
+        result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}())
+        isnothing(result.value) || result.ok || error("Denied approval exposed a tool value")
+        return Dict("allowed" => result.ok, "reason" => result.ok ? nothing : result.text,
+            "approvalCancelled" => observed[] === :cancelled)
+    end
+    first = observe()
+    repeated = get(input, "withdraw", false) || haskey(input, "next_outcome")
+    if get(input, "withdraw", false)
+        isnothing(registration) || JuliaForever2.release!(registration)
+    end
+    outcomes = repeated ? [first, observe()] : first
+    expected_calls = repeated ? count(item -> item["allowed"], outcomes) : Int(first["allowed"])
+    executed[] == expected_calls || error("Approval was bypassed or incorrectly cached")
+    close(scope)
+    close(root)
+    return normalize(outcomes)
+end
+
+"""Compare cancellation after a Julia-owned tool body starts with the pinned DSH lifecycle."""
+function tool_cancellation_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    context = ExecutionContext()
+    invoked = Ref(0)
+    specification = JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
+        invoked[] += 1
+        get(input, "async", false) && yield()
+        get(input, "cancel_during", false) && cancel!(context)
+        return input["value"]
+    end)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    get(input, "cancel_before", false) && cancel!(context)
+    result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}(); context)
+    close(scope)
+    close(context)
+    return normalize(Dict("allowed" => result.ok, "invoked" => invoked[],
+        "retained" => result.ok ? result.value : nothing))
+end
+
 """Compare native tool-batch scheduling with the original pinned DSH scheduler."""
 function tool_batch_result(input)
     scope = JuliaForever2.ExtensionScope()
@@ -703,8 +911,7 @@ function tool_batch_result(input)
     peak = Ref(0)
     exclusive_safe = Ref(true)
     state_lock = ReentrantLock()
-    for specification in input["calls"]
-        get(specification, "registered", true) || continue
+    for specification in Iterators.filter(specification -> get(specification, "registered", true), input["calls"])
         callback = arguments -> begin
             lock(state_lock) do
                 active[] += 1
@@ -766,7 +973,8 @@ function session_query_result(input)
             messages = Message[Message(Symbol(entry["role"]), entry["content"]) for entry in specification["messages"]]
             session = Session(Kernel(); messages, owns_kernel=true)
             results = JuliaForever2.search_history(session, input["text"];
-                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)))
+                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)),
+                from_index=get(input, "from_index", nothing), to_index=get(input, "to_index", nothing))
             close(session)
             results
         else
@@ -786,7 +994,9 @@ function session_query_result(input)
                 close(session)
             end
             results = JuliaForever2.search_history(component(host, :session_query), input["text"];
-                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)))
+                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)),
+                sessions=get(input, "selected_sessions", nothing),
+                from_index=get(input, "from_index", nothing), to_index=get(input, "to_index", nothing))
             close(host)
             close(base)
             results
@@ -830,16 +1040,123 @@ function indexed_rewrite_differential()
     end
 end
 
+"""Compare persisted-session RPC search with DSH's exact pinned text/type query predicates."""
+function session_api_persisted_search_result(input; indexed=false)
+    return mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        for specification in input["sessions"]
+            messages = Message[Message(Symbol(entry["role"]), entry["content"])
+                for entry in specification["messages"]]
+            session = Session(Kernel(); messages, owns_kernel=true)
+            saved = JuliaForever2.save_session!(store, specification["name"], session)
+            close(session)
+            saved.ok || error(saved.reason)
+        end
+        api = if indexed
+            query = JuliaForever2.SessionQuery(JuliaForever2.SessionSearchIndex(store))
+            JuliaForever2.SessionAPI(; store, query)
+        else
+            JuliaForever2.SessionAPI(; store)
+        end
+        parameters = Dict{String,Any}("text" => input["text"])
+        for (input_key, rpc_key) in (("roles", "roles"), ("limit", "limit"),
+                ("selected_sessions", "sessions"), ("from_index", "fromIndex"), ("to_index", "toIndex"))
+            haskey(input, input_key) && (parameters[rpc_key] = input[input_key])
+        end
+        reply = JuliaForever2.session_api_request!(api, "session/search/all", parameters)
+        close(api)
+        return normalize(Dict("ok" => !(reply isa JuliaForever2.RpcError),
+            "hits" => reply isa JuliaForever2.RpcError ? Any[] : reply))
+    end
+end
+
+"""A third-party search service can replace the entire indexed search implementation."""
+struct DifferentialSearchOverride{S}
+    source::S
+end
+
+JuliaForever2.search_history(view::DifferentialSearchOverride, text::AbstractString; kwargs...) = JuliaForever2.search_history(view.source, text; kwargs...)
+
+function session_api_overridden_query_result(input)
+    return mktempdir() do directory
+        registry = JuliaForever2.PluginRegistry()
+        JuliaForever2.register_plugin!(registry, JuliaForever2.session_store_plugin(directory))
+        JuliaForever2.register_plugin!(registry, JuliaForever2.session_query_plugin())
+        replacement = JuliaForever2.PluginSpec(:replacement_query,
+            context -> JuliaForever2.provide!(context, :session_query,
+                DifferentialSearchOverride(JuliaForever2.service(context, :session_store)));
+            requires=[:session_store], provides=[:session_query])
+        JuliaForever2.register_plugin!(registry, replacement)
+        JuliaForever2.register_plugin!(registry,
+            JuliaForever2.session_api_plugin(; store_service=:session_store, query_service=:session_query))
+        base = Kernel()
+        host = JuliaForever2.PluginHost(base; registry)
+        profile = JuliaForever2.Profile(:custom_search,
+            [:session_store, :session_query, :replacement_query, :session_api];
+            bindings=Dict(:session_query => :replacement_query))
+        activated = JuliaForever2.activate!(host, profile)
+        activated.ok || error(activated.reason)
+        store = component(host, :session_store)
+        for specification in input["sessions"]
+            messages = Message[Message(Symbol(entry["role"]), entry["content"])
+                for entry in specification["messages"]]
+            session = Session(Kernel(); messages, owns_kernel=true)
+            saved = JuliaForever2.save_session!(store, specification["name"], session)
+            close(session)
+            saved.ok || error(saved.reason)
+        end
+        parameters = Dict{String,Any}("text" => input["text"])
+        for (input_key, rpc_key) in (("roles", "roles"), ("limit", "limit"),
+                ("selected_sessions", "sessions"), ("from_index", "fromIndex"), ("to_index", "toIndex"))
+            haskey(input, input_key) && (parameters[rpc_key] = input[input_key])
+        end
+        reply = JuliaForever2.session_api_request!(component(host, :session_api),
+            "session/search/all", parameters)
+        close(host)
+        close(base)
+        return normalize(Dict("ok" => !(reply isa JuliaForever2.RpcError),
+            "hits" => reply isa JuliaForever2.RpcError ? Any[] : reply))
+    end
+end
+
+@testset "Native persisted-session API search against pinned DSH predicates" begin
+    cases = filter(input -> get(input, "source", "stored") == "stored", CASES["session_query"])
+    expected = reference_results("session_query", cases)
+    for (input, reference) in zip(cases, expected)
+        @testset "$(input["name"])" begin
+            @test session_api_persisted_search_result(input) == reference
+            @test session_api_persisted_search_result(input; indexed=true) == reference
+        end
+    end
+    @test session_api_overridden_query_result(first(cases)) == first(expected)
+end
+
 @testset "Indexed search revision differentials against pinned upstream predicates" begin
     actual, expected = indexed_rewrite_differential()
     @test actual == expected
+end
+
+@testset "DSH full-product proof requires complete native differential evidence" begin
+    verified = COVERAGE["verified_source_families"]
+    cases = Set(area["kind"] for area in COVERAGE["native_comparisons"])
+    evidence = !isempty(verified) && all(verified) do family
+        get(family, "native", false) === true &&
+            !isempty(get(family, "implementation_paths", String[])) &&
+            !isempty(get(family, "differential_kinds", String[])) &&
+            all(kind -> kind in cases, family["differential_kinds"])
+    end
+    proven = COVERAGE["inventory_complete"] === true &&
+        isempty(COVERAGE["unverified_source_families"]) && evidence
+    @test COVERAGE["superset_proven"] === proven
 end
 
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
-            ("tool_batch", tool_batch_result),
+            ("tool_output_projection", tool_output_projection_result),
+            ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
+            ("tool_approval", tool_approval_result), ("tool_completion", tool_completion_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),

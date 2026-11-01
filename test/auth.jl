@@ -50,6 +50,41 @@ end
     end
 end
 
+@testset "Credential storage stays within its configured directory" begin
+    mktempdir() do root
+        directory = joinpath(root, "credentials")
+        mkpath(directory)
+        outside = joinpath(root, "outside.json")
+        write(outside, JSON.json(Dict("access_token" => "outside")))
+        @test isnothing(load_credentials(directory, Symbol("../outside")))
+        @test_throws ErrorException save_credentials!(directory, Symbol("../outside"),
+            Dict("access_token" => "overwritten"))
+        @test JSON.parsefile(outside)["access_token"] == "outside"
+        @test isnothing(load_credentials(directory, Symbol("nested\\escape")))
+        @test_throws ErrorException save_credentials!(directory, Symbol("nested\\escape"),
+            Dict("access_token" => "nested"))
+        if !Sys.iswindows()
+            symlink(outside, joinpath(directory, "linked.json"))
+            @test isnothing(load_credentials(directory, :linked))
+            save_credentials!(directory, :linked, Dict("access_token" => "replaced"))
+            @test !islink(joinpath(directory, "linked.json"))
+            @test load_credentials(directory, :linked)["access_token"] == "replaced"
+            @test JSON.parsefile(outside)["access_token"] == "outside"
+        end
+        for label in ("", ".", "..")
+            name = Symbol(label)
+            @test isnothing(load_credentials(directory, name))
+            @test_throws ErrorException save_credentials!(directory, name,
+                Dict("access_token" => "invalid"))
+        end
+        @test_throws ArgumentError Symbol("bad\0name")
+        save_credentials!(directory, :ordinary, Dict("access_token" => "inside"))
+        @test load_credentials(directory, :ordinary)["access_token"] == "inside"
+        save_credentials!(directory, :π, Dict("access_token" => "unicode"))
+        @test load_credentials(directory, :π)["access_token"] == "unicode"
+    end
+end
+
 @testset "OpenAI stream completion" begin
     events = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\ndata: {\"type\":\"response.completed\"}\n\n"
     @test chatgpt_reply(events) == (ok=true, text="hello")
@@ -111,11 +146,12 @@ end
         transport = (url, method, body, headers) -> begin
             push!(requests, (url, method, body, headers))
             if method == "GET"
-                return (status=200, body=JSON.json(Dict("models" => [Dict("visibility" => "list", "slug" => "test-model")])))
+                (status=200, body=JSON.json(Dict("models" => [Dict("visibility" => "list", "slug" => "test-model")])))
+            else
+                answer = JSON.json(Dict("kind" => "answer", "content" => "Hello"))
+                stream = "data: " * JSON.json(Dict("type" => "response.output_text.delta", "delta" => answer)) * "\n\ndata: {\"type\":\"response.completed\"}\n\n"
+                (status=200, body=stream)
             end
-            answer = JSON.json(Dict("kind" => "answer", "content" => "Hello"))
-            stream = "data: " * JSON.json(Dict("type" => "response.output_text.delta", "delta" => answer)) * "\n\ndata: {\"type\":\"response.completed\"}\n\n"
-            return (status=200, body=stream)
         end
         provider = OpenAIProvider(dir, transport, auth)
         result = provider([Message(:user, "Hi")], Session(Kernel()))

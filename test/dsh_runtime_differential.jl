@@ -64,11 +64,11 @@ end
 
 function notification_value(method, params)
     if method == "session.event"
-        return Dict("method" => method, "sessionId" => params["sessionId"], "type" => params["event"]["type"])
+        Dict("method" => method, "sessionId" => params["sessionId"], "type" => params["event"]["type"])
+    else
+        Dict("method" => method, "params" => params)
     end
-    return Dict("method" => method, "params" => params)
 end
-
 function observe_sdk(profile, diagnostics, backend)
     operations = Any[]
     events = Any[]
@@ -76,13 +76,14 @@ function observe_sdk(profile, diagnostics, backend)
     observer = (method, params) -> lock(() -> push!(events, notification_value(method, params)), events_lock)
     factory = (command; kwargs...) -> begin
         started = JuliaForever2.start_runtime(command; kwargs...)
-        started.ok || return started
-        backend[] = started.value
-        before = JuliaForever2.runtime_request!(started.value, "session/prompt",
-            Dict("sessionId" => "differential-idle", "contentBlocks" =>
-                [Dict("type" => "text", "text" => "must not execute")]); timeout=30)
-        record_operation!(operations, "prompt-before-initialize", before)
-        return started
+        if started.ok
+            backend[] = started.value
+            before = JuliaForever2.runtime_request!(started.value, "session/prompt",
+                Dict("sessionId" => "differential-idle", "contentBlocks" =>
+                    [Dict("type" => "text", "text" => "must not execute")]); timeout=30)
+            record_operation!(operations, "prompt-before-initialize", before)
+        end
+        started
     end
     connected = connect_dsh(profile; backend_factory=factory, on_notification=observer,
         initialize=Dict("provider" => "deepseek-official", "model" => "deepseek-flash"),
@@ -183,6 +184,14 @@ function observe_web(feature, home, output_path, diagnostics_path)
         result = http_observation(origin * path; method)
         push!(responses, merge(Dict("method" => method, "path" => path), result.observation))
     end
+    trust_cases = JSON.parsefile(joinpath(@__DIR__, "differential", "web-request-trust.json"))
+    port = last(split(origin, ':'))
+    trust = Any[]
+    for entry in trust_cases
+        headers = [String(name) => replace(String(value), "<port>" => port) for (name, value) in entry["headers"]]
+        probe = http_observation(origin * "/api/"; headers)
+        push!(trust, Dict("name" => entry["name"], "admitted" => probe.observation["status"] != 403))
+    end
     exchange = http_observation(authenticated_url)
     cookie_header = get(exchange.fields, "set-cookie", nothing)
     exchange.observation["status"] == 303 && !isnothing(cookie_header) ||
@@ -195,7 +204,7 @@ function observe_web(feature, home, output_path, diagnostics_path)
     asset = http_observation(origin * "/favicon.svg")
     cached = http_observation(origin * "/favicon.svg"; headers=["if-none-match" => asset.observation["etag"]])
     return Dict("release" => DSH_REFERENCE_VERSION, "referenceCommit" => DSH_REFERENCE_COMMIT,
-        "responses" => responses, "authentication" => authentication,
+        "responses" => responses, "trust" => trust, "authentication" => authentication,
         "index" => index.observation, "asset" => asset.observation, "cached" => cached.observation)
 end
 
@@ -318,16 +327,20 @@ function native_workspace_comparison(reference, directory)
     invalid = JuliaForever2.set_working_directory!(session, "does-not-exist")
     retained = JuliaForever2.working_directory(session)
     resolved = JuliaForever2.workspace_path(session, "example.txt")
+    included = evaluate!(session, RunJulia("include(\"entry.jl\")"))
+    included.ok || error("Native Julia session could not include a workspace-relative file")
     close(session)
     actual = Dict("initial" => initial, "set" => selected.ok, "changed" => changed,
-        "missing" => invalid.ok, "retained" => retained, "resolved" => resolved)
+        "missing" => invalid.ok, "retained" => retained, "resolved" => resolved,
+        "include" => [included.value...])
     expected = Dict(
         "initial" => operations["working-directory-get"]["value"]["cwd"],
         "set" => operations["working-directory-set"]["ok"],
         "changed" => operations["working-directory-after-set"]["value"]["cwd"],
         "missing" => operations["missing-directory"]["ok"],
         "retained" => operations["directory-after-failure"]["value"]["cwd"],
-        "resolved" => joinpath(operations["directory-after-failure"]["value"]["cwd"], "example.txt"))
+        "resolved" => joinpath(operations["directory-after-failure"]["value"]["cwd"], "example.txt"),
+        "include" => [joinpath(operations["directory-after-failure"]["value"]["cwd"], "nested", "sibling.jl"), 71])
     return actual, expected
 end
 
@@ -429,11 +442,88 @@ function native_web_comparison(reference, temporary)
     return actual, expected
 end
 
+"""Compare a native Julia browser bootstrap against the pinned Web launch-cookie contract."""
+function native_web_launch_comparison(reference)
+    api = JuliaForever2.SessionAPI()
+    server = JuliaForever2.start_web_server(api)
+    origin = JuliaForever2.web_url(server)
+    launch = JuliaForever2.web_launch_url(server)
+    anonymous = HTTP.request("GET", origin * "/"; status_exception=false)
+    invalid = HTTP.request("GET", launch * "invalid"; redirect=false, status_exception=false)
+    exchange = HTTP.request("GET", launch; redirect=false, status_exception=false)
+    cookie_header = HTTP.header(exchange, "Set-Cookie")
+    cookie = first(split(cookie_header, ';'))
+    session = HTTP.request("GET", origin * "/", ["Cookie" => cookie]; status_exception=false)
+    payload = JSON.json(Dict("jsonrpc" => "2.0", "id" => 1, "method" => "session/list"))
+    headers = ["Cookie" => cookie, "X-JuliaForever2-Request" => "1"]
+    rpc = HTTP.request("POST", origin * "/api/rpc", headers, payload; status_exception=false)
+    csrf = HTTP.request("POST", origin * "/api/rpc", ["Cookie" => cookie], payload; status_exception=false)
+    replay = HTTP.request("GET", launch; redirect=false, status_exception=false)
+    root = only(filter(row -> row["method"] == "GET" && row["path"] == "/", reference["responses"]))
+    actual = Dict(
+        "unauthenticated" => anonymous.status != 200,
+        "invalidDenied" => invalid.status == 401,
+        "exchangeStatus" => exchange.status,
+        "redirectClearsToken" => HTTP.header(exchange, "Location") == "/",
+        "cookieIssued" => !isempty(cookie_header),
+        "cookieProtected" => occursin("HttpOnly", cookie_header) &&
+            occursin("SameSite=Strict", cookie_header) && occursin("Path=/", cookie_header),
+        "responseNoStore" => HTTP.header(exchange, "Cache-Control") == "no-store",
+        "responseNoReferrer" => HTTP.header(exchange, "Referrer-Policy") == "no-referrer",
+        "authenticatedHTML" => session.status == 200 &&
+            startswith(HTTP.header(session, "Content-Type"), "text/html"),
+        "authenticatedRPC" => rpc.status == 200 && JSON.parse(String(rpc.body))["result"] == [],
+        "csrfDenied" => csrf.status == 403,
+        "replayDenied" => replay.status == 401,
+    )
+    expected = Dict(
+        "unauthenticated" => root["status"] != 200,
+        "invalidDenied" => true,
+        "exchangeStatus" => reference["authentication"]["status"],
+        "redirectClearsToken" => true,
+        "cookieIssued" => true,
+        "cookieProtected" => true,
+        "responseNoStore" => reference["authentication"]["cacheControl"] == "no-store",
+        "responseNoReferrer" => reference["authentication"]["referrerPolicy"] == "no-referrer",
+        "authenticatedHTML" => reference["index"]["status"] == 200 &&
+            startswith(reference["index"]["contentType"], "text/html"),
+        "authenticatedRPC" => true,
+        "csrfDenied" => true,
+        "replayDenied" => true,
+    )
+    close(server)
+    close(api)
+    return actual, expected
+end
+
+"""Compare the native Julia request admission fence with the pinned Web transport."""
+function native_web_request_trust_comparison(reference)
+    api = JuliaForever2.SessionAPI()
+    server = JuliaForever2.start_web_server(api)
+    origin = JuliaForever2.web_url(server)
+    port = last(split(origin, ':'))
+    scenarios = JSON.parsefile(joinpath(@__DIR__, "differential", "web-request-trust.json"))
+    actual = Any[]
+    for entry in scenarios
+        headers = [String(name) => replace(String(value), "<port>" => port) for (name, value) in entry["headers"]]
+        result = HTTP.request("GET", origin * "/api/sessions", headers; status_exception=false)
+        push!(actual, Dict("name" => entry["name"], "admitted" => result.status != 403))
+    end
+    expected = [Dict("name" => row["name"], "admitted" => row["admitted"]) for row in reference["trust"]]
+    close(server)
+    close(api)
+    return actual, expected
+end
+
 @testset "Pinned DSH transport differentials using test-only protocol clients" begin
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
         directory = mkpath(joinpath(temporary, "workspace with spaces"))
         mkpath(joinpath(directory, "child"))
+        mkpath(joinpath(directory, "child", "nested"))
+        write(joinpath(directory, "child", "entry.jl"), "include(\"nested/entry.jl\")\n")
+        write(joinpath(directory, "child", "nested", "entry.jl"), "include(\"sibling.jl\")\n")
+        write(joinpath(directory, "child", "nested", "sibling.jl"), "(@__FILE__, 71)\n")
         @testset "SDK process: $name" for name in ("sdk", "sdk-minimal")
             reference = reference_result("sdk", directory, joinpath(temporary, "reference-$name"); profile=name)
             profile = runtime_profile(name, directory, joinpath(temporary, "native-$name"))
@@ -461,6 +551,16 @@ end
             @test candidate == reference
             @testset "Native Julia Web authentication and API" begin
                 actual, expected = native_web_comparison(reference, temporary)
+                @test actual == expected
+            end
+            @testset "Native Julia Web request authority and origin trust" begin
+                scenarios = JSON.parsefile(joinpath(@__DIR__, "differential", "web-request-trust.json"))
+                @test reference["trust"] == [Dict("name" => entry["name"], "admitted" => entry["allowed"]) for entry in scenarios]
+                actual, expected = native_web_request_trust_comparison(reference)
+                @test actual == expected
+            end
+            @testset "Native Julia one-use browser launch and cookie authentication" begin
+                actual, expected = native_web_launch_comparison(reference)
                 @test actual == expected
             end
         end

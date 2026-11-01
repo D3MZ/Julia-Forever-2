@@ -10,12 +10,8 @@ end
 
 function session_file(store::SessionStore, name::Union{Symbol,AbstractString})
     label = String(name)::String
-    if isempty(label) || label in (".", "..") || any(character -> character in ('/', '\\', '\0'), label)
-        return nothing
-    end
-    return joinpath(store.directory, string(label, ".json"))
+    validname(label) ? joinpath(store.directory, string(label, ".json")) : nothing
 end
-
 function session_record(session::Session)
     return lock(session.runtime.execution_lock) do
         messages = [Dict("role" => String(message.role), "content" => message.content,
@@ -25,9 +21,10 @@ function session_record(session::Session)
 end
 
 """Atomically persist a session's messages and workspace, excluding transient execution metadata."""
-function save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session)
-    path = session_file(store, name)
-    isnothing(path) && return (ok=false, reason="Invalid session name")
+save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session) = persist!(store, name, session, session_file(store, name))
+persist!(store::SessionStore, name, session::Session, ::Nothing) = (ok=false, reason="Invalid session name")
+
+function persist!(store::SessionStore, name, session::Session, path::AbstractString)
     record = session_record(session)
     lineage = record.lineage
     data = Dict("format" => "JuliaForever2.session", "version" => 2, "name" => String(name),
@@ -51,33 +48,64 @@ end
 
 function saved_session_record(store::SessionStore, name::Union{Symbol,AbstractString})
     path = session_file(store, name)
-    (isnothing(path) || !isfile(path)) && return nothing
-    data = JSON.parsefile(path)
-    get(data, "format", nothing) == "JuliaForever2.session" || error("Invalid session format: $name")
-    version = get(data, "version", nothing)
-    version in (1, 2) || error("Unsupported session version: $name")
-    get(data, "name", nothing) == String(name) || error("Session identity mismatch: $name")
-    entries = data["messages"]
-    entries isa AbstractVector || error("Invalid session messages: $name")
-    messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"]))
-        for entry in entries]
-    lineage = if version == 1
-        id = uuid5(UUID("075b3f8b-fd8a-400f-9aeb-7c9970270ab2"), joinpath(store.directory, String(name)))
-        (id=id, parent_id=nothing, root_id=id)
-    else
-        identity = data["lineage"]
-        id = UUID(String(identity["id"]))
-        ancestor = get(identity, "parent_id", nothing)
-        (id=id, parent_id=isnothing(ancestor) ? nothing : UUID(String(ancestor)),
-            root_id=UUID(String(identity["root_id"])))
-    end
-    return (messages=messages, directory=String(data["working_directory"]), lineage)
+    !isnothing(path) && isfile(path) ? session_record(SessionRecord(JSON.parsefile(path), store, String(name))) : nothing
 end
 
-"""Read a saved session's persistent identity without restoring its execution environment."""
+struct SessionRecord{D}
+    data::D
+    directory::String
+    name::String
+
+    function SessionRecord(data::D, store::SessionStore, name::String) where {D}
+        validate(SessionRecord, data, name)
+        new{D}(data, store.directory, name)
+    end
+end
+
+function validate(::Type{SessionRecord}, data, name::String)
+    if get(data, "format", nothing) != "JuliaForever2.session"
+        error("Invalid session format: $name")
+    elseif !(get(data, "version", nothing) in (1, 2))
+        error("Unsupported session version: $name")
+    elseif get(data, "name", nothing) != name
+        error("Session identity mismatch: $name")
+    elseif !(data["messages"] isa AbstractVector)
+        error("Invalid session messages: $name")
+    end
+    nothing
+end
+
+function session_record(record::SessionRecord)
+    messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"])) for entry in record.data["messages"]]
+    (messages, directory=String(record.data["working_directory"]), lineage=session_lineage(record))
+end
+
+function session_lineage(record::SessionRecord)
+    if record.data["version"] == 1
+        id = uuid5(UUID("075b3f8b-fd8a-400f-9aeb-7c9970270ab2"), joinpath(record.directory, record.name))
+        (id=id, parent_id=nothing, root_id=id)
+    else
+        identity = record.data["lineage"]
+        ancestor = get(identity, "parent_id", nothing)
+        (id=UUID(String(identity["id"])), parent_id=isnothing(ancestor) ? nothing : UUID(String(ancestor)), root_id=UUID(String(identity["root_id"])))
+    end
+end
+function validated_session_lineage(record::SessionRecord)
+    # Preserve session_record's field validation without retaining Message objects.
+    for entry in record.data["messages"]
+        Symbol(entry["role"])
+        String(entry["content"])
+        Symbol(entry["kind"])
+    end
+    String(record.data["working_directory"])
+    return session_lineage(record)
+end
+
+"""Read persisted ancestry without materializing the session's message history."""
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
-    record = saved_session_record(store, name)
-    return isnothing(record) ? nothing : record.lineage
+    path = session_file(store, name)
+    isnothing(path) || !isfile(path) ? nothing :
+        validated_session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
 end
 
 """Return stored descendants of a session identity in deterministic session-name order."""
@@ -85,14 +113,23 @@ function session_descendants(store::SessionStore, ancestor::UUID; include_self=f
     relationships = Dict{UUID,Tuple{String,Union{Nothing,UUID}}}()
     for name in session_names(store)
         lineage = session_lineage(store, name)
-        isnothing(lineage) || (relationships[lineage.id] = (name, lineage.parent_id))
+        if !isnothing(lineage)
+            relationships[lineage.id] = (name, lineage.parent_id)
+        end
     end
     reachable = Set{UUID}([ancestor])
+    names = descendants!(relationships, reachable)
+    if include_self && haskey(relationships, ancestor)
+        push!(names, relationships[ancestor][1])
+    end
+    sort!(names)
+end
+
+function descendants!(relationships, reachable)
     names = String[]
-    # Shallow lineages usually close in one or two scans. Avoid constructing
-    # adjacency lists for these common cases, which need no extra indexing.
-    stalled = false
-    for _ in 1:2
+    changed = true
+    passes = 0
+    while changed && passes < 8
         changed = false
         for (id, (name, parent)) in relationships
             if !(id in reachable) && !isnothing(parent) && parent in reachable
@@ -101,41 +138,36 @@ function session_descendants(store::SessionStore, ancestor::UUID; include_self=f
                 changed = true
             end
         end
-        if !changed
-            stalled = true
-            break
-        end
+        passes += 1
     end
-    if !stalled
-        # A deep chain may require hundreds of full scans; finish in linear
-        # time by following parent-to-child links from the visited frontier.
-        children = Dict{UUID,Vector{UUID}}()
-        for (id, (_, parent)) in relationships
-            if !isnothing(parent)
-                push!(get!(Vector{UUID}, children, parent), id)
-            end
-        end
-        pending = collect(reachable)
-        while !isempty(pending)
-            parent = pop!(pending)
-            descendants = get(children, parent, nothing)
-            isnothing(descendants) && continue
-            for id in descendants
-                id in reachable && continue
-                push!(reachable, id)
-                push!(pending, id)
-                push!(names, relationships[id][1])
-            end
-        end
+    if changed
+        descend!(names, reachable, relationships)
     end
-    if include_self && haskey(relationships, ancestor)
-        push!(names, relationships[ancestor][1])
-    end
-    return sort!(names)
+    names
 end
 
-session_descendants(store::SessionStore, ancestor::Session; kwargs...) =
-    session_descendants(store, session_lineage(ancestor).id; kwargs...)
+function descend!(names, reachable, relationships)
+    children = Dict{UUID,Vector{Tuple{UUID,String}}}()
+    for (id, (name, parent)) in relationships
+        if !isnothing(parent)
+            push!(get!(Vector{Tuple{UUID,String}}, children, parent), (id, name))
+        end
+    end
+    queue = collect(reachable)
+    index = 1
+    while index <= length(queue)
+        for (id, name) in get(children, queue[index], ())
+            if !(id in reachable)
+                push!(reachable, id)
+                push!(queue, id)
+                push!(names, name)
+            end
+        end
+        index += 1
+    end
+    names
+end
+session_descendants(store::SessionStore, ancestor::Session; kwargs...) = session_descendants(store, session_lineage(ancestor).id; kwargs...)
 
 function session_descendants(store::SessionStore, name::Union{Symbol,AbstractString}; kwargs...)
     lineage = session_lineage(store, name)
@@ -143,14 +175,12 @@ function session_descendants(store::SessionStore, name::Union{Symbol,AbstractStr
 end
 
 """Resume a saved session using a caller-owned Julia kernel or independent agent definition."""
-function load_session(store::SessionStore, name::Union{Symbol,AbstractString},
-        target::Union{Kernel,AgentDefinition}; kwargs...)
+function load_session(store::SessionStore, name::Union{Symbol,AbstractString}, target::Union{Kernel,AgentDefinition}; kwargs...)
     record = saved_session_record(store, name)
-    isnothing(record) && return nothing
-    return Session(target; messages=record.messages, working_directory=record.directory,
-        id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
+    isnothing(record) ? nothing : Session(target, record; kwargs...)
 end
 
+Session(target::Union{Kernel,AgentDefinition}, record::NamedTuple; kwargs...) = Session(target; messages=record.messages, working_directory=record.directory, id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
 """Publish replaceable native session persistence as an ordinary Julia plugin service."""
 function session_store_plugin(directory; name=:session_store, service_name=:session_store, factory=SessionStore)
     contract = Symbol(service_name)

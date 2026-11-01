@@ -2,22 +2,23 @@
 struct ToolBatch{C}
     calls::C
     max_parallel::Int
+
+    ToolBatch(calls::C, max_parallel::Int) where {C} = max_parallel >= 1 ? new{C}(calls, max_parallel) : error("max_parallel must be a positive integer")
 end
 
-ToolBatch(calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4) =
-    ToolBatch(collect(calls), Int(max_parallel))
+ToolBatch(calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4) = ToolBatch(collect(calls), Int(max_parallel))
 
 batch_aborted_result() = ExecutionResult(false, "Tool call aborted before dispatch")
 
 """Unknown, withdrawn, or invalid concurrency declarations are exclusive."""
-function tool_batch_parallel(scope::ExtensionScope, call::ToolCall)
-    specification = tool(scope, call.name)
-    isnothing(specification) && return false
+tool_batch_parallel(scope::ExtensionScope, call::ToolCall) = parallel(tool(scope, call.name), call)
+parallel(::Nothing, call::ToolCall) = false
+
+function parallel(specification::ToolSpec, call::ToolCall)
     worker = spawn_scoped(() -> Base.invokelatest(tool_concurrency_safe, specification, call.arguments))
     wait(worker; throw=false)
-    return !istaskfailed(worker) && fetch(worker) === true
+    !istaskfailed(worker) && fetch(worker) === true
 end
-
 """Collect a completed dispatch without letting a failed worker strand the batch."""
 function collect_tool_batch!(pending::Dict{Int,Task}, completed::Channel{Int}, results)
     index = take!(completed)
@@ -32,7 +33,7 @@ end
 function start_tool_batch!(pending::Dict{Int,Task}, completed::Channel{Int},
         scope::ExtensionScope, call::ToolCall, index::Int, context::ExecutionContext)
     worker = spawn_scoped(() -> cancelled(context) ? batch_aborted_result() :
-        invoke_tool!(scope, call.name, call.arguments))
+        invoke_tool!(scope, call.name, call.arguments; context))
     pending[index] = worker
     spawn_scoped() do
         wait(worker; throw=false)
@@ -41,49 +42,62 @@ function start_tool_batch!(pending::Dict{Int,Task}, completed::Channel{Int},
     return nothing
 end
 
+"""Own the pending jobs and ordered results of one bounded tool batch."""
+mutable struct BatchExecution{C,L,E}
+    scope::ExtensionScope
+    calls::C
+    limit::L
+    context::E
+    results::Vector{ExecutionResult}
+    pending::Dict{Int,Task}
+    completed::Channel{Int}
+    index::Int
+
+    BatchExecution(scope::ExtensionScope, calls::C, limit::L, context::E) where {C,L<:Integer,E} = limit >= 1 ? new{C,L,E}(scope, calls, limit, context, Vector{ExecutionResult}(undef, length(calls)), Dict{Int,Task}(), Channel{Int}(max(1, length(calls))), 1) : error("max_parallel must be a positive integer")
+end
+
 """Run independently registered tools with exclusive barriers and bounded opt-in parallelism.
 
 Results stay in input order. Tools are exclusive unless their current registration
 explicitly declares concurrency safety; started calls always drain on cancellation.
 Each tool retains its own guard, schema, and plugin-lifetime handling.
 """
-function invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolCall};
-        max_parallel::Integer=4, context=current_execution_context())
-    max_parallel >= 1 || error("max_parallel must be a positive integer")
-    actions = collect(calls)
-    results = Vector{ExecutionResult}(undef, length(actions))
-    pending = Dict{Int,Task}()
-    completed = Channel{Int}(max(1, length(actions)))
-    execution = execution_context(context)
-    index = 1
-    while index <= length(actions)
-        if cancelled(execution)
-            for remaining in index:length(actions)
-                results[remaining] = batch_aborted_result()
-            end
-            break
-        end
-        call = actions[index]
-        if !tool_batch_parallel(scope, call)
-            while !isempty(pending)
-                collect_tool_batch!(pending, completed, results)
-            end
-            cancelled(execution) && continue
-            results[index] = invoke_tool!(scope, call.name, call.arguments)
-            index += 1
-        elseif length(pending) >= max_parallel
-            collect_tool_batch!(pending, completed, results)
-        else
-            start_tool_batch!(pending, completed, scope, call, index, execution)
-            index += 1
-        end
+invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4, context=current_execution_context()) = execute!(BatchExecution(scope, collect(calls), max_parallel, execution_context(context)))
+
+function execute!(batch::BatchExecution)
+    while batch.index <= length(batch.calls) && !cancelled(batch.context)
+        advance!(batch)
     end
-    while !isempty(pending)
-        collect_tool_batch!(pending, completed, results)
+    for index in batch.index:length(batch.calls)
+        batch.results[index] = batch_aborted_result()
     end
-    return results
+    drain!(batch)
+    batch.results
 end
 
+function advance!(batch::BatchExecution)
+    call = batch.calls[batch.index]
+    if !tool_batch_parallel(batch.scope, call)
+        drain!(batch)
+        if !cancelled(batch.context)
+            batch.results[batch.index] = invoke_tool!(batch.scope, call.name, call.arguments; context=batch.context)
+            batch.index += 1
+        end
+    elseif length(batch.pending) >= batch.limit
+        collect_tool_batch!(batch.pending, batch.completed, batch.results)
+    else
+        start_tool_batch!(batch.pending, batch.completed, batch.scope, call, batch.index, batch.context)
+        batch.index += 1
+    end
+    batch
+end
+
+function JSONRPCTransport.drain!(batch::BatchExecution)
+    while !isempty(batch.pending)
+        collect_tool_batch!(batch.pending, batch.completed, batch.results)
+    end
+    batch
+end
 """Expose a whole batch as an executable action without requiring a provider adapter."""
 function execute!(executor::ToolExecutor, batch::ToolBatch, context::ExecutionContext)
     results = invoke_tool_batch!(executor.scope, batch.calls; max_parallel=batch.max_parallel, context)

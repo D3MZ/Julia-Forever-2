@@ -30,7 +30,8 @@
       },
       {
         "id": "beta",
-        "mode": "parallel"
+        "mode": "parallel",
+        "wait_for": "alpha"
       },
       {
         "id": "gamma",
@@ -50,7 +51,8 @@
       },
       {
         "id": "beta",
-        "mode": "parallel"
+        "mode": "parallel",
+        "wait_for": "alpha"
       },
       {
         "id": "barrier",

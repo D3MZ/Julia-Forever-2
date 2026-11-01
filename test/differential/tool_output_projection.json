@@ -1,0 +1,309 @@
+[
+  {
+    "name": "label-text",
+    "format": "label",
+    "arguments": {
+      "prefix": "File "
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "label": "example.jl"
+    }
+  },
+  {
+    "name": "unicode-label",
+    "format": "label",
+    "arguments": {
+      "prefix": "Δ/β "
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "label": "λ.jl"
+    }
+  },
+  {
+    "name": "empty-prefix",
+    "format": "label",
+    "arguments": {
+      "prefix": ""
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "label": "a"
+    }
+  },
+  {
+    "name": "joined-lines",
+    "format": "joined",
+    "arguments": {},
+    "schema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "lines"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "lines": [
+        "first",
+        "second",
+        "third"
+      ]
+    }
+  },
+  {
+    "name": "joined-empty",
+    "format": "joined",
+    "arguments": {},
+    "schema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "lines"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "lines": []
+    }
+  },
+  {
+    "name": "joined-unicode",
+    "format": "joined",
+    "arguments": {},
+    "schema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "lines"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "lines": [
+        "α",
+        "東京",
+        "λ"
+      ]
+    }
+  },
+  {
+    "name": "labeled-count",
+    "format": "summary",
+    "arguments": {},
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "count"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "label": "matches",
+      "count": 3
+    }
+  },
+  {
+    "name": "scalar-string",
+    "format": "scalar",
+    "arguments": {},
+    "schema": {
+      "type": "string"
+    },
+    "value": "plain text"
+  },
+  {
+    "name": "empty-render",
+    "format": "silent",
+    "arguments": {},
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "label": "visible only in canonical value"
+    }
+  },
+  {
+    "name": "integer-render",
+    "format": "scalar",
+    "arguments": {},
+    "schema": {
+      "type": "integer"
+    },
+    "value": 42
+  },
+  {
+    "name": "invalid-required",
+    "format": "label",
+    "arguments": {
+      "prefix": "!"
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "value": {}
+  },
+  {
+    "name": "invalid-extra-property",
+    "format": "label",
+    "arguments": {
+      "prefix": "!"
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "label": "protected",
+      "secret": "do not reveal"
+    }
+  },
+  {
+    "name": "invalid-array-item",
+    "format": "joined",
+    "arguments": {},
+    "schema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "lines"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "lines": [
+        "good",
+        7
+      ]
+    }
+  },
+  {
+    "name": "union-string",
+    "format": "scalar",
+    "arguments": {},
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "value": "selected"
+  },
+  {
+    "name": "union-invalid",
+    "format": "scalar",
+    "arguments": {},
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "value": false
+  }
+]

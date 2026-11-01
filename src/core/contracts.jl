@@ -5,8 +5,9 @@ struct ExecutionResult{T}
 end
 
 ExecutionResult(ok::Bool, text::AbstractString, value=nothing) = ExecutionResult(ok, String(text), value)
-execution_result(result::ExecutionResult) = result
-execution_result(result::NamedTuple) = ExecutionResult(result.ok, result.text, get(result, :value, nothing))
+ExecutionResult(result::ExecutionResult) = result
+ExecutionResult(result::NamedTuple) = ExecutionResult(result.ok, result.text, get(result, :value, nothing))
+execution_result(result) = ExecutionResult(result)
 
 struct Message{T}
     role::Symbol
@@ -59,14 +60,17 @@ struct Failure <: AgentDecision
 end
 Failure(content::AbstractString) = Failure(String(content))
 
+ExecutionResult(answer::Answer) = ExecutionResult(true, answer.content)
+ExecutionResult(failure::Failure) = ExecutionResult(false, failure.content)
+AgentDecision(response) = agent_decision(response)
 agent_decision(decision::AgentDecision) = decision
 agent_decision(action::RunJulia) = ActionDecision(action)
 agent_decision(reply::Reply) = agent_decision(Val(reply.kind), reply.content)
+agent_decision(response) = Failure("Provider returned an unsupported decision.")
 agent_decision(::Val{:answer}, content) = Answer(content)
 agent_decision(::Val{:code}, content) = ActionDecision(RunJulia(content))
 agent_decision(::Val{:error}, content) = Failure(content)
 agent_decision(::Val{kind}, content) where {kind} = Failure("Unsupported reply kind: $kind")
-agent_decision(response) = Failure("Provider returned an unsupported decision.")
 
 struct ModelRequest{H,S,F,P}
     messages::H

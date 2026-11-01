@@ -7,14 +7,11 @@ struct HTTPModelBackend{P,C,T,O}
 end
 
 """Compose a wire protocol with independent endpoint, credential resolver, transport, and request options."""
-HTTPModelBackend(protocol, endpoint::AbstractString; credentials=Returns(Pair{String,String}[]),
-        transport=model_http_transport, options=Dict{String,Any}()) =
-    HTTPModelBackend(protocol, String(rstrip(endpoint, '/')), credentials, transport, options)
+HTTPModelBackend(protocol, endpoint::AbstractString; credentials=Returns(Pair{String,String}[]), transport=model_http_transport, options=Dict{String,Any}()) = HTTPModelBackend(protocol, String(rstrip(endpoint, '/')), credentials, transport, options)
 Base.show(io::IO, backend::HTTPModelBackend) = print(io, "HTTPModelBackend(", nameof(typeof(backend.protocol)), ")")
 
 """Send an owned streaming request; custom transports implement this same context-aware signature."""
-model_http_transport(url, method, body, headers, context, sink) =
-    HTTPTransport.http_request(url, method, body, headers, context; sink)
+model_http_transport(url, method, body, headers, context, sink) = HTTPTransport.http_request(url, method, body, headers, context; sink)
 
 struct StreamedCompletion{R,U,M}
     reply::R
@@ -24,8 +21,12 @@ end
 response_reply(result::StreamedCompletion) = result.reply
 response_usage(result::StreamedCompletion) = result.usage
 
-model_metadata(model::ModelSpec) = model.metadata isa AbstractDict ? model.metadata : Dict{String,Any}()
+model_metadata(model::ModelSpec) = model_metadata_value(model.metadata)
+model_metadata_value(metadata::AbstractDict) = metadata
+model_metadata_value(metadata) = Dict{String,Any}()
 model_option(options, name, fallback=nothing) = get(options, name, fallback)
+model_request_options(options::AbstractDict, model, request) = options
+model_request_options(options, model, request) = Base.invokelatest(options, model, request)
 
 function empty_model_message(model::ModelSpec)
     cost = Dict{String,Any}(name => 0 for name in ("input", "output", "cacheRead", "cacheWrite", "total"))
@@ -42,6 +43,7 @@ mutable struct ModelStreamState{M,C}
     message::Dict{String,Any}
     blocks::Dict{Any,Int}
     arguments::Dict{Int,String}
+    text_buffers::Dict{Int,IOBuffer}
     closed_blocks::Set{Int}
     received_start::Bool
     received_stop::Bool
@@ -50,8 +52,7 @@ mutable struct ModelStreamState{M,C}
     error::String
     started_at::UInt64
 end
-ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model),
-    Dict{Any,Int}(), Dict{Int,String}(), Set{Int}(), false, false, false, false, "", time_ns())
+ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns())
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -63,12 +64,12 @@ function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
 end
 
 function start_model_stream!(state::ModelStreamState)
-    state.started && return nothing
-    state.started = true
-    model_event!(state, "start")
-    return nothing
+    if !state.started
+        state.started = true
+        model_event!(state, "start")
+    end
+    nothing
 end
-
 function model_cost!(state::ModelStreamState)
     usage = state.message["usage"]
     rates = get(model_metadata(state.model), "cost", Dict{String,Any}())
@@ -87,7 +88,13 @@ function model_cost!(state::ModelStreamState)
 end
 
 function text_model_block!(state::ModelStreamState, kind::String, delta::AbstractString; signature=nothing)
-    isempty(delta) && return nothing
+    if !isempty(delta)
+        appendtext!(state, kind, delta, signature)
+    end
+    nothing
+end
+
+function appendtext!(state::ModelStreamState, kind::String, delta::AbstractString, signature)
     index = get(state.blocks, kind, 0)
     if index == 0
         block = Dict{String,Any}("type" => kind, kind => "")
@@ -95,16 +102,15 @@ function text_model_block!(state::ModelStreamState, kind::String, delta::Abstrac
         push!(state.message["content"], block)
         index = length(state.message["content"])
         state.blocks[kind] = index
+        state.text_buffers[index] = IOBuffer()
         model_event!(state, kind * "_start"; contentIndex=index - 1)
     end
-    block = state.message["content"][index]
-    block[kind] *= delta
+    write(state.text_buffers[index], delta)
     model_event!(state, kind * "_delta"; contentIndex=index - 1, delta=String(delta))
     return nothing
 end
 
-model_json_hex_byte(value::UInt8) =
-    0x30 <= value <= 0x39 || 0x41 <= value <= 0x46 || 0x61 <= value <= 0x66
+model_json_hex_byte(value::UInt8) = 0x30 <= value <= 0x39 || 0x41 <= value <= 0x46 || 0x61 <= value <= 0x66
 
 """Repair control characters and invalid escapes inside model-generated JSON strings only."""
 function repair_model_json(text::AbstractString)
@@ -141,13 +147,27 @@ function repair_model_json(text::AbstractString)
     return String(take!(output))
 end
 
+"""Check whether a streamed JSON argument prefix can be a complete object."""
+function possible_tool_object(text::String)
+    index = lastindex(text)
+    while index > 0 && isspace(text[index])
+        index = prevind(text, index)
+    end
+    index > 0 && text[index] == '}'
+end
 function parse_model_tool_arguments(text::AbstractString)
     parsed = parse_json(text)
     return isnothing(parsed) ? parse_json(repair_model_json(text)) : parsed
 end
 
 function finish_model_block!(state::ModelStreamState, index::Int)
-    index in state.closed_blocks && return nothing
+    if !(index in state.closed_blocks)
+        complete!(state, index)
+    end
+    nothing
+end
+
+function complete!(state::ModelStreamState, index::Int)
     push!(state.closed_blocks, index)
     block = state.message["content"][index]
     kind = block["type"]
@@ -158,6 +178,9 @@ function finish_model_block!(state::ModelStreamState, index::Int)
         end
         model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))
     else
+        if haskey(state.text_buffers, index)
+            block[kind] = String(take!(pop!(state.text_buffers, index)))
+        end
         model_event!(state, string(kind, "_end"); contentIndex=index - 1, content=block[kind])
     end
     return nothing
@@ -173,7 +196,18 @@ end
 finish_protocol_stream!(protocol, state::ModelStreamState) = finish_model_blocks!(state)
 
 function finish_model_stream!(state::ModelStreamState)
-    state.finished && return nothing
+    if !state.finished
+        complete!(state)
+    end
+    nothing
+end
+
+function complete!(state::ModelStreamState)
+    for (index, buffer) in state.text_buffers
+        block = state.message["content"][index]
+        block[block["type"]] = String(take!(buffer))
+    end
+    empty!(state.text_buffers)
     state.finished = true
     state.message["durationMs"] = Int((time_ns() - state.started_at) ÷ 1_000_000)
     if cancelled(state.context)
@@ -193,11 +227,12 @@ function finish_model_stream!(state::ModelStreamState)
     return nothing
 end
 
-function completion_result(state::ModelStreamState, request::ModelRequest)
+function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     message = state.message
     usage = message["usage"]
-    report = UsageReport(usage["input"] + usage["cacheRead"] + usage["cacheWrite"],
-        usage["output"], haskey(model_metadata(state.model), "cost") ? Float64(usage["cost"]["total"]) : nothing)
+    report = UsageReport(usage["input"], usage["output"],
+        haskey(model_metadata(state.model), "cost") ? Float64(usage["cost"]["total"]) : nothing,
+        usage["cacheRead"], usage["cacheWrite"])
     text = join(block["text"] for block in message["content"] if block["type"] == "text")
     reply = if message["stopReason"] in ("error", "aborted")
         Reply(:error, get(message, "errorMessage", "Model request failed."))
@@ -213,28 +248,34 @@ end
 
 function respond_model(backend::HTTPModelBackend, model::ModelSpec, request::ModelRequest, context::ExecutionContext)
     state = ModelStreamState(model, context)
-    if cancelled(context)
-        finish_model_stream!(state)
-        return completion_result(state, request)
+    if !cancelled(context)
+        exchange!(backend, state, request)
     end
-    options = backend.options isa AbstractDict ? backend.options : Base.invokelatest(backend.options, model, request)
+    finish_model_stream!(state)
+    StreamedCompletion(state, request)
+end
+
+function exchange!(backend::HTTPModelBackend, state::ModelStreamState, request::ModelRequest)
+    model, context = state.model, state.context
+    options = model_request_options(backend.options, model, request)
     headers = Pair{String,String}["Content-Type" => "application/json"]
     append!(headers, model_protocol_headers(backend.protocol))
     append!(headers, Base.invokelatest(backend.credentials, model, context))
     payload = model_payload(backend.protocol, model, request, options)
     decoder = SSEDecoder() do event
-        cancelled(context) || consume_model_event!(backend.protocol, state, event)
+        if !cancelled(context)
+            consume_model_event!(backend.protocol, state, event)
+        end
     end
-    response = Base.invokelatest(backend.transport, model_endpoint(backend.protocol, backend.endpoint, model),
-        "POST", JSON.json(payload), headers, context, decoder)
+    response = Base.invokelatest(backend.transport, model_endpoint(backend.protocol, backend.endpoint, model), "POST", JSON.json(payload), headers, context, decoder)
     if response.status in 200:299
         start_model_stream!(state)
         finish_protocol_stream!(backend.protocol, state)
     else
         state.error = "Model HTTP request failed ($(response.status)): $(response.reason)"
     end
-    finish_model_stream!(state)
-    return completion_result(state, request)
+    state
 end
-
 model_protocol_headers(protocol) = Pair{String,String}[]
+
+completion_result(state::ModelStreamState, request::ModelRequest) = StreamedCompletion(state, request)
