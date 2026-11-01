@@ -138,15 +138,20 @@ function Base.close(scope::ExtensionScope)
         end
         (children, resources=extension_resources!(scope))
     end
+    # Empty scopes are common during streaming. No children or owned resources
+    # means there is nothing for a cleanup task to execute.
+    isempty(retired.children) && isempty(retired.resources) && return nothing
     failures = Task[]
     for child in retired.children
         worker = spawn_cleanup(() -> close(child))
         wait(worker; throw=false)
         istaskfailed(worker) && push!(failures, worker)
     end
-    worker = spawn_cleanup(() -> dispose_extension_resources!(retired.resources))
-    wait(worker; throw=false)
-    istaskfailed(worker) && push!(failures, worker)
+    if !isempty(retired.resources)
+        worker = spawn_cleanup(() -> dispose_extension_resources!(retired.resources))
+        wait(worker; throw=false)
+        istaskfailed(worker) && push!(failures, worker)
+    end
     isempty(failures) || fetch(first(failures))
     return nothing
 end

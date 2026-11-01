@@ -311,3 +311,31 @@ end
     @test !isopen(deep)
     close(shallow)
 end
+
+@testset "Empty extension scopes retire without skipping owned cleanup" begin
+    root = JuliaForever2.ExtensionScope()
+    child = JuliaForever2.ExtensionScope(root)
+    @test isopen(root)
+    @test isopen(child)
+    close(root)
+    @test !isopen(root)
+    @test !isopen(child)
+    close(root)
+    close(child)
+
+    unobserved = JuliaForever2.ExtensionScope()
+    @test isnothing(JuliaForever2.dispatch_event!(unobserved, :unobserved, 1))
+    close(unobserved)
+    @test !isopen(unobserved)
+
+    cleaned = Ref(0)
+    owned = JuliaForever2.ExtensionScope()
+    JuliaForever2.own_resource!(owned, :sentinel; cleanup=value -> begin
+        value === :sentinel || error("Wrong cleanup resource")
+        cleaned[] += 1
+        nothing
+    end)
+    close(owned)
+    close(owned)
+    @test cleaned[] == 1
+end

@@ -1,0 +1,55 @@
+name: Empty extension scope retirement paired experiment
+on:
+  push:
+    branches:
+      - perf/empty-extension-scope-retirement-20261101t0412
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: '5440326cdc362cf18109ac7580fcdb9c0d3e1c5a'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Record runner and prepare exact baseline worktree
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/empty-scope-evidence"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/empty-scope-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/empty-scope-baseline" >> "$GITHUB_ENV"
+          julia --version | tee "$RUNNER_TEMP/empty-scope-evidence/julia-version.txt"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/empty-scope-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/empty-scope-baseline" rev-parse HEAD | tee "$RUNNER_TEMP/empty-scope-evidence/baseline-sha.txt"
+          lscpu > "$RUNNER_TEMP/empty-scope-evidence/runner-cpu.txt"
+          uname -a > "$RUNNER_TEMP/empty-scope-evidence/runner-os.txt"
+      - name: Instantiate one pinned Julia test environment
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()'
+      - name: Profile and benchmark seven alternating warmed-up pairs
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test benchmarks/empty_scope_retirement_experiment.jl "$BASELINE_DIR" "$RUNNER_TEMP/empty-scope-evidence" 2>&1 | tee "$RUNNER_TEMP/empty-scope-evidence/benchmark.log"
+      - name: Focused correctness, streaming, lint and Aqua checks
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl core streaming lint aqua 2>&1 | tee "$RUNNER_TEMP/empty-scope-evidence/verification.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: empty-scope-retirement-raw-pairs-allocation-profiles
+          path: ${{ runner.temp }}/empty-scope-evidence/
+          if-no-files-found: warn
+          retention-days: 30
