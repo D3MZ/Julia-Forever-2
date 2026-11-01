@@ -1,0 +1,25 @@
+name: Compaction focused checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@v2
+      - name: Instantiate package
+        run: julia --project -e 'using Pkg; Pkg.instantiate()'
+      - name: Run compaction, core, and provider regression tests
+        run: julia --project test/runtests.jl compaction core providers selection
+      - name: Run Julia source lint
+        run: julia --project test/runtests.jl lint
