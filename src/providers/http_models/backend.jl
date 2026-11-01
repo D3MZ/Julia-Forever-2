@@ -32,7 +32,8 @@ function empty_model_message(model::ModelSpec)
     usage = Dict{String,Any}(name => 0 for name in ("input", "output", "cacheRead", "cacheWrite", "totalTokens"))
     usage["cost"] = cost
     return Dict{String,Any}("role" => "assistant", "content" => Any[], "api" => model.api,
-        "provider" => string(model.provider), "model" => model.id, "usage" => usage, "stopReason" => "pending")
+        "provider" => string(model.provider), "model" => model.id, "usage" => usage,
+        "stopReason" => "pending", "timestamp" => round(Int, time() * 1000))
 end
 
 mutable struct ModelStreamState{M,C}
@@ -47,9 +48,10 @@ mutable struct ModelStreamState{M,C}
     started::Bool
     finished::Bool
     error::String
+    started_at::UInt64
 end
 ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model),
-    Dict{Any,Int}(), Dict{Int,String}(), Set{Int}(), false, false, false, false, "")
+    Dict{Any,Int}(), Dict{Int,String}(), Set{Int}(), false, false, false, false, "", time_ns())
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -80,6 +82,7 @@ function model_cost!(state::ModelStreamState)
     cost["cacheWrite"] = (cache_write_rate / 1_000_000) * cache_write_5m +
         (get(rates, "cacheWrite1h", cache_write_rate) / 1_000_000) * cache_write_1h
     cost["total"] = cost["input"] + cost["output"] + cost["cacheRead"] + cost["cacheWrite"]
+    cost["totalFromProvider"] = false
     return nothing
 end
 
@@ -129,6 +132,7 @@ finish_protocol_stream!(protocol, state::ModelStreamState) = finish_model_blocks
 function finish_model_stream!(state::ModelStreamState)
     state.finished && return nothing
     state.finished = true
+    state.message["durationMs"] = Int((time_ns() - state.started_at) ÷ 1_000_000)
     if cancelled(state.context)
         state.message["stopReason"] = "aborted"
         state.error = "Request was aborted"

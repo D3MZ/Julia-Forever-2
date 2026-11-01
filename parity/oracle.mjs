@@ -123,9 +123,11 @@ async function wireScenario(scenario) {
         events.push(observed);
     }
     const message = structuredClone(await output.result());
-    delete message.timestamp;
-    delete message.duration;
-    return { message, events };
+    const timing = Object.fromEntries(['timestamp', 'durationMs'].map((name) => [
+        name, Number.isInteger(message[name]) && message[name] >= 0,
+    ]));
+    for (const name of Object.keys(timing)) delete message[name];
+    return { message, events, timing };
 }
 
 const outputs = [];

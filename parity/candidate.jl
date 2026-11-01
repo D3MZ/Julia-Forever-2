@@ -114,7 +114,13 @@ function wire_scenario(scenario)
     context = ExecutionContext(; emit=event -> event.kind == :model_stream && push!(events, deepcopy(event.data)))
     response = JuliaForever2.respond(JuliaForever2.ModelProvider(model, backend), request, context)
     close(context)
-    return Dict("message" => response.message, "events" => events)
+    message = deepcopy(response.message)
+    timing = Dict(name => (get(message, name, nothing) isa Integer &&
+        !(message[name] isa Bool) && message[name] >= 0) for name in ("timestamp", "durationMs"))
+    for name in keys(timing)
+        pop!(message, name, nothing)
+    end
+    return Dict("message" => message, "events" => events, "timing" => timing)
 end
 
 function run_scenarios(scenarios)
