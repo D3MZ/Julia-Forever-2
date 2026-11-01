@@ -474,10 +474,34 @@ function tool_view(scope::ExtensionScope)
     return (names, entries, restrictable=Set(inherited_names))
 end
 
+"""Select a single visible tool without materializing the catalog used by snapshots.
+
+The caller holds the scope lock. A local tool overrides inherited restrictions,
+while an inherited match must satisfy restrictions from every visible layer.
+"""
+function visible_tool_entry(scope::ExtensionScope, name::Symbol)
+    current = scope
+    while !isnothing(current)
+        entry = get(current.tools, name, nothing)
+        if !isnothing(entry) && entry.active && isopen(current) &&
+                (isnothing(entry.owner) || plugin_available(entry.owner))
+            current === scope && return entry
+            layer = scope
+            while !isnothing(layer)
+                tool_admitted(layer, name) || return nothing
+                layer = layer.parent
+            end
+            return entry
+        end
+        current = current.parent
+    end
+    return nothing
+end
+
 """Resolve a tool after nearest-scope shadowing and all inherited restrictions."""
 function tool(scope::ExtensionScope, name::Symbol)
     return lock(scope.lock) do
-        entry = get(tool_view(scope).entries, name, nothing)
+        entry = visible_tool_entry(scope, name)
         isnothing(entry) ? nothing : entry.spec
     end
 end
@@ -523,7 +547,7 @@ end
 
 function acquire_tool!(scope::ExtensionScope, name::Symbol)
     return lock(scope.lock) do
-        entry = get(tool_view(scope).entries, name, nothing)
+        entry = visible_tool_entry(scope, name)
         isnothing(entry) && return nothing
         retention = isnothing(entry.owner) ? nothing : acquire_plugin!(entry.owner)
         !isnothing(entry.owner) && isnothing(retention) && return nothing
