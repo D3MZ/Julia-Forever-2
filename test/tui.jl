@@ -81,13 +81,15 @@ withenv("JULIAFOREVER_CONFIG_DIR" => terminal_configuration, "OPENROUTER_API_KEY
     update!(app, KeyEvent('/'))
     @test app.menu == true
     update!(app, KeyEvent(:enter))
-    @test app.page == :settings
+    @test app.page == :pi_menu
+    @test app.menus.path == ["settings"]
     update!(app, KeyEvent(:escape))
     @test app.page == :chat
     update!(app, KeyEvent('/'))
     update!(app, KeyEvent(:down))
     update!(app, KeyEvent(:enter))
-    @test app.page == :components
+    @test app.page == :pi_menu
+    @test app.menus.path == ["model"]
     update!(app, KeyEvent(:escape))
     @test app.page == :chat
 end
@@ -181,8 +183,8 @@ end
     update!(app, KeyEvent(:enter))
     Tachikoma.reset!(tb.buf)
     Tachikoma.view(app, frame)
-    @test !isnothing(find_text(tb, "> Provider"))
-    @test !isnothing(find_text(tb, "OpenRouter"))
+    @test !isnothing(find_text(tb, "Auto-compact"))
+    @test !isnothing(find_text(tb, "settings"))
 end
 
 @testset "Command filtering and history" begin
@@ -193,7 +195,7 @@ end
     @test app.menu
     @test first(Terminal.matching_commands(app))[1] == "settings"
     update!(app, KeyEvent(:enter))
-    @test app.page == :settings
+    @test app.page == :pi_menu
     update!(app, KeyEvent(:escape))
     for i in 1:30
         append_message!(app.session, Message(:assistant, "line $i"))
@@ -210,13 +212,14 @@ end
     Tachikoma.view(app, frame)
     pos = find_text(tb, "→ settings")
     update!(app, MouseEvent(pos.x, pos.y, Tachikoma.mouse_left, Tachikoma.mouse_press, false, false, false))
-    @test app.page == :settings
+    @test app.page == :pi_menu
     Tachikoma.reset!(tb.buf)
     Tachikoma.view(app, frame)
-    pos = find_text(tb, "OpenRouter")
+    pos = find_text(tb, "Auto-compact")
+    @test !isnothing(pos)
     update!(app, MouseEvent(pos.x, pos.y, Tachikoma.mouse_left, Tachikoma.mouse_press, false, false, false))
-    @test app.page == :chat
-    @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.OpenRouterProvider
+    @test app.menus.path == ["settings", "autocompact"]
+    @test Terminal.menu_page_items(app)[1]["id"] == "true"
 end
 
 @testset "Wrapping and compact terminal layout" begin
@@ -250,9 +253,7 @@ end
 
     app = App(default_kernel())
     update!(app, KeyEvent('/'))
-    for _ in 1:4
-        update!(app, KeyEvent(:down))
-    end
+    update!(app, KeyEvent(:up))
     tb = TestBackend(40, 8)
     frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
     Tachikoma.view(app, frame)
@@ -288,7 +289,7 @@ end
         update!(app, KeyEvent(:enter))
         @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.CodexProvider
         @test JuliaForever2.configured_provider(dir) isa JuliaForever2.CodexProvider
-        Terminal.command!(app, "settings")
+        Terminal.providers_command!(app, "")
         @test app.selected == 4
         @test stat(joinpath(dir, "provider")).mode & 0o777 == 0o600
         write(joinpath(dir, "provider"), "unknown")
@@ -309,8 +310,7 @@ end
 
 @testset "Provider sign-in controls" begin
     app = App(default_kernel())
-    update!(app, KeyEvent('/'))
-    update!(app, KeyEvent(:enter))
+    Terminal.providers_command!(app, "")
     update!(app, KeyEvent(:down))
     @test app.selected == 2
     update!(app, KeyEvent(:enter))

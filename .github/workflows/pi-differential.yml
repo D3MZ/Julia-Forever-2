@@ -5,6 +5,8 @@ on:
     paths:
       - 'parity/**'
       - 'src/**'
+      - 'ext/**'
+      - 'test/**'
       - 'Project.toml'
       - '.github/workflows/pi-differential.yml'
   pull_request:
@@ -44,7 +46,7 @@ jobs:
           node-version: '24.22.1'
       - name: Install pinned reference dependencies
         working-directory: ${{ runner.temp }}/pi-reference
-        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --include-workspace-root --no-audit --no-fund
+        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --workspace packages/tui --workspace packages/coding-agent --include-workspace-root --no-audit --no-fund
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.13'
@@ -55,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python3 parity/check.py --report "$RUNNER_TEMP/pi-parity.json" 2>&1 | tee "$RUNNER_TEMP/pi-differential.log"
+          julia --project -e 'using Pkg; Pkg.test(; test_args=["parity-tui"])'\n          python3 parity/check.py --report "$RUNNER_TEMP/pi-parity.json" 2>&1 | tee "$RUNNER_TEMP/pi-differential.log"
       - name: Archive exact candidate source
         if: always()
         run: git archive --format=tar.gz HEAD -o "$RUNNER_TEMP/candidate-source.tar.gz"

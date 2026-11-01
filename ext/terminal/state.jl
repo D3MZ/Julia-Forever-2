@@ -5,8 +5,35 @@ struct CommandSpec{F}
     name::String
     description::String
     action::F
+    visible::Bool
+    origin::Symbol
 end
-CommandSpec(name::AbstractString, description::AbstractString, action) = CommandSpec(String(name), String(description), action)
+CommandSpec(name::AbstractString, description::AbstractString, action; visible=true, origin=:extension) =
+    CommandSpec(String(name), String(description), action, Bool(visible), Symbol(origin))
+
+struct RegisteredSkill
+    name::String
+    path::String
+    description::String
+end
+
+struct RegisteredPrompt
+    name::String
+    description::String
+end
+
+mutable struct MenusState
+    preferences::Dict{String,String}
+    prompts::Vector{RegisteredPrompt}
+    skills::Vector{RegisteredSkill}
+    skill_commands_enabled::Bool
+    path::Vector{String}
+    cursor::Int
+    images::Bool
+    scoped_models::Set{String}
+end
+MenusState() = MenusState(Dict{String,String}(), RegisteredPrompt[], RegisteredSkill[],
+    true, String[], 1, false, Set{String}())
 
 mutable struct EventHandler{F}
     action::F
@@ -63,6 +90,7 @@ mutable struct App{S<:Session} <: Model
     settings::SettingsState
     transcript::TranscriptState
     operations::OperationState
+    menus::MenusState
 end
 
 const APP_COMPATIBILITY_PROPERTIES = (
