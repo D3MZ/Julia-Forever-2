@@ -52,8 +52,116 @@ function finish_ui_operation!(app; timeout=5)
     end
 end
 
+@testset "Terminal state field defaults and independent buffers" begin
+    registry = JuliaForever2.ProviderRegistry()
+    settings = Terminal.SettingsState("configuration", registry)
+    @test settings.registry === registry
+    @test isempty(settings.providers)
+    @test isempty(settings.labels)
+    @test settings.auth_provider == :none
+    @test Terminal.SettingsState(; directory="configuration", registry, auth_provider=:test).auth_provider == :test
+
+    first_transcript, second_transcript = Terminal.TranscriptState(), Terminal.TranscriptState()
+    @test first_transcript.revision == typemax(UInt)
+    @test first_transcript.messages !== second_transcript.messages
+    @test first_transcript.preview === nothing
+    @test Terminal.TranscriptState(width=80).width == 80
+
+    first_operations, second_operations = Terminal.OperationState(), Terminal.OperationState()
+    @test !first_operations.closing[]
+    @test first_operations.watchers !== second_operations.watchers
+    @test Terminal.OperationState(active=nothing).active === nothing
+end
+
 mktempdir() do terminal_configuration
 withenv("JULIAFOREVER_CONFIG_DIR" => terminal_configuration, "OPENROUTER_API_KEY" => "") do
+
+@testset "Cross-terminal prompt editing shortcuts" begin
+    app = App(default_kernel())
+    Tachikoma.set_text!(app.input, "alpha beta gamma")
+    app.input.cursor = 10
+    update!(app, KeyEvent(:ctrl, 'u'))  # Ctrl+U; also Ghostty's Command+Backspace
+    @test Tachikoma.text(app.input) == " gamma"
+    @test app.input.cursor == 0
+    update!(app, KeyEvent(:ctrl, 'k'))
+    @test Tachikoma.text(app.input) == ""
+    @test app.input.cursor == 0
+
+    Tachikoma.set_text!(app.input, "one  two   ")
+    update!(app, KeyEvent(:ctrl, 'w'))
+    @test Tachikoma.text(app.input) == "one  "
+    @test app.input.cursor == 5
+    Tachikoma.set_text!(app.input, "αβ γδ")
+    update!(app, KeyEvent(:ctrl, 'w'))
+    @test Tachikoma.text(app.input) == "αβ "
+
+    Tachikoma.set_text!(app.input, "abcdef")
+    update!(app, KeyEvent(:ctrl, 'a'))
+    @test app.input.cursor == 0
+    update!(app, KeyEvent(:ctrl, 'f'))
+    @test app.input.cursor == 1
+    update!(app, KeyEvent(:ctrl, 'e'))
+    @test app.input.cursor == 6
+    update!(app, KeyEvent(:ctrl, 'b'))
+    @test app.input.cursor == 5
+    update!(app, KeyEvent(:ctrl, 'd'))
+    @test Tachikoma.text(app.input) == "abcde"
+    update!(app, KeyEvent(:ctrl, 'h'))
+    @test Tachikoma.text(app.input) == "abcd"
+    @test app.input.cursor == 4
+    update!(app, KeyEvent(:ctrl, 'u', Tachikoma.key_release))
+    @test Tachikoma.text(app.input) == "abcd"
+    update!(app, KeyEvent('!'))
+    @test Tachikoma.text(app.input) == "abcd!"
+end
+
+@testset "Slash completion and menu editing" begin
+    app = App(default_kernel())
+    for character in "/se"
+        update!(app, KeyEvent(character))
+    end
+    @test app.menu
+    update!(app, KeyEvent(:tab))
+    @test Tachikoma.text(app.input) == "/settings "
+    @test !app.menu
+    @test app.page == :chat
+    update!(app, KeyEvent(:enter))
+    @test app.page == :settings
+
+    selected = App(default_kernel())
+    update!(selected, KeyEvent('/'))
+    update!(selected, KeyEvent(:down))
+    update!(selected, KeyEvent(:tab))
+    @test Tachikoma.text(selected.input) == "/components "
+    @test selected.page == :chat
+    @test !selected.menu
+
+    output = String[]
+    custom = App(default_kernel())
+    Terminal.register_command!(custom, Terminal.CommandSpec("echo", "Echo", (app, arguments) -> push!(output, String(arguments))))
+    for character in "/ec"
+        update!(custom, KeyEvent(character))
+    end
+    update!(custom, KeyEvent(:tab))
+    @test Tachikoma.text(custom.input) == "/echo "
+    @test isempty(output)
+    for character in "hello world"
+        update!(custom, KeyEvent(character))
+    end
+    update!(custom, KeyEvent(:enter))
+    @test output == ["hello world"]
+    @test Tachikoma.text(custom.input) == ""
+
+    update!(custom, KeyEvent('/'))
+    update!(custom, KeyEvent(:backtab))
+    @test custom.selected == length(Terminal.matching_commands(custom))
+    update!(custom, KeyEvent(:ctrl, 'u'))
+    @test !custom.menu
+    @test Tachikoma.text(custom.input) == ""
+    Tachikoma.set_text!(custom.input, "plain text")
+    update!(custom, KeyEvent(:tab))
+    @test Tachikoma.text(custom.input) == "plain text"
+end
 
 @testset "Terminal navigation" begin
     app = App(default_kernel())
@@ -162,6 +270,54 @@ end
     Tachikoma.view(app, frame)
     @test !isnothing(find_text(tb, "> Provider"))
     @test !isnothing(find_text(tb, "OpenRouter"))
+end
+
+@testset "Editor border shows active work" begin
+    provider = StreamedTerminalProvider([Reply(:answer, "Response")])
+    app = App(default_kernel(provider))
+    backend = TestBackend(80, 24)
+    frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    @test Tachikoma.char_at(backend, 4, 20) == '─'
+
+    handle = Terminal.submit!(app, "Is the agent working?")
+    @test timedwait(() -> isready(provider.started), 5) == :ok
+    take!(provider.started)
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    working = find_text(backend, "Thinking…")
+    @test !isnothing(working) && working.y == 20
+    @test Tachikoma.style_at(backend, 4, 20).fg == Tachikoma.ColorRGB(167, 152, 215)
+
+    Tachikoma.reset!(backend.buf)
+    Terminal.draw_input_border!(backend.buf, 1, 20, 80, app; ticks=0)
+    @test Tachikoma.char_at(backend, 4, 20) == '⠋'
+    Tachikoma.reset!(backend.buf)
+    Terminal.draw_input_border!(backend.buf, 1, 20, 80, app; ticks=80_000_000)
+    @test Tachikoma.char_at(backend, 4, 20) == '⠙'
+    @test Terminal.working_spinner(800_000_000) == "⠋"
+
+    narrow = TestBackend(6, 6)
+    Terminal.draw_input_border!(narrow.buf, 1, 1, 6, app; ticks=0)
+    @test Tachikoma.char_at(narrow, 4, 1) == '⠋'
+    @test Tachikoma.char_at(narrow, 6, 1) == '─'
+    @test isnothing(find_text(narrow, "Thinking…"))
+
+    Terminal.cancel_command!(app, "")
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    cancelling = find_text(backend, "Cancelling…")
+    @test !isnothing(cancelling) && cancelling.y == 20
+
+    put!(provider.proceed, nothing)
+    @test finish_ui_operation!(app) == :ok
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    @test Tachikoma.char_at(backend, 4, 20) == '─'
+    @test isnothing(find_text(backend, "Thinking…"))
+    update!(app, TaskEvent(:turn, handle))
+    @test !app.busy
+    Terminal.finish_shutdown!(app)
 end
 
 @testset "Command filtering and history" begin
@@ -392,11 +548,19 @@ end
     @test timedwait(() -> isready(started), 5) == :ok
     take!(started)
     @test !istaskdone(handle)
+    backend = TestBackend(80, 24)
+    frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    running = find_text(backend, "Running Julia…")
+    @test !isnothing(running) && running.y == 20
     @test app.session.messages[1].content == "/julia 6 * 7"
     put!(finish, nothing)
     @test finish_ui_operation!(app) == :ok
     @test completions == [42]
     @test !app.busy
+    Tachikoma.reset!(backend.buf)
+    Tachikoma.view(app, frame)
+    @test Tachikoma.char_at(backend, 4, 20) == '─'
     @test isnothing(app.active_turn)
     @test app.session.messages[end].role == :code_result
     @test app.session.messages[end].content == "42"
@@ -737,4 +901,125 @@ end
             for row in Terminal.wrap_markdown_spans(spans, width)]
         @test actual == reference_markdown_wrap(spans, width)
     end
+end
+
+
+@testset "Pi footer telemetry: provider usage and latest context" begin
+    report = JuliaForever2.normalize_usage(Dict(
+        "input" => 100, "output" => 20, "cacheRead" => 50, "cacheWrite" => 25,
+        "cost" => Dict("total" => 1.25)))
+    @test report.input_tokens == 100
+    @test report.output_tokens == 20
+    @test report.cache_read_tokens == 50
+    @test report.cache_write_tokens == 25
+    @test report.cost == 1.25
+
+    session = Session(Kernel())
+    JuliaForever2.record_usage!(session, report)
+    first = JuliaForever2.usage_snapshot(session)
+    @test first.input_tokens == 100
+    @test first.cache_read_tokens == 50
+    @test first.cache_write_tokens == 25
+    @test first.context_tokens == 175
+    @test first.cache_hit_rate ≈ 50 / 175 * 100
+    JuliaForever2.record_usage!(session, Dict(
+        "prompt_tokens" => 200, "completion_tokens" => 10,
+        "prompt_tokens_details" => Dict("cached_tokens" => 40),
+        "cost" => 0.25))
+    next = JuliaForever2.usage_snapshot(session)
+    @test next.input_tokens == 260
+    @test next.output_tokens == 30
+    @test next.cache_read_tokens == 90
+    @test next.cache_write_tokens == 25
+    @test next.cost ≈ 1.5
+    @test next.context_tokens == 200
+    @test next.cache_hit_rate ≈ 20.0
+    @test occursin("↑260 ↓30 R90 W25", JuliaForever2.usage_label(session))
+
+    clear_history!(session)
+    @test JuliaForever2.usage_snapshot(session).context_tokens === nothing
+    @test JuliaForever2.usage_snapshot(session).input_tokens == 260
+    close(session)
+end
+
+@testset "Pi footer telemetry: source-backed model, thinking, billing and limits" begin
+    custom = JuliaForever2.ModelProvider(
+        JuliaForever2.ModelSpec(:synthetic, "reference-model"; metadata=Dict(
+            "contextWindow" => 200_000, "reasoning" => true,
+            "thinkingLevel" => "high", "subscription" => true)),
+        (args...) -> nothing)
+    session = Session(default_kernel(custom))
+    JuliaForever2.record_usage!(session, Dict(
+        "input" => 100, "output" => 10, "cacheRead" => 50,
+        "cacheWrite" => 50, "cost" => Dict("total" => 0.125)))
+    snapshot = JuliaForever2.session_footer_snapshot(session)
+    @test snapshot.provider.model == "reference-model"
+    @test snapshot.provider.thinking == "high"
+    @test snapshot.provider.subscription
+    @test snapshot.provider.context_window == 200_000
+    left = JuliaForever2.footer_usage_label(snapshot.usage, snapshot.provider)
+    @test occursin("R50 W50 CH25.0%", left)
+    @test occursin("\$0.125 (sub)", left)
+    @test occursin("0.1%/200k", left)
+
+    @test JuliaForever2.provider_footer_status(JuliaForever2.CodexProvider("codex";
+        model="gpt-test", reasoning="medium")).thinking == "medium"
+    @test JuliaForever2.provider_footer_status(JuliaForever2.CodexProvider("codex")).subscription
+    @test !JuliaForever2.provider_footer_status(
+        JuliaForever2.OpenRouterProvider("fixture", "test-model")).subscription
+    @test JuliaForever2.provider_footer_status(
+        JuliaForever2.OpenRouterProvider("fixture", "test-model")).context_window === nothing
+    unknown = JuliaForever2.ModelProvider(
+        JuliaForever2.ModelSpec(:synthetic, "unknown-thinking"; metadata=Dict("reasoning" => true)),
+        (args...) -> nothing)
+    @test isnothing(JuliaForever2.provider_footer_status(unknown).thinking)
+    @test !occursin("thinking off",
+        JuliaForever2.footer_model_label(JuliaForever2.provider_footer_status(unknown)))
+    @test JuliaForever2.footer_thinking(Dict("reasoning" => true, "thinkingLevel" => "off")) == "off"
+    close(session)
+end
+
+@testset "Pi footer telemetry: real TUI right alignment and refresh" begin
+    metadata = Dict("contextWindow" => 200_000, "thinkingLevel" => "high",
+        "reasoning" => true)
+    provider = JuliaForever2.ModelProvider(
+        JuliaForever2.ModelSpec(:synthetic, "reference-model"; metadata),
+        (args...) -> nothing)
+    app = App(default_kernel(provider))
+    JuliaForever2.record_usage!(app.session, Dict(
+        "input" => 120, "output" => 18, "cost" => 0.125))
+    wide = Terminal.footer_line_parts(app, 100)
+    @test occursin("↑120 ↓18", wide.left)
+    @test occursin("\$0.125", wide.left)
+    @test occursin("0.1%/200k", wide.left)
+    @test wide.right == "(synthetic) reference-model • high"
+    @test textwidth(wide.left) + textwidth(wide.right) + 2 <= 100
+
+    backend = TestBackend(100, 24)
+    frame = Tachikoma.Frame(backend.buf, backend.buf.area,
+        Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    left = find_text(backend, "↑120 ↓18")
+    right = find_text(backend, "(synthetic) reference-model • high")
+    @test !isnothing(left) && !isnothing(right)
+    if !isnothing(left) && !isnothing(right)
+        @test left.y == 24 && right.y == 24
+        @test left.x < right.x
+        label = "(synthetic) reference-model • high"
+        row = Tachikoma.row_text(backend, right.y)
+        start = first(findfirst(label, row))
+        prefix = SubString(row, firstindex(row), prevind(row, start))
+        @test textwidth(prefix) + textwidth(label) == 100
+    end
+
+    compact = Terminal.footer_line_parts(app, 40)
+    @test textwidth(compact.left) + textwidth(compact.right) <= 40
+    @test occursin("reference-model", compact.right)
+    install!(app.session.kernel, ComponentSpec(:provider,
+        JuliaForever2.CodexProvider("codex"; model="new-model", reasoning="max")))
+    replaced = Terminal.footer_line_parts(app, 100)
+    @test occursin("new-model • max", replaced.right)
+    @test !occursin("reference-model", replaced.right)
+    @test occursin("(sub)", replaced.left)
+    close(app.session)
 end

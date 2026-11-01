@@ -2,29 +2,38 @@ abstract type AbstractEventListener end
 abstract type AbstractToolEntry end
 abstract type AbstractToolGuard end
 
-struct ToolSpec{S,F,O}
+struct ToolSpec{S,F,O,P,R}
     name::Symbol
     schema::S
     call::F
     description::String
     output_schema::O
-    parallel::Bool
+    concurrency_policy::P
+    output_renderer::R
 end
 
 """Describe a tool independently of its executor, provider schema, or presentation protocol."""
-ToolSpec(name, schema, callback; description="", output_schema=nothing, parallel=false) =
-    ToolSpec(Symbol(name), schema, callback, String(description), output_schema, parallel === true)
-ToolSpec(name::Symbol, schema, callback, description::AbstractString) =
-    ToolSpec(name, schema, callback, String(description), nothing, false)
-ToolSpec(name::Symbol, schema, callback, description::String, output_schema) =
-    ToolSpec(name, schema, callback, description, output_schema, false)
-ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, parallel=false) =
-    ToolSpec(name, schema, callback; description, output_schema, parallel)
-
-"""Only explicitly concurrency-safe tools may overlap sibling calls."""
-tool_concurrency_safe(spec::ToolSpec, arguments) = spec.parallel
+ToolSpec(name, schema, callback; description="", output_schema=nothing, concurrency_safe=false, render_output=nothing) = ToolSpec(Symbol(name), schema, callback, String(description), output_schema, concurrency_safe, render_output)
+ToolSpec(name::Symbol, schema, callback, description::AbstractString) = ToolSpec(name, schema, callback, String(description), nothing, false, nothing)
+ToolSpec(name::Symbol, schema, callback, description::String, output_schema) = ToolSpec(name, schema, callback, description, output_schema, false, nothing)
+ToolSpec(name::Symbol, schema, callback, description::String, output_schema, concurrency_policy) = ToolSpec(name, schema, callback, description, output_schema, concurrency_policy, nothing)
+ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, concurrency_safe=false, render_output=nothing) = ToolSpec(name, schema, callback; description, output_schema, concurrency_safe, render_output)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}, schema; kwargs...) = ToolSpec(name, schema, callback; kwargs...)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}; kwargs...) = ToolSpec(name, callback; kwargs...)
+
+"""A tool declares parallel safety explicitly; plugins can dispatch on their policy type."""
+tool_concurrency_safe(policy::Bool, arguments) = policy
+tool_concurrency_safe(policy, arguments) = Base.invokelatest(policy, arguments)
+tool_concurrency_safe(spec::ToolSpec, arguments) = tool_concurrency_safe(spec.concurrency_policy, arguments)
+
+"""Approval requests are values returned by tool guards; the authority remains a replaceable Julia service."""
+abstract type AbstractToolApprovalRequest end
+
+struct ToolApprovalRequest <: AbstractToolApprovalRequest
+    reason::Union{Nothing,String}
+end
+
+ToolApprovalRequest() = ToolApprovalRequest(nothing)
 
 struct ToolRestriction
     allow::Union{Nothing,Set{Symbol}}
@@ -76,26 +85,21 @@ function extension_chain(scope::ExtensionScope)
     return chain
 end
 function Base.isopen(scope::ExtensionScope)
-    return lock(scope.lock) do
+    lock(scope.lock) do
         current = scope
-        while !isnothing(current)
-            current.closed && return false
+        while !isnothing(current) && !current.closed
             current = current.parent
         end
-        return true
+        isnothing(current)
     end
 end
-
 function scope_admits(scope::ExtensionScope, listener_scope::ExtensionScope)
-    isnothing(listener_scope.parent) && return true
     current = scope
-    while !isnothing(current)
-        current === listener_scope && return true
+    while !isnothing(current) && current !== listener_scope
         current = current.parent
     end
-    return false
+    isnothing(listener_scope.parent) || !isnothing(current)
 end
-
 """Own a scope registration or resource through its disposal and outstanding callback uses."""
 function own_resource!(scope::ExtensionScope, value; cleanup=close)
     owned = Ref{ResourceRegistration}()
@@ -122,11 +126,11 @@ function extension_resources!(scope::ExtensionScope)
     if scope.closed && scope.users == 0
         resources = reverse(copy(scope.resources))
         empty!(scope.resources)
-        return resources
+        resources
+    else
+        ResourceRegistration[]
     end
-    return ResourceRegistration[]
 end
-
 function dispose_extension_resources!(resources)
     failures = Task[]
     for registration in resources
@@ -149,15 +153,26 @@ function Base.close(scope::ExtensionScope)
         end
         (children, resources=extension_resources!(scope))
     end
+    # Empty scopes are common during streaming. No children or owned resources
+    # means there is nothing for a cleanup task to execute.
+    if !isempty(retired.children) || !isempty(retired.resources)
+        dispose!(retired.children, retired.resources)
+    end
+    nothing
+end
+
+function dispose!(children::Vector{ExtensionScope}, resources::Vector{ResourceRegistration})
     failures = Task[]
-    for child in retired.children
+    for child in children
         worker = spawn_cleanup(() -> close(child))
         wait(worker; throw=false)
         istaskfailed(worker) && push!(failures, worker)
     end
-    worker = spawn_cleanup(() -> dispose_extension_resources!(retired.resources))
-    wait(worker; throw=false)
-    istaskfailed(worker) && push!(failures, worker)
+    if !isempty(resources)
+        worker = spawn_cleanup(() -> dispose_extension_resources!(resources))
+        wait(worker; throw=false)
+        istaskfailed(worker) && push!(failures, worker)
+    end
     isempty(failures) || fetch(first(failures))
     return nothing
 end
@@ -212,86 +227,113 @@ end
 
 function event_invocations(scope::ExtensionScope, name::Symbol)
     root = extension_root(scope)
-    return lock(root.lock) do
+    lock(root.lock) do
         invocations = EventInvocation[]
         for listener in get(root.listeners, name, AbstractEventListener[])
-            listener.active && isopen(listener.scope) || continue
-            listener.global_listener || scope_admits(scope, listener.scope) || continue
-            retention = isnothing(listener.owner) ? nothing : acquire_plugin!(listener.owner)
-            !isnothing(listener.owner) && isnothing(retention) && continue
-            scopes = ExtensionScope[]
-            current = listener.scope
-            while !isnothing(current)
-                current.users += 1
-                push!(scopes, current)
-                current = current.parent
+            if listener.active && isopen(listener.scope) && (listener.global_listener || scope_admits(scope, listener.scope))
+                invocation = retain!(listener)
+                if !isnothing(invocation)
+                    push!(invocations, invocation)
+                end
             end
-            push!(invocations, EventInvocation(listener, retention, scopes, nothing))
         end
-        return invocations
+        invocations
     end
 end
 
+function retain!(listener::Union{AbstractEventListener,AbstractToolGuard,AbstractToolEntry})
+    retention = isnothing(listener.owner) ? nothing : acquire_plugin!(listener.owner)
+    isnothing(listener.owner) || !isnothing(retention) ? retain!(EventInvocation(listener, retention, extension_chain(listener.scope), nothing)) : nothing
+end
+
+function retain!(invocation::EventInvocation)
+    foreach(scope -> scope.users += 1, invocation.scopes)
+    invocation
+end
 function release!(invocation::EventInvocation)
-    pending = invocation.pending
-    while !isnothing(pending) && istaskdone(pending)
-        value = istaskfailed(pending) ? nothing : fetch(pending)
-        pending = value isa Task ? value : nothing
+    invocation.pending = pending(invocation.pending)
+    release!(invocation, invocation.pending)
+end
+
+pending_task(value) = nothing
+pending_task(value::Task) = value
+
+function pending(task::Union{Nothing,Task})
+    current = task
+    while !isnothing(current) && istaskdone(current)
+        value = istaskfailed(current) ? nothing : fetch(current)
+        current = pending_task(value)
     end
-    invocation.pending = pending
-    if !isnothing(pending)
-        spawn_scoped() do
-            wait(pending; throw=false)
-            value = istaskfailed(pending) ? nothing : fetch(pending)
-            invocation.pending = value isa Task ? value : nothing
-            release!(invocation)
-        end
-        return nothing
+    current
+end
+
+function release!(invocation::EventInvocation, task::Task)
+    spawn_scoped() do
+        wait(task; throw=false)
+        value = istaskfailed(task) ? nothing : fetch(task)
+        invocation.pending = pending_task(value)
+        release!(invocation)
     end
-    scope = invocation.listener.scope
-    resources = lock(scope.lock) do
-        pending = ResourceRegistration[]
-        for retained in invocation.scopes
-            retained.users -= 1
-            append!(pending, extension_resources!(retained))
+    nothing
+end
+
+function release!(invocation::EventInvocation, ::Nothing)
+    resources = lock(invocation.listener.scope.lock) do
+        resources = ResourceRegistration[]
+        for scope in invocation.scopes
+            scope.users -= 1
+            append!(resources, extension_resources!(scope))
         end
         empty!(invocation.scopes)
-        pending
+        resources
     end
+    if !isempty(resources) || !isnothing(invocation.retention)
+        dispose!(invocation, resources)
+    end
+    nothing
+end
+
+function dispose!(invocation::EventInvocation, resources::Vector{ResourceRegistration})
     failures = Task[]
-    for cleanup in (() -> dispose_extension_resources!(resources), () -> isnothing(invocation.retention) || release!(invocation.retention))
-        worker = spawn_cleanup(cleanup)
+    if !isempty(resources)
+        worker = spawn_cleanup(() -> dispose_extension_resources!(resources))
+        wait(worker; throw=false)
+        istaskfailed(worker) && push!(failures, worker)
+    end
+    if !isnothing(invocation.retention)
+        worker = spawn_cleanup(() -> release!(invocation.retention))
         wait(worker; throw=false)
         istaskfailed(worker) && push!(failures, worker)
     end
     isempty(failures) || fetch(first(failures))
-    return nothing
+    nothing
 end
-
 function claim_listener!(listener::EventListener)
-    return lock(listener.scope.lock) do
-        if listener.once
-            listener.claimed && return false
+    lock(listener.scope.lock) do
+        accepted = !listener.once || !listener.claimed
+        if accepted && listener.once
             listener.claimed = true
             listener.active = false
-            isnothing(listener.registration) || release!(listener.registration)
+            if !isnothing(listener.registration)
+                release!(listener.registration)
+            end
         end
-        return true
+        accepted
     end
 end
-
 event_value(value) = value
 event_value(value::Task) = event_value(fetch(value))
 event_bailed(value) = value !== nothing && value !== false
 
-function invoke_listener(invocation::EventInvocation, arguments; awaited=false)
-    listener = invocation.listener
-    claim_listener!(listener) || return nothing
-    value = Base.invokelatest(listener.callback, arguments...)
-    value isa Task && (invocation.pending = value)
-    return awaited ? event_value(value) : value
-end
+invoke_listener(invocation::EventInvocation, arguments; awaited=false) = claim_listener!(invocation.listener) ? invoke(invocation, arguments, awaited) : nothing
 
+track_event_task!(invocation::EventInvocation, value) = value
+track_event_task!(invocation::EventInvocation, value::Task) = (invocation.pending = value; value)
+
+function invoke(invocation::EventInvocation, arguments, awaited::Bool)
+    value = track_event_task!(invocation, Base.invokelatest(invocation.listener.callback, arguments...))
+    awaited ? event_value(value) : value
+end
 function dispatch_listeners(::Val{:emit}, invocations, arguments)
     for invocation in invocations
         invoke_listener(invocation, arguments)
@@ -299,20 +341,17 @@ function dispatch_listeners(::Val{:emit}, invocations, arguments)
     return nothing
 end
 
-function dispatch_listeners(::Val{:bail}, invocations, arguments)
-    for invocation in invocations
-        value = invoke_listener(invocation, arguments)
-        event_bailed(value) && return value
-    end
-    return nothing
-end
+dispatch_listeners(::Val{:bail}, invocations, arguments) = firstresponse(invocations, arguments, false)
+dispatch_listeners(::Val{:serial}, invocations, arguments) = firstresponse(invocations, arguments, true)
 
-function dispatch_listeners(::Val{:serial}, invocations, arguments)
-    for invocation in invocations
-        value = invoke_listener(invocation, arguments; awaited=true)
-        event_bailed(value) && return value
+function firstresponse(invocations, arguments, awaited)
+    index = 1
+    value = nothing
+    while index <= length(invocations) && !event_bailed(value)
+        value = invoke_listener(invocations[index], arguments; awaited)
+        index += 1
     end
-    return nothing
+    event_bailed(value) ? value : nothing
 end
 
 function dispatch_listeners(::Val{:parallel}, invocations, arguments)
@@ -327,26 +366,31 @@ function dispatch_listeners(::Val{:parallel}, invocations, arguments)
     return nothing
 end
 
-function event_waterfall(invocations, index, arguments, inner)
-    index > length(invocations) && return Base.invokelatest(inner)
-    invocation = invocations[index]
-    claim_listener!(invocation.listener) || return event_waterfall(invocations, index + 1, arguments, inner)
-    called = Threads.Atomic{Bool}(false)
-    next = () -> begin
-        Threads.atomic_xchg!(called, true) && error("next() called multiple times")
+event_waterfall(invocations, index, arguments, inner) = index > length(invocations) ? Base.invokelatest(inner) : cascade(invocations[index], invocations, index, arguments, inner)
+
+function cascade(invocation::EventInvocation, invocations, index, arguments, inner)
+    if claim_listener!(invocation.listener)
+        next = continuation(invocations, index + 1, arguments, inner)
+        value = Base.invokelatest(invocation.listener.callback, arguments..., next)
+        track_waterfall_task!(invocation, value)
+    else
         event_waterfall(invocations, index + 1, arguments, inner)
     end
-    value = Base.invokelatest(invocation.listener.callback, arguments..., next)
-    if value isa Task
-        lock(invocation.listener.scope.lock) do
-            invocation.pending = value
-        end
-    end
-    return value
 end
 
-dispatch_listeners(::Val{:waterfall}, invocations, arguments) =
-    event_waterfall(invocations, 1, Base.front(arguments), last(arguments))
+track_waterfall_task!(invocation::EventInvocation, value) = value
+function track_waterfall_task!(invocation::EventInvocation, value::Task)
+    lock(invocation.listener.scope.lock) do
+        invocation.pending = value
+    end
+    value
+end
+
+function continuation(invocations, index, arguments, inner)
+    called = Threads.Atomic{Bool}(false)
+    () -> Threads.atomic_xchg!(called, true) ? error("next() called multiple times") : event_waterfall(invocations, index, arguments, inner)
+end
+dispatch_listeners(::Val{:waterfall}, invocations, arguments) = event_waterfall(invocations, 1, Base.front(arguments), last(arguments))
 
 function release_event_invocations!(invocations)
     failures = Task[]
@@ -368,26 +412,37 @@ function waterfall_tasks(invocations)
     return tasks
 end
 
+waterfall_pending_tasks(returned) = Task[]
+waterfall_pending_tasks(returned::Task) = Task[returned]
+append_waterfall_task!(tasks::Vector{Task}, value) = tasks
+append_waterfall_task!(tasks::Vector{Task}, value::Task) = (push!(tasks, value); tasks)
+
 function settle_waterfall!(invocations, returned)
-    pending = Task[]
+    pending = waterfall_pending_tasks(returned)
     seen = IdDict{Task,Nothing}()
-    returned isa Task && push!(pending, returned)
-    while true
-        append!(pending, waterfall_tasks(invocations))
-        filter!(task -> !haskey(seen, task), pending)
-        isempty(pending) && return nothing
+    refresh!(pending, invocations, seen)
+    while !isempty(pending)
         worker = popfirst!(pending)
         seen[worker] = nothing
         wait(worker; throw=false)
         if !istaskfailed(worker)
             value = fetch(worker)
-            value isa Task && push!(pending, value)
+            append_waterfall_task!(pending, value)
         end
+        refresh!(pending, invocations, seen)
     end
+    nothing
 end
 
+function refresh!(pending::Vector{Task}, invocations, seen)
+    append!(pending, waterfall_tasks(invocations))
+    filter!(task -> !haskey(seen, task), pending)
+end
+waterfall_has_pending(invocations, returned) = !isempty(waterfall_tasks(invocations))
+waterfall_has_pending(invocations, returned::Task) = true
+
 function release_waterfall!(invocations, returned)
-    if returned isa Task || !isempty(waterfall_tasks(invocations))
+    if waterfall_has_pending(invocations, returned)
         spawn_scoped() do
             settle_waterfall!(invocations, returned)
             release_event_invocations!(invocations)
@@ -401,11 +456,10 @@ end
 """Dispatch scoped callbacks with synchronous, bail, serial, parallel, or continuation composition."""
 function dispatch_event!(scope::ExtensionScope, name::Symbol, arguments...; mode::Symbol=:emit)
     invocations = event_invocations(scope, name)
-    # The empty dispatch is common during streaming and needs no worker or cleanup.
-    # Preserve waterfall's terminal continuation and unsupported mode errors.
-    if isempty(invocations) && mode in (:emit, :bail, :serial, :parallel)
-        return nothing
-    end
+    isempty(invocations) && mode in (:emit, :bail, :serial, :parallel) ? nothing : dispatch!(invocations, arguments, mode)
+end
+
+function dispatch!(invocations::Vector{EventInvocation}, arguments, mode::Symbol)
     worker = spawn_scoped(() -> dispatch_listeners(Val(mode), invocations, arguments))
     wait(worker; throw=false)
     cleanup = spawn_cleanup() do
@@ -418,11 +472,8 @@ function dispatch_event!(scope::ExtensionScope, name::Symbol, arguments...; mode
         nothing
     end
     wait(cleanup; throw=false)
-    istaskfailed(worker) && return fetch(worker)
-    fetch(cleanup)
-    return fetch(worker)
+    resolve(worker, [cleanup])
 end
-
 mutable struct ToolEntry{T,O,F} <: AbstractToolEntry
     scope::ExtensionScope
     spec::T
@@ -456,38 +507,53 @@ end
 function register_tool!(scope::ExtensionScope, spec::ToolSpec; owner=nothing, cleanup=Returns(nothing))
     entry = ToolEntry(scope, spec, owner, cleanup, true, 0, false)
     accepted = lock(scope.lock) do
-        isopen(scope) || return (ok=false, reason="Extension scope is closed")
-        haskey(scope.tools, spec.name) && return (ok=false, reason="Tool $(spec.name) is already registered in this scope")
-        scope.tools[spec.name] = entry
-        push!(scope.tool_order, spec.name)
-        return (ok=true, reason="")
+        register!(scope, entry)
     end
-    accepted.ok || return (ok=false, reason=accepted.reason, registration=nothing)
-    registration = own_resource!(scope, entry; cleanup=retire_tool!)
-    isnothing(owner) || own_resource!(owner, registration; cleanup=release!)
-    return (ok=true, reason="", registration)
+    accepted.ok ? own!(scope, entry, owner, retire_tool!) : (ok=false, reason=accepted.reason, registration=nothing)
 end
 
+function register!(scope::ExtensionScope, entry::ToolEntry)
+    name = entry.spec.name
+    if !isopen(scope)
+        (ok=false, reason="Extension scope is closed")
+    elseif haskey(scope.tools, name)
+        (ok=false, reason="Tool $name is already registered in this scope")
+    else
+        scope.tools[name] = entry
+        push!(scope.tool_order, name)
+        (ok=true, reason="")
+    end
+end
+
+function own!(scope::ExtensionScope, value, owner, cleanup)
+    registration = own_resource!(scope, value; cleanup)
+    if !isnothing(owner)
+        own_resource!(owner, registration; cleanup=release!)
+    end
+    (ok=true, reason="", registration)
+end
 function overlay_tools!(names, entries, scope::ExtensionScope)
-    isopen(scope) || return nothing
-    for name in scope.tool_order
-        entry = scope.tools[name]
-        entry.active || continue
-        !isnothing(entry.owner) && !plugin_available(entry.owner) && continue
-        haskey(entries, name) || push!(names, name)
-        entries[name] = entry
+    if isopen(scope)
+        for name in scope.tool_order
+            entry = scope.tools[name]
+            if available(entry)
+                if !haskey(entries, name)
+                    push!(names, name)
+                end
+                entries[name] = entry
+            end
+        end
     end
-    return nothing
+    nothing
 end
 
+available(::Nothing) = false
+available(entry::ToolEntry) = entry.active && (isnothing(entry.owner) || plugin_available(entry.owner))
 function tool_admitted(scope::ExtensionScope, name::Symbol)
-    isopen(scope) || return true
-    return all(scope.restrictions) do restriction
-        (isnothing(restriction.allow) || name in restriction.allow) &&
-            (isnothing(restriction.deny) || !(name in restriction.deny))
+    !isopen(scope) || all(scope.restrictions) do restriction
+        (isnothing(restriction.allow) || name in restriction.allow) && (isnothing(restriction.deny) || !(name in restriction.deny))
     end
 end
-
 function tool_view(scope::ExtensionScope)
     chain = reverse(extension_chain(scope))
     inherited_names = Symbol[]
@@ -508,23 +574,25 @@ while an inherited match must satisfy restrictions from every visible layer.
 """
 function visible_tool_entry(scope::ExtensionScope, name::Symbol)
     current = scope
-    while !isnothing(current)
+    selected = nothing
+    while !isnothing(current) && isnothing(selected)
         entry = get(current.tools, name, nothing)
-        if !isnothing(entry) && entry.active && isopen(current) &&
-                (isnothing(entry.owner) || plugin_available(entry.owner))
-            current === scope && return entry
-            layer = scope
-            while !isnothing(layer)
-                tool_admitted(layer, name) || return nothing
-                layer = layer.parent
-            end
-            return entry
+        if available(entry) && isopen(current)
+            selected = entry
+        else
+            current = current.parent
         end
-        current = current.parent
     end
-    return nothing
+    isnothing(selected) || current === scope || admitted(scope, name) ? selected : nothing
 end
 
+function admitted(scope::ExtensionScope, name::Symbol)
+    current = scope
+    while !isnothing(current) && tool_admitted(current, name)
+        current = current.parent
+    end
+    isnothing(current)
+end
 """Resolve a tool after nearest-scope shadowing and all inherited restrictions."""
 function tool(scope::ExtensionScope, name::Symbol)
     return lock(scope.lock) do
@@ -552,27 +620,37 @@ end
 
 """Intersect inherited tool visibility while preserving the viewing scope's own implementations."""
 function restrict_tools!(scope::ExtensionScope; allow=nothing, deny=nothing, owner=nothing)
-    isnothing(scope.parent) && return (ok=false, reason="Tool restrictions require a scoped context", registration=nothing)
-    isnothing(allow) && isnothing(deny) && return (ok=false, reason="A tool restriction needs allow or deny", registration=nothing)
-    restriction = ToolRestriction(isnothing(allow) ? nothing : Set(Symbol.(allow)),
-        isnothing(deny) ? nothing : Set(Symbol.(deny)))
-    accepted = lock(scope.lock) do
-        isopen(scope) || return (ok=false, reason="Extension scope is closed")
-        known = tool_view(scope).restrictable
-        specified = union(isnothing(restriction.allow) ? Set{Symbol}() : restriction.allow,
-            isnothing(restriction.deny) ? Set{Symbol}() : restriction.deny)
-        unknown = setdiff(specified, known)
-        isempty(unknown) || return (ok=false, reason="Unknown inherited tools: $(join(sort!(collect(unknown)), ", "))")
-        push!(scope.restrictions, restriction)
-        return (ok=true, reason="")
+    if isnothing(scope.parent)
+        (ok=false, reason="Tool restrictions require a scoped context", registration=nothing)
+    elseif isnothing(allow) && isnothing(deny)
+        (ok=false, reason="A tool restriction needs allow or deny", registration=nothing)
+    else
+        restrict!(scope, ToolRestriction(; allow, deny), owner)
     end
-    accepted.ok || return (ok=false, reason=accepted.reason, registration=nothing)
-    registration = own_resource!(scope, restriction; cleanup=value -> remove_restriction!(scope, value))
-    isnothing(owner) || own_resource!(owner, registration; cleanup=release!)
-    return (ok=true, reason="", registration)
 end
 
+ToolRestriction(; allow=nothing, deny=nothing) = ToolRestriction(isnothing(allow) ? nothing : Set(Symbol.(allow)), isnothing(deny) ? nothing : Set(Symbol.(deny)))
 
+function restrict!(scope::ExtensionScope, restriction::ToolRestriction, owner)
+    accepted = lock(scope.lock) do
+        register!(scope, restriction)
+    end
+    accepted.ok ? own!(scope, restriction, owner, value -> remove_restriction!(scope, value)) : (ok=false, reason=accepted.reason, registration=nothing)
+end
+
+function register!(scope::ExtensionScope, restriction::ToolRestriction)
+    known = tool_view(scope).restrictable
+    specified = union(something(restriction.allow, Set{Symbol}()), something(restriction.deny, Set{Symbol}()))
+    unknown = setdiff(specified, known)
+    if !isopen(scope)
+        (ok=false, reason="Extension scope is closed")
+    elseif !isempty(unknown)
+        (ok=false, reason="Unknown inherited tools: $(join(sort!(collect(unknown)), ", "))")
+    else
+        push!(scope.restrictions, restriction)
+        (ok=true, reason="")
+    end
+end
 mutable struct ToolGuardEntry{F,O} <: AbstractToolGuard
     scope::ExtensionScope
     callback::F
@@ -588,63 +666,95 @@ function retire_tool_guard!(entry::ToolGuardEntry)
     return nothing
 end
 
-"""Register a reversible, scope-inherited tool denial policy owned by a plugin or scope."""
+"""Register a reversible, scope-inherited tool denial or approval policy owned by a plugin."""
 function register_tool_guard!(scope::ExtensionScope, callback; owner=nothing)
     entry = ToolGuardEntry(scope, callback, owner, true)
     accepted = lock(scope.lock) do
-        isopen(scope) || return false
-        push!(scope.guards, entry)
-        return true
+        if isopen(scope)
+            push!(scope.guards, entry)
+            true
+        else
+            false
+        end
     end
-    accepted || return (ok=false, reason="Extension scope is closed", registration=nothing)
-    registration = own_resource!(scope, entry; cleanup=retire_tool_guard!)
-    isnothing(owner) || own_resource!(owner, registration; cleanup=release!)
-    return (ok=true, reason="", registration)
+    accepted ? own!(scope, entry, owner, retire_tool_guard!) : (ok=false, reason="Extension scope is closed", registration=nothing)
 end
-
 """Retain the exact guard generations and scopes while a tool call is being admitted."""
 function acquire_tool_guards(scope::ExtensionScope)
-    return lock(scope.lock) do
+    lock(scope.lock) do
         invocations = EventInvocation[]
         for layer in reverse(extension_chain(scope)), guard in layer.guards
-            guard.active && isopen(layer) || continue
-            retention = isnothing(guard.owner) ? nothing : acquire_plugin!(guard.owner)
-            !isnothing(guard.owner) && isnothing(retention) && continue
-            scopes = extension_chain(layer)
-            for retained in scopes
-                retained.users += 1
+            if guard.active && isopen(layer)
+                invocation = retain!(guard)
+                if !isnothing(invocation)
+                    push!(invocations, invocation)
+                end
             end
-            push!(invocations, EventInvocation(guard, retention, scopes, nothing))
         end
-        return invocations
+        invocations
+    end
+end
+"""The approval protocol is independently replaceable by dispatch on the request type."""
+tool_approval_reason(::AbstractToolApprovalRequest) = nothing
+tool_approval_reason(request::ToolApprovalRequest) = request.reason
+
+"""Resolve a request through Julia-owned scoped event listeners, never an external runtime."""
+tool_approval_outcome(scope::ExtensionScope, call, request::AbstractToolApprovalRequest) = dispatch_event!(scope, :tool_approval, call, request; mode=:serial)
+
+"""Fail closed for missing, rejected, cancelled, or unsupported approval outcomes."""
+function tool_approval_denial(scope::ExtensionScope, call, request::AbstractToolApprovalRequest)
+    outcome = Base.invokelatest(tool_approval_outcome, scope, call, request)
+    approval(outcome, call, request)
+end
+
+function approval(outcome, call, request::AbstractToolApprovalRequest)
+    if outcome === :allowed_once
+        nothing
+    elseif outcome === :rejected
+        "the user rejected tool \"$(call.name)\""
+    elseif outcome === :cancelled
+        "approval for tool \"$(call.name)\" was cancelled"
+    elseif outcome === :unavailable
+        "tool \"$(call.name)\" requires approval, but no approval channel is available"
+    else
+        "Unsupported approval outcome for tool \"$(call.name)\""
     end
 end
 
-"""Evaluate root-to-leaf guards; only `nothing` permits the next policy."""
-function first_tool_denial(invocations, call)
-    for invocation in invocations
-        denial = Base.invokelatest(invocation.listener.callback, call)
-        isnothing(denial) && continue
-        return denial isa AbstractString ? String(denial) : "Tool guard must return a string or nothing"
+function approval(::Nothing, call, request::AbstractToolApprovalRequest)
+    reason = Base.invokelatest(tool_approval_reason, request)
+    isnothing(reason) ? "tool \"$(call.name)\" requires approval (not yet supported)" : String(reason)
+end
+"""Evaluate root-to-leaf tool guards; approval never grants an exemption from later guards."""
+function first_tool_denial(invocations, call, scope::ExtensionScope)
+    result = nothing
+    index = 1
+    while index <= length(invocations) && isnothing(result)
+        decision = Base.invokelatest(invocations[index].listener.callback, call)
+        result = denial(decision, scope, call)
+        index += 1
     end
-    return nothing
+    result
 end
 
+denial(decision::AbstractToolApprovalRequest, scope::ExtensionScope, call) = tool_approval_denial(scope, call, decision)
+denial(::Nothing, scope::ExtensionScope, call) = nothing
+denial(decision::AbstractString, scope::ExtensionScope, call) = String(decision)
+denial(decision, scope::ExtensionScope, call) = "Tool guard must return a string, an approval request, or nothing"
 function acquire_tool!(scope::ExtensionScope, name::Symbol)
-    return lock(scope.lock) do
+    lock(scope.lock) do
         entry = visible_tool_entry(scope, name)
-        isnothing(entry) && return nothing
-        retention = isnothing(entry.owner) ? nothing : acquire_plugin!(entry.owner)
-        !isnothing(entry.owner) && isnothing(retention) && return nothing
-        scopes = extension_chain(entry.scope)
-        for retained in scopes
-            retained.users += 1
-        end
-        entry.users += 1
-        return EventInvocation(entry, retention, scopes, nothing)
+        isnothing(entry) ? nothing : acquire!(entry)
     end
 end
 
+function acquire!(entry::ToolEntry)
+    invocation = retain!(entry)
+    if !isnothing(invocation)
+        entry.users += 1
+    end
+    invocation
+end
 function release_tool!(invocation::EventInvocation)
     entry = invocation.listener
     lock(entry.scope.lock) do
@@ -664,32 +774,113 @@ end
 tool_result(value::ExecutionResult) = value
 tool_result(value) = ExecutionResult(true, value isa AbstractString ? value : repr(value), value)
 
-"""Validate successful tool results without changing callers that omit an output schema."""
-function checked_tool_result(spec::ToolSpec, returned)
-    result = tool_result(returned)
-    result.ok || return result
-    violations = tool_output_violations(spec.output_schema, result.value)
-    isempty(violations) && return result
-    return ExecutionResult(false, string("Invalid tool result: ", join(violations, "; ")))
+"""Request a fail-closed rejection of one completed tool call, withholding its value."""
+struct ToolResultBlock
+    reason::String
+end
+ToolResultBlock(reason::AbstractString) = ToolResultBlock(String(reason))
+
+"""Change the text shown for a completed call without modifying its successful value."""
+struct ToolResultText
+    text::String
+end
+ToolResultText(text::AbstractString) = ToolResultText(String(text))
+
+"""Replace a successful canonical value through the owning tool's validation and renderer."""
+struct ToolResultValue{T}
+    value::T
 end
 
-"""Invoke a retained tool only after all inherited plugin-owned guards permit its call."""
-function invoke_tool_entry!(scope::ExtensionScope, invocation::EventInvocation, arguments...)
-    name = invocation.listener.spec.name
+"""Select a post-execution policy through scoped events or independent multiple dispatch."""
+tool_completion_decision(scope::ExtensionScope, call, result::ExecutionResult) = dispatch_event!(scope, :tool_completion, call, result; mode=:serial)
+
+apply_tool_completion(::Nothing, result::ExecutionResult) = result
+apply_tool_completion(decision::ToolResultBlock, result::ExecutionResult) = ExecutionResult(false, decision.reason)
+apply_tool_completion(decision::ToolResultText, result::ExecutionResult) = ExecutionResult(result.ok, decision.text, result.ok ? result.value : nothing)
+apply_tool_completion(decision, result::ExecutionResult) = ExecutionResult(false, "Unsupported tool completion decision")
+
+"""Keep the existing two-argument policy extension point for non-value decisions."""
+apply_tool_completion(decision, result::ExecutionResult, spec::ToolSpec, arguments) = apply_tool_completion(decision, result)
+
+"""Reject attempts to revive a failure; validate and rerender substituted values."""
+apply_tool_completion(decision::ToolResultValue, result::ExecutionResult, spec::ToolSpec, arguments) = result.ok ? substitute(decision, spec, arguments) : ExecutionResult(false, "Cannot replace a failed tool result")
+
+function substitute(decision::ToolResultValue, spec::ToolSpec, arguments)
+    value = decision.value
+    checked_tool_result(spec, arguments, ExecutionResult(true, value isa AbstractString ? value : repr(value), value))
+end
+
+"""Render model-visible tool text independently of the validated canonical value."""
+tool_output_text(renderer, arguments, value) = Base.invokelatest(renderer, arguments, value)
+
+"""A renderer is opt-in; its failure must not expose an otherwise valid tool value."""
+present_tool_result(spec::ToolSpec, arguments, result::ExecutionResult) = isnothing(spec.output_renderer) ? result : render(spec, arguments, result)
+
+function render(spec::ToolSpec, arguments, result::ExecutionResult)
+    worker = spawn_scoped(() -> Base.invokelatest(tool_output_text, spec.output_renderer, arguments, result.value))
+    wait(worker; throw=false)
+    istaskfailed(worker) ? ExecutionResult(false, "Tool output renderer failed") : rendered(fetch(worker), result)
+end
+
+rendered(text::AbstractString, result::ExecutionResult) = ExecutionResult(true, String(text), result.value)
+rendered(text, result::ExecutionResult) = ExecutionResult(false, "Tool output renderer must return text")
+"""Validate successful canonical values before rendering them for the model."""
+function checked_tool_result(spec::ToolSpec, arguments, returned)
+    result = tool_result(returned)
+    result.ok ? validate(spec, arguments, result) : result
+end
+
+function validate(spec::ToolSpec, arguments, result::ExecutionResult)
+    violations = tool_output_violations(spec.output_schema, result.value)
+    isempty(violations) ? present_tool_result(spec, arguments, result) : ExecutionResult(false, string("Invalid tool result: ", join(violations, "; ")))
+end
+"""Evaluate admission and argument checks before starting the Julia-owned tool callback."""
+function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, arguments, context)
+    reason = first_tool_denial(guards, call, scope)
+    isnothing(reason) ? validate(invocation.listener.spec, call, arguments, context) : ExecutionResult(false, reason)
+end
+
+function validate(spec::ToolSpec, call, arguments, context)
+    if cancelled(context)
+        ExecutionResult(false, "Tool call aborted before dispatch")
+    else
+        violations = tool_argument_violations(spec.schema, call.arguments)
+        isempty(violations) ? invoke(spec, call, arguments, context) : ExecutionResult(false, string(join(violations, "; ")))
+    end
+end
+
+function invoke(spec::ToolSpec, call, arguments, context)
+    if cancelled(context)
+        ExecutionResult(false, "Tool call aborted before dispatch")
+    else
+        returned = event_value(Base.invokelatest(spec.call, arguments...))
+        checked_tool_result(spec, call.arguments, returned)
+    end
+end
+"""Complete an admitted tool result using an independently replaceable Julia policy."""
+function complete_tool_result(scope::ExtensionScope, call, raw::ExecutionResult,
+        context, spec::ToolSpec, arguments)
+    decision = Base.invokelatest(tool_completion_decision, scope, call, raw)
+    settled = Base.invokelatest(apply_tool_completion, decision, raw, spec, arguments)
+    return cancelled(context) && settled.ok ?
+        ExecutionResult(false, "Tool call aborted") : settled
+end
+
+"""Invoke a tool only after inherited guards permit it; post-policy cannot revive a failure."""
+function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context=current_context())
+    invocation = acquire_tool!(scope, name)
+    isnothing(invocation) ? ExecutionResult(false, "Unknown tool: $name") : invoke(scope, invocation, arguments, context)
+end
+
+function invoke(scope::ExtensionScope, invocation::EventInvocation, arguments, context)
     guards = acquire_tool_guards(scope)
     worker = spawn_scoped() do
-        call = ToolCall(name, length(arguments) == 1 ? first(arguments) : arguments)
-        denial = first_tool_denial(guards, call)
-        if !isnothing(denial)
-            ExecutionResult(false, denial)
+        call = ToolCall(invocation.listener.spec.name, length(arguments) == 1 ? first(arguments) : arguments)
+        if cancelled(context)
+            ExecutionResult(false, "Tool call aborted before dispatch")
         else
-            violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
-            if isempty(violations)
-                returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
-                checked_tool_result(invocation.listener.spec, returned)
-            else
-                ExecutionResult(false, join(violations, "; "))
-            end
+            raw = admitted_tool_result(invocation, guards, scope, call, arguments, context)
+            complete_tool_result(scope, call, raw, context, invocation.listener.spec, call.arguments)
         end
     end
     wait(worker; throw=false)
@@ -697,88 +888,16 @@ function invoke_tool_entry!(scope::ExtensionScope, invocation::EventInvocation, 
     tool_cleanup = spawn_cleanup(() -> release_tool!(invocation))
     wait(guard_cleanup; throw=false)
     wait(tool_cleanup; throw=false)
-    istaskfailed(worker) && return ExecutionResult(false, sprint(showerror, TaskFailedException(worker)))
-    istaskfailed(guard_cleanup) && return ExecutionResult(false, sprint(showerror, TaskFailedException(guard_cleanup)))
-    istaskfailed(tool_cleanup) && return ExecutionResult(false, sprint(showerror, TaskFailedException(tool_cleanup)))
-    return tool_result(fetch(worker))
+    workers = (worker, guard_cleanup, tool_cleanup)
+    failed = findfirst(istaskfailed, workers)
+    isnothing(failed) ? tool_result(fetch(worker)) : ExecutionResult(false, sprint(showerror, TaskFailedException(workers[failed])))
 end
-
-"""Acquire and invoke the currently visible tool generation."""
-function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
-    invocation = acquire_tool!(scope, name)
-    isnothing(invocation) && return ExecutionResult(false, "Unknown tool: $name")
-    return invoke_tool_entry!(scope, invocation, arguments...)
-end
-
 struct ToolCall{A}
     name::Symbol
     arguments::A
 end
 
 ToolCall(name, arguments) = ToolCall(Symbol(name), arguments)
-
-"""A sequence of independent tool calls, with explicit bounded concurrency."""
-struct ToolBatch
-    calls::Vector{ToolCall}
-    max_parallel::Int
-end
-
-function ToolBatch(calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4)
-    1 <= max_parallel <= typemax(Int) || error("max_parallel must be a positive Int")
-    return ToolBatch(ToolCall[call for call in calls], Int(max_parallel))
-end
-
-function tool_batch_task_result(task::Task)
-    wait(task; throw=false)
-    istaskfailed(task) && return ExecutionResult(false, sprint(showerror, TaskFailedException(task)))
-    return tool_result(fetch(task))
-end
-
-"""Drain started bodies in call order before crossing an exclusive boundary."""
-function finish_tool_batch!(results::Vector{ExecutionResult}, running::Vector{Pair{Int,Task}})
-    for (index, worker) in running
-        results[index] = tool_batch_task_result(worker)
-    end
-    empty!(running)
-    return nothing
-end
-
-"""Invoke independent calls with exclusive barriers, retained tool generations, and ordered results.
-
-Only a tool's explicit concurrency-safe declaration permits parallel dispatch.
-Unknown tools and tools without that declaration are exclusive. Every started
-callback is drained before returning, and cancellation skips unstarted calls.
-"""
-function invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolCall};
-        max_parallel::Integer=4, context=nothing)
-    1 <= max_parallel <= typemax(Int) || error("max_parallel must be a positive Int")
-    results = ExecutionResult[ExecutionResult(false, "Cancelled") for _ in calls]
-    running = Pair{Int,Task}[]
-    for (index, call) in enumerate(calls)
-        !isnothing(context) && cancelled(context) && continue
-        retained = acquire_tool!(scope, call.name)
-        safe = !isnothing(retained) && tool_concurrency_safe(retained.listener.spec, call.arguments) === true
-        if !safe
-            isnothing(retained) || release_tool!(retained)
-            finish_tool_batch!(results, running)
-            !isnothing(context) && cancelled(context) && continue
-            results[index] = invoke_tool!(scope, call.name, call.arguments)
-        else
-            if length(running) >= max_parallel
-                oldest = popfirst!(running)
-                results[oldest.first] = tool_batch_task_result(oldest.second)
-            end
-            if !isnothing(context) && cancelled(context)
-                release_tool!(retained)
-            else
-                worker = spawn_scoped(() -> invoke_tool_entry!(scope, retained, call.arguments))
-                push!(running, index => worker)
-            end
-        end
-    end
-    finish_tool_batch!(results, running)
-    return results
-end
 
 struct ToolExecutor
     scope::ExtensionScope
@@ -793,27 +912,13 @@ fork_executor(executor::ToolExecutor) = ToolExecutor(ExtensionScope(executor.sco
 close_executor!(executor::ToolExecutor) = executor.owns_scope ? close(executor.scope) : nothing
 
 """Execute a protocol-independent tool action through an injected scoped tool registry."""
-function execute!(executor::ToolExecutor, action::ToolCall, context::ExecutionContext)
-    cancelled(context) && return ExecutionResult(false, "Cancelled")
-    result = invoke_tool!(executor.scope, action.name, action.arguments)
+execute!(executor::ToolExecutor, action::ToolCall, context::ExecutionContext) = cancelled(context) ? ExecutionResult(false, "Cancelled") : execute(executor, action, context)
+
+function execute(executor::ToolExecutor, action::ToolCall, context::ExecutionContext)
+    result = invoke_tool!(executor.scope, action.name, action.arguments; context)
     emit!(context, HarnessEvent(:tool_result, (name=action.name, result)))
-    return result
+    result
 end
-
-"""Execute a batch through the injected tool executor, publishing results in call order."""
-function execute!(executor::ToolExecutor, action::ToolBatch, context::ExecutionContext)
-    results = invoke_tool_batch!(executor.scope, action.calls; max_parallel=action.max_parallel, context)
-    for (call, result) in zip(action.calls, results)
-        emit!(context, HarnessEvent(:tool_result, (name=call.name, result)))
-    end
-    return ExecutionResult(all(result.ok for result in results),
-        join((result.text for result in results), "\n"), results)
-end
-
-action_kind(::ToolBatch) = :tool_batch
-action_content(action::ToolBatch) = string(length(action.calls), " tool calls")
-agent_decision(action::ToolBatch) = ActionDecision(action)
-
 action_kind(::ToolCall) = :tool_call
 action_content(action::ToolCall) = string(action.name, "(", repr(action.arguments), ")")
 agent_decision(action::ToolCall) = ActionDecision(action)

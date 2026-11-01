@@ -311,3 +311,221 @@ end
     @test !isopen(deep)
     close(shallow)
 end
+
+
+using UUIDs: UUID, uuid5
+using JSON
+
+@testset "Saved session descendants preserve ordering and cycle handling" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        namespace = UUID("e52b186c-827a-496f-9899-3d9cae157522")
+        ids = [uuid5(namespace, "lineage-$index") for index in 1:8]
+        function persist_lineage(name, index, parent)
+            lineage = Dict("id" => string(ids[index]),
+                "parent_id" => isnothing(parent) ? nothing : string(ids[parent]),
+                "root_id" => string(ids[1]))
+            record = Dict("format" => "JuliaForever2.session", "version" => 2,
+                "name" => name, "working_directory" => directory,
+                "messages" => Any[], "lineage" => lineage)
+            write(joinpath(directory, string(name, ".json")), JSON.json(record))
+        end
+        persist_lineage("root", 1, nothing)
+        persist_lineage("alpha", 2, 1)
+        persist_lineage("beta", 3, 1)
+        persist_lineage("grandchild", 4, 2)
+        persist_lineage("unrelated", 5, nothing)
+        persist_lineage("cycle-a", 6, 7)
+        persist_lineage("cycle-b", 7, 6)
+        persist_lineage("orphan", 8, 5)
+        @test JuliaForever2.session_descendants(store, ids[1]) == ["alpha", "beta", "grandchild"]
+        @test JuliaForever2.session_descendants(store, "root"; include_self=true) ==
+            ["alpha", "beta", "grandchild", "root"]
+        @test JuliaForever2.session_descendants(store, ids[2]) == ["grandchild"]
+        @test JuliaForever2.session_descendants(store, ids[6]) == ["cycle-b"]
+        @test JuliaForever2.session_descendants(store, ids[6]; include_self=true) ==
+            ["cycle-a", "cycle-b"]
+        @test JuliaForever2.session_descendants(store, ids[5]) == ["orphan"]
+        @test isempty(JuliaForever2.session_descendants(store,
+            UUID("00000000-0000-0000-0000-000000000000")))
+    end
+end
+
+@testset "Empty extension scopes retire without skipping owned cleanup" begin
+    root = JuliaForever2.ExtensionScope()
+    child = JuliaForever2.ExtensionScope(root)
+    @test isopen(root)
+    @test isopen(child)
+    close(root)
+    @test !isopen(root)
+    @test !isopen(child)
+    close(root)
+    close(child)
+
+    unobserved = JuliaForever2.ExtensionScope()
+    @test isnothing(JuliaForever2.dispatch_event!(unobserved, :unobserved, 1))
+    close(unobserved)
+    @test !isopen(unobserved)
+
+    cleaned = Ref(0)
+    owned = JuliaForever2.ExtensionScope()
+    JuliaForever2.own_resource!(owned, :sentinel; cleanup=value -> begin
+        value === :sentinel || error("Wrong cleanup resource")
+        cleaned[] += 1
+        nothing
+    end)
+    close(owned)
+    close(owned)
+    @test cleaned[] == 1
+end
+
+
+@testset "Unowned event invocations do not schedule empty cleanup workers" begin
+    scope = JuliaForever2.ExtensionScope()
+    JuliaForever2.on!(_ -> nothing, scope, :no_cleanup)
+
+    function release_batch!(invocations)
+        for invocation in invocations
+            JuliaForever2.release!(invocation)
+        end
+        return nothing
+    end
+
+    # Compile and exercise the same release method before recording allocations.
+    warm = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:8]
+    release_batch!(warm)
+
+    # Acquisition and test setup do not contribute to the release measurement.
+    invocations = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:100]
+    @test all(invocation -> isnothing(invocation.retention), invocations)
+    @test scope.users == 100
+    GC.gc()
+    bytes = @allocated release_batch!(invocations)
+    println("Unowned listener release allocations for 100 warmed invocations: ",
+        bytes, " bytes; predefined target <= 32768 bytes")
+    @test bytes <= 32_768
+    @test scope.users == 0
+    close(scope)
+end
+
+
+@testset "Deferred event cleanup honors held scope resources" begin
+    scope = JuliaForever2.ExtensionScope()
+    cleaned = Symbol[]
+    JuliaForever2.own_resource!(scope, :owned; cleanup=value -> push!(cleaned, value))
+    JuliaForever2.on!(_ -> nothing, scope, :held)
+    invocation = only(JuliaForever2.event_invocations(scope, :held))
+    @test scope.users == 1
+
+    close(scope)
+    @test !isopen(scope)
+    @test isempty(cleaned)
+    JuliaForever2.release!(invocation)
+    @test scope.users == 0
+    @test cleaned == [:owned]
+end
+
+@testset "Checked JSON schemas validate nested values without duplicate losslessness scans" begin
+    row_schema = Dict("type" => "object", "properties" =>
+        Dict("id" => Dict("type" => "integer"), "name" => Dict("type" => "string")),
+        "required" => ["id", "name"], "additionalProperties" => true)
+    checked = JuliaForever2.CheckedJSONSchema(Dict("type" => "object", "properties" =>
+        Dict("rows" => Dict("type" => "array", "items" => row_schema)), "required" => ["rows"]))
+    rows = [Dict{String,Any}("id" => i, "name" => "row-$i") for i in 1:40]
+    arguments = Dict{String,Any}("rows" => rows)
+    @test isempty(JuliaForever2.tool_argument_violations(checked, arguments))
+    rows[2]["id"] = "not an integer"
+    @test JuliaForever2.tool_argument_violations(checked, arguments) ==
+        ["\"arguments.rows[1].id\" must be an integer"]
+    rows[2]["id"] = 2
+    rows[2]["extra"] = Dict("lossless" => true, "invalid" => NaN)
+    @test JuliaForever2.tool_argument_violations(checked, arguments) ==
+        ["\"arguments.rows[1]\" must be a lossless JSON object"]
+    delete!(rows[2], "extra")
+    rows[2]["name"] = missing
+    @test JuliaForever2.tool_argument_violations(checked, arguments) ==
+        ["missing required property \"arguments.rows[1].name\""]
+    rows[2]["name"] = "row-2"
+    @test isempty(JuliaForever2.tool_argument_violations(checked, arguments))
+
+    untyped = JuliaForever2.CheckedJSONSchema(Dict("type" => "array"))
+    @test JuliaForever2.tool_argument_violations(untyped, Any[NaN]) ==
+        ["\"arguments\" must be a dense lossless JSON array"]
+    @test JuliaForever2.tool_argument_violations(checked,
+        Dict{Any,Any}("rows" => rows, 1 => nothing)) ==
+        ["\"arguments\" must be a lossless JSON object"]
+    @test isempty(JuliaForever2.tool_argument_violations(checked,
+        (rows=[(id=1, name="named tuple")],)))
+end
+
+@testset "Persisted lineage avoids materializing unrelated session messages" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        root = uuid5(UUID("17cf245c-3b45-446d-97aa-550d286b98ac"), "root")
+        child = uuid5(root, "child")
+        for (name, identity, parent, version) in (
+                ("root", root, nothing, 2), ("child", child, root, 2),
+                ("legacy", root, nothing, 1))
+            data = Dict("format" => "JuliaForever2.session", "version" => version,
+                "name" => name, "working_directory" => directory,
+                "messages" => [Dict("role" => "user", "kind" => "text",
+                    "content" => repeat("unicode café λ record ", 32)) for _ in 1:24],
+                "lineage" => Dict("id" => string(identity),
+                    "parent_id" => isnothing(parent) ? nothing : string(parent),
+                    "root_id" => string(root)))
+            write(joinpath(directory, name * ".json"), JSON.json(data))
+        end
+        for name in ("root", "child", "legacy")
+            full = JuliaForever2.saved_session_record(store, name)
+            @test length(full.messages) == 24
+            @test JuliaForever2.session_lineage(store, name) == full.lineage
+            @test JuliaForever2.session_lineage(store, Symbol(name)) == full.lineage
+        end
+        @test JuliaForever2.session_descendants(store, "root") == ["child"]
+        @test JuliaForever2.session_descendants(store, "root"; include_self=true) ==
+            ["child", "root"]
+        @test isnothing(JuliaForever2.session_lineage(store, "missing"))
+        @test isnothing(JuliaForever2.session_lineage(store, "../invalid"))
+    end
+end
+
+@testset "Footer handles a missing provider and oversized cached usage" begin
+    session = Session(Kernel())
+    snapshot = JuliaForever2.session_footer_snapshot(session)
+    @test snapshot.provider == JuliaForever2.provider_footer_status(nothing)
+    @test JuliaForever2.footer_model_label(snapshot.provider) == "no-model"
+    @test JuliaForever2.footer_usage_label(snapshot.usage, snapshot.provider) == "?/?"
+    close(session)
+
+    function cached_report(input, read, write)
+        return JuliaForever2.UsageReport(Dict("prompt_tokens" => input,
+            "prompt_tokens_details" => Dict("cached_tokens" => read, "cache_write_tokens" => write)))
+    end
+    @test cached_report(42, 10, 12).input_tokens == 20
+    @test cached_report(17, 10, 12).input_tokens == 0
+    @test cached_report(0, typemax(Int), typemax(Int)).input_tokens == 0
+    @test cached_report(1, typemax(Int), typemax(Int)).input_tokens == 0
+end
+
+@testset "Session API counts history changes without snapshotting messages" begin
+    session = Session(Kernel(); messages=[Message(:user, "first"), Message(:assistant, "second")])
+    api = JuliaForever2.SessionAPI()
+    api.sessions["counted"] = session
+    params = Dict{String,Any}("session" => "counted")
+    function verify_count(expected)
+        result = JuliaForever2.session_api_request!(api, "session/describe", params)
+        @test result == JuliaForever2.api_session_summary("counted", session)
+        @test result["messages"] == expected
+        @test length(JuliaForever2.session_api_request!(api, "session/messages", params)) == expected
+        @test JSON.parse(JSON.json(Dict("jsonrpc" => "2.0", "id" => 1,
+            "result" => result)))["result"]["messages"] == expected
+    end
+    verify_count(2)
+    append_message!(session, Message(:user, "third"))
+    verify_count(3)
+    replace_message!(session, 1, Message(:assistant, "replaced"))
+    verify_count(3)
+    clear_history!(session)
+    verify_count(0)
+    close(api)
+end

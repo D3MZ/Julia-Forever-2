@@ -6,7 +6,10 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Native opt-in tool batches now have bounded DSH scheduler differentials for exclusive barriers, ordered settlement and safe parallelism; full admission, approval and dynamic scheduling remain unverified. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified.",
+  "inventory_complete": false,
+  "verified_source_families": [],
+  "proof_rule": "superset_proven requires an exhaustive DSH source-family inventory, native Julia implementations with executable differential evidence for every material family, no outstanding unverified families or runtime delegation, and passing required regression, lint, quality and CI checks. Reference-only cases never count.",
+  "assessment": "A Julia-native session fork now copies a completed, one-based message prefix into an independently owned session with fresh root identity, retained plugin composition, workspace and isolated metadata; five pinned-DSH fork-seed comparisons cover a bounded visible-history projection, not upstream event-log, tool-repair or full session/API parity. An authenticated Julia-native browser console now exposes session open/resume/list, workspace inspection, safe transcript rendering, prompt/wait and saved session management through the existing replaceable Julia SessionAPI. Its local packaged assets and strict HTML CSP do not involve an upstream runtime. A new pinned DSH Web/SDK differential projects workspace and persistence behavior through cookie-authenticated HTTP, but browser-executed UI flows and full DSH frontend parity remain unverified pending CI. Native Julia SessionAPI now has a bounded pinned-DSH ACP control comparison for single-active-turn admission, idempotent cancellation, and subsequent reuse. This is an isolated control projection, not ACP protocol or full agent cancellation parity. A Julia-native optional Web browser bootstrap now exchanges a one-use local launch URL for an HttpOnly/SameSite=Strict cookie, preserves the bearer API, and gates cookie-authorized mutations behind a CSRF request header. A pinned DSH Web differential compares the bounded token-to-cookie redirect, authenticated HTML and denial behavior; native cookie-RPC access and replay/CSRF rejection are additional safeguards. This is not complete Web frontend or SDK parity, and the external DSH Web process remains test-only. An isolated pinned-upstream policy differential now compares native post-tool canonical value replacement, checked output-schema rejection, rerendering, and failure preservation alongside existing block/text decisions. The tool result value replacement is independently implemented in Julia; it does not establish DSH's entire execution pipeline, content-block model, deferred contexts, or agent approval/order semantics. A red-green-refactor cycle now targets native post-tool completion decisions against the exact pinned DSH policy stage. This remains an isolated projection: complete tool pipeline ordering and full result presentation are not proven. Native Julia indexed session search, cross-session persisted-history RPC with replaceable query services, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text and persisted-history RPC projections are checked against DSH's original text and role predicates; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 56 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity. Opt-in Julia tool output renderers now preserve validated typed values while independently producing model-facing text; 15 pinned-DSH registry/renderer projections cover bounded text and schema behavior. This does not establish parity with DSH's final content blocks, UI presenters, post-policy stages, or deferred contexts. An independently implemented Julia session-history query now supports inclusive one-based message-index ranges and selected persisted-session names across store, index and replaceable RPC services; original pinned DSH session-ID and event-sequence predicates provide a 12-case behavioral comparison. This does not cover DSH's complete filtering, event extraction, ranking or session-query transport.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -372,14 +375,15 @@
     },
     {
       "kind": "session_query",
-      "case_count": 16,
+      "case_count": 28,
       "status": "required-differential-cases",
       "sources": [
         {
           "path": "packages/session-query/session-query/src/filters.ts",
           "symbols": [
             "filterSessionEventDocuments",
-            "compileSessionTextFilter"
+            "compileSessionTextFilter",
+            "filterSessionResults"
           ]
         },
         {
@@ -394,35 +398,14 @@
         "literal handling of regex metacharacters and Unicode case folding",
         "role predicates, multi-session ordering, bounded search and live snapshots",
         "revision-invalidated native trigram index returns exact case-insensitive, substring, whitespace and role-filtered results in deterministic stored-session order",
-        "indexed refresh after two successive atomic session updates compared against pinned upstream text selection"
+        "indexed refresh after two successive atomic session updates compared against pinned upstream text selection",
+        "native session/search/all RPC against 15 persisted-session query fixtures, using the default store, an injected index, and a third-party replacement query service",
+        "12 further scenarios covering inclusive one-based message ranges, session-name scoping, compound role/range/selection/limit filters, Unicode identities, and per-session index reset; original upstream ID and seq predicates act as the external oracle"
       ],
       "limits": [
         "The reference receives simple semantic text documents; Julia searches user/assistant message text. Full DSH event extraction, index-backed ranking, lineage, other event types and complete session-query service parity are unverified.",
-        "Only the eleven pinned differential fixtures are checked.",
+        "28 pinned synthetic text-query fixtures (26 persisted, two live) test bounded message-index and session-name projections, not complete DSH query semantics. The Julia RPC is native and is not DSH's SDK or Web protocol.",
         "Index is an independent Julia implementation: current store writes invalidate it, while external file modifications require explicit refresh_index!; no DSH indexing algorithm equivalence is claimed."
-      ]
-    },
-    {
-      "kind": "tool_batches",
-      "case_count": 12,
-      "status": "required-differential-cases",
-      "sources": [
-        {
-          "path": "packages/core/tools/src/batch.ts",
-          "symbols": [
-            "executeToolBatch"
-          ]
-        }
-      ],
-      "compares": [
-        "ordered one-result-per-call settlement including unknown calls and callback failures",
-        "explicit per-tool concurrency safety and bounded parallel pool peak",
-        "exclusive calls do not overlap adjacent safe calls",
-        "native ToolExecutor and Session evaluation with a batch action"
-      ],
-      "limits": [
-        "Pinned DSH's original executeToolBatch scheduler runs against a scripted prepare/dispatch/complete pipeline. Julia uses its actual scoped registry and callbacks. This proves a bounded scheduling projection, not complete DSH tool-executor behavior.",
-        "DSH policy, approval, cancellation, dynamic replacement, output presentation and exact event timing remain unverified; Julia concurrency safety is an opt-in static declaration and does not implement DSH's argument-dependent classifier."
       ]
     },
     {
@@ -450,7 +433,7 @@
     },
     {
       "kind": "tool_outputs",
-      "case_count": 31,
+      "case_count": 56,
       "status": "required-differential-cases",
       "sources": [
         {
@@ -467,17 +450,219 @@
         "valid results preserve their value, invalid outputs cannot escape through ExecutionResult.value, and output schema stays separate from model-visible input schema"
       ],
       "limits": [
-        "31 bounded JSON-compatible cases against original DSH schema validation, not the complete DSH output rendering or presentation pipeline.",
+        "56 bounded JSON-compatible cases against original DSH schema validation, not the complete DSH output rendering or presentation pipeline.",
         "Julia output checks are optional and replaceable through tool_output_violations multiple dispatch; approval, batching, cancellation, and tool-output presentation parity remain unverified."
+      ]
+    },
+    {
+      "kind": "tool_output_projection",
+      "case_count": 15,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/index.ts",
+          "symbols": [
+            "ToolsService",
+            "register",
+            "get"
+          ]
+        },
+        {
+          "path": "packages/core/tools/src/json-schema.ts",
+          "symbols": [
+            "validateJsonSchemaValue"
+          ]
+        },
+        {
+          "path": "packages/core/tools/src/contracts.ts",
+          "symbols": [
+            "ToolOutputDefinition"
+          ]
+        }
+      ],
+      "compares": [
+        "Registered DSH tool bodies keep typed canonical return values distinct from output.render text blocks; Julia's optional render_output preserves the same distinction.",
+        "Passing output schemas admit readable model text, including empty text, Unicode, multiline values and numeric values; invalid canonical output does not reach the renderer.",
+        "Renderer invocation counts, preserved JSON-compatible values and rendered model-visible text for deterministic, independently authored fixture renderers."
+      ],
+      "limits": [
+        "15 bounded DSH registry/API and JSON Schema projections, not the full upstream ToolExecutionPipeline or final content-block snapshot semantics.",
+        "Julia currently exposes a single text projection rather than multimodal output blocks, presentation metadata, replayable UI views, post-execute waterfall hooks or deferred contexts."
+      ]
+    },
+    {
+      "kind": "tool_batches",
+      "case_count": 12,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/batch.ts",
+          "symbols": ["executeToolBatch"]
+        }
+      ],
+      "compares": [
+        "Original PR #45 fixtures project input-ordered successful values and returned failures through the existing native batch implementation",
+        "Repeated calls to one tool registration, explicit concurrency declarations, exclusive barriers and bounded dispatch",
+        "Parallel and failing Session ToolExecutor batch actions"
+      ],
+      "limits": [
+        "The unchanged pinned DSH scheduler runs through the existing source-hash-checked no-log loader with test-only callbacks. Both runners replace fixture delay_ms values with rendezvous cohorts; elapsed time never defines the expected peak. Local rendezvous/scheduler watchdogs do not provide an outer process deadline for native batch execution, cleanup or oracle subprocess reads.",
+        "This test-only group preserves main's production behavior. Returned failures are not thrown callback exceptions. Failed result values are normalized to null on both sides, so this group does not verify failure-value privacy. Dynamic replacement, approval/policy ordering, cancellation races, durable logs and complete tool-executor parity remain outside this projection."
+      ]
+    },
+    {
+      "kind": "tool_batch",
+      "case_count": 10,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/batch.ts",
+          "symbols": [
+            "executeToolBatch"
+          ]
+        }
+      ],
+      "compares": [
+        "Input-ordered call/results under overlapping dispatch",
+        "Exclusive barriers and bounded opt-in parallel dispatch",
+        "Per-call failures for unavailable or guard-denied tools",
+        "Aborted-before-start and mid-batch cancellation",
+        "Native Session ToolExecutor action execution"
+      ],
+      "limits": [
+        "The test invokes the unchanged pinned DSH scheduling function with an injected deterministic pipeline. The unexercised model-message factory is omitted only in this no-log test loader; no DSH runtime is loaded in production.",
+        "This is a bounded behavioral projection. Approval/policy preparation timing, complete tool result rendering, deferrable context, durable DSH session logging, argument parsing and cancellation races are not proven equivalent."
+      ]
+    },
+    {
+      "kind": "tool_cancellation",
+      "case_count": 5,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/pipeline.ts",
+          "symbols": [
+            "ToolExecutionPipeline.dispatchToolBody",
+            "toolAbortedResult",
+            "toolAbortedBeforeDispatchResult"
+          ]
+        }
+      ],
+      "compares": [
+        "Successful native tool returns retain their original values",
+        "Cancellation before dispatch does not execute a tool body",
+        "Cancellation during synchronous and suspended bodies drains execution and discards successful values"
+      ],
+      "limits": [
+        "The test invokes the original pinned DSH dispatchToolBody with a deterministic injected tool and minimal success projection; it does not exercise surrounding event, approval, post-execute, or durable logging services.",
+        "Only five bounded cancellation cases are compared; errors, nested cancellation, competing abort sources, and arbitrary timing remain unverified."
+      ]
+    },
+    {
+      "kind": "tool_approval",
+      "case_count": 9,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/pipeline.ts",
+          "symbols": [
+            "ToolExecutionPipeline.serviceAsk"
+          ]
+        }
+      ],
+      "compares": [
+        "One-call approval grant, explicit rejection, cancellation and unavailable-channel outcomes",
+        "Fail-closed missing-channel behavior with and without an explicit reason",
+        "Awaited Julia approval callback, listener withdrawal and no reuse of a prior grant"
+      ],
+      "limits": [
+        "The test invokes the exact pinned DSH approval-resolution method with an isolated service stub, not the entire DSH execution pipeline.",
+        "Julia uses scoped tool-approval events instead of DSH agent/UI services. Agent identity, audit logging, prompt presentation, policy interleaving and all end-to-end consent interactions remain unverified."
+      ]
+    },
+    {
+      "kind": "tool_completion",
+      "case_count": 18,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/pipeline.ts",
+          "symbols": [
+            "ToolExecutionPipeline.postExecute"
+          ]
+        }
+      ],
+      "compares": [
+        "Successful results accepted unchanged or with rewritten presentation text",
+        "Post-execute blocking discards successful values",
+        "Failed guards and failed callback results stay failures unless explicitly blocked",
+        "Post-policy replacement of typed successful values with schema admission and new model-facing presentation, while failures cannot be revived"
+      ],
+      "limits": [
+        "The oracle invokes the original hash-pinned DSH post-execute method in isolation with fixed success and failure results, not a complete upstream agent or policy pipeline.",
+        "Deferred contexts, complete post-policy value normalization, rich multimodal output rendering, finalization, audit events and full cross-stage ordering remain unverified.",
+        "The pinned policy method receives an injected deterministic output contract; its value-replacement branch and actual upstream JSON Schema validator are exercised, but its full private normalization pipeline is not."
+      ]
+    },
+    {
+      "kind": "session_control",
+      "case_count": 6,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/acp/acp/src/session.ts",
+          "symbols": [
+            "AcpSession.prompt admission guard",
+            "AcpSession.cancel"
+          ]
+        }
+      ],
+      "compares": [
+        "Only one prompt may be active for a session; rejected overlap does not change its owner",
+        "Cancellation of an active turn is one-shot and does not close the session",
+        "Idle or completed-turn cancellation does not prevent the next prompt"
+      ],
+      "limits": [
+        "The test extracts the unmodified pinned DSH ACP admission guard and cancellation method with a deterministic test-only agent; it does not run the ACP frontend or remote model.",
+        "Julia independently exposes a session API, not the DSH ACP protocol. Prompt admission across async uploads, descendant quiescence, tool interrupt guarantees, ACP wire semantics, and Web UI controls remain unverified."
+      ]
+    },
+    {
+      "kind": "session_fork",
+      "case_count": 5,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/session/src/fork.ts",
+          "symbols": [
+            "buildForkSeed"
+          ]
+        },
+        {
+          "path": "packages/core/session/src/repair.ts",
+          "symbols": [
+            "openTurnClosers"
+          ]
+        }
+      ],
+      "compares": [
+        "Default full-history fork and inclusive one-based Julia message boundaries against the inherited message prefix of pinned DSH fork seeds",
+        "Early cuts, Unicode content and repeated messages without aliasing source history"
+      ],
+      "limits": [
+        "Original pinned upstream fork and open-turn closure functions run in the external oracle with a test-only inert tool-call recovery object; no pending tool calls occur in these fixtures.",
+        "Julia's atIndex is a one-based message index, not DSH's event sequence; exact event persistence, open-tool repair, active-turn fork, frontend and full API protocol remain unverified."
       ]
     }
   ],
   "unverified_source_families": [
     {
       "family": "acp",
-      "status": "unverified",
+      "status": "unverified-remainder",
       "compatibility_route": "native-implementation-unverified",
-      "compared_subsets": [],
+      "compared_subsets": [
+        "session_control"
+      ],
       "packages": [
         {
           "name": "@deepseek-ai/dsh-acp",
@@ -1004,7 +1189,8 @@
       "compared_subsets": [
         "tools",
         "events",
-        "tool_arguments"
+        "tool_arguments",
+        "tool_completion"
       ],
       "packages": [
         {
@@ -1820,9 +2006,11 @@
     },
     {
       "family": "session",
-      "status": "unverified",
+      "status": "unverified-remainder",
       "compatibility_route": "native-implementation-unverified",
-      "compared_subsets": [],
+      "compared_subsets": [
+        "session_fork"
+      ],
       "packages": [
         {
           "name": "@deepseek-ai/dsh-message-quotes",
@@ -2448,7 +2636,7 @@
     "runner": "../dsh_runtime_differential.jl",
     "reference_commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
     "scope": "Test-only DSH protocol clients exercise the framework-neutral JSON-RPC transport and process lifecycle against a pinned upstream CLI. A separate native Julia SessionStore comparison verifies persisted session history and workspace against actual upstream restart/resume observations. DSH SDK and Web behavior is delegated inside tests only; this does not establish native SDK, Web, or application feature parity.",
-    "required_comparisons": 16,
+    "required_comparisons": 17,
     "guards": [
       "The CLI must be built at apps/cli/lib/bin.js in an unmodified tracked source checkout at the pinned revision; the same-version published npm package is not accepted.",
       "Both SDK profiles must initialize, reject an uninitialized prompt, and validate session/query input. Unknown-method failures do not count as query support.",
@@ -2471,7 +2659,7 @@
           "sdk-minimal"
         ],
         "comparisons": 2,
-        "projection": "Independent native Julia Session workspace against actual pinned DSH SDK observations: initial directory, relative navigation, rejection of nonexistent directories, preserved directory after failure, and relative path resolution. No DSH runtime is used by Julia production code."
+        "projection": "Independent native Julia Session workspace against actual pinned DSH SDK observations: initial directory, relative navigation, rejection of nonexistent directories, preserved directory after failure, relative path resolution, and nested Julia include resolution from the observed workspace. DSH does not execute Julia source; the include projection is a native Julia capability checked against DSH's reported directory."
       },
       {
         "profiles": [
@@ -2517,8 +2705,8 @@
         "profiles": [
           "web"
         ],
-        "comparisons": 1,
-        "projection": "Optional native Julia HTTP server provides token-authenticated HTML and a session RPC route. Shared upstream Web authentication and HTML success properties are compared, not frontend bytes, assets, or protocol parity."
+        "comparisons": 2,
+        "projection": "Optional native Julia HTTP service supports bearer-authenticated HTML and session RPC; an independent one-use browser launch URL now issues an HttpOnly/SameSite=Strict cookie, keeps the redirect free of the token, and allows cookie-authorized session RPC with a CSRF header. Compare launch status, no-store/no-referrer response metadata, unauthenticated rejection and authenticated HTML against the exact pinned DSH Web process; test invalid/replayed launch links and CSRF rejection locally. DSH frontend bytes, assets, complete Web application, multiuser and remote authentication remain unverified."
       }
     ],
     "normalization": [
@@ -2531,7 +2719,7 @@
     "unverified": [
       "External model responses, generated tool execution, approval and question interaction flows, other persistence histories and recovery/migration cases, jobs, goals, schedules, MCP and third-party package replacement behavior are not exercised by these runtime scenarios.",
       "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons.",
-      "Native session working-directory comparisons cover directory state and path resolution, not integration into third-party tool filesystem behavior or full native SDK functionality.",
+      "Native session working-directory comparisons cover directory state, path resolution and built-in Julia include resolution, not arbitrary filesystem operations, third-party tool filesystem behavior or full native SDK functionality.",
       "No native DSH SDK/application/Web implementation is supplied by the test-only DSH protocol adapters. Their successful forwarding and server startup are reference-only and do not establish product parity.",
       "Native session snapshots persist message roles, text and kinds plus working directory, not arbitrary message metadata, token accounting, in-flight operations, tool resources, or the complete DSH on-disk session format.",
       "Native SessionAPI supports independent Julia JSON-RPC sessions but has not been shown to implement every DSH SDK operation or wire shape; HTTP.jl extension serves a minimal native page and JSON-RPC endpoint rather than the full DSH Web application."
@@ -2595,6 +2783,46 @@
         "The executable name is normalized to a fixed node token. Profile launch is not proof of every feature within the selected profile.",
         "The compared DSH-specific helper now exists in differential test support only, not the JuliaForever2 production API; these comparisons provide no native feature-parity evidence."
       ]
+    }
+  ],
+  "native_capability_assessment": [
+    {
+      "family": "web.request-authority-origin",
+      "status": "native-implementation-unverified",
+      "implementation": "Optional native Julia HTTP Web server rejects non-loopback Host authorities, malformed/foreign browser Origins, and explicit cross-site Fetch Metadata before launch-token redemption, bearer admission, cookie admission, or RPC dispatch. The request_trust callable is replaceable through native server and Web plugin constructors.",
+      "external_oracle": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447 (test-only Web profile)",
+      "differential": "test/dsh_runtime_differential.jl:native_web_request_trust_comparison; test/differential/web-request-trust.json (15 admission/denial cases)",
+      "limits": "Only loopback, Host, Origin and Fetch-Metadata admission. Pending final CI evidence; no complete browser peer authority, WebSocket, HTTPS, remote-host allowlist, UI or DSH API parity."
+    },
+    {
+      "family": "web.authentication.launch",
+      "status": "native-implementation-unverified",
+      "implementation": "JuliaForever2HTTPExt supplies a browser launch URL, one-time redemption, HttpOnly/SameSite=Strict cookie, original bearer-mode handler compatibility, and a CSRF header for cookie-authorized mutations.",
+      "external_oracle": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447 (test-only web profile)",
+      "differential": "test/dsh_runtime_differential.jl:native_web_launch_comparison",
+      "limits": "Only loopback token/cookie authentication, HTML admission and native session-RPC projections; pending complete CI evidence, not complete DSH Web parity."
+    },
+    {
+      "family": "web.frontend",
+      "status": "native-implementation-unverified",
+      "implementation": "An independently packaged native Julia Web console serves local HTML, CSS and JavaScript from JuliaForever2HTTPExt. It provides session selection, opening, persisted resume, safe text-only transcript rendering, prompts and wait, workspace selection, save and close through the replaceable SessionAPI. Assets require native Web authentication and HTML uses a restrictive CSP; the original DSH Web process is only invoked in the test oracle.",
+      "external_oracle": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447 (test-only Web and SDK profiles)",
+      "differential": "test/dsh_runtime_differential.jl:native_web_console_comparison projects pinned SDK workspace success/failure/recovery into cookie-authorized Julia Web RPC; Web HTML is compared only at the authenticated-application capability level. Native-only assertions check packaged assets, UI wiring, sanitized DOM text, auth gates and persisted identity.",
+      "limits": "This is a minimal browser console, not DSH's complete Web frontend. The script-to-browser user interaction and model turn flows are not browser-automated, and session streaming, plugin settings, remote/TLS security, accessibility, full SDK/API or full DSH Web behavior are unverified. Pending required CI verification."
+    },
+    {
+      "family": "web.session-api",
+      "status": "native-implementation-unverified",
+      "implementation": "Optional HTTP service dispatches to a Julia-native replaceable SessionAPI, not a DSH SDK or Web server.",
+      "limits": "JSON-RPC method and payload representation is Julia-defined; complete DSH SDK/client/API feature behavior is unverified."
+    },
+    {
+      "family": "sessions.fork-message-prefix",
+      "status": "native-implementation-unverified",
+      "implementation": "Julia SessionAPI session/fork creates a new independently owned Julia session from a selected message prefix, preserving workspace and plugin service generations while isolating metadata and assigning a new root identity. fork_session uses multiple dispatch and can be overridden.",
+      "external_oracle": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447 (test-only fork-seed source)",
+      "differential": "test/dsh_differential.jl:session_fork_result; test/differential/session_fork.json (5 cases)",
+      "limits": "Only bounded model-visible message prefix behavior and Julia-side ownership checks. No equivalence claim for DSH event-sequence boundaries, open-tool repair, active-turn forks, retention across persistence, remote API or UI."
     }
   ]
 }

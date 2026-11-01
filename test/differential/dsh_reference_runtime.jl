@@ -39,8 +39,7 @@ struct DSHClient{R} <: AbstractRuntimeBackend
     server_info::Any
 end
 
-runtime_request!(client::DSHClient, method, params=Dict{String,Any}(); kwargs...) =
-    runtime_request!(client.backend, method, params; kwargs...)
+runtime_request!(client::DSHClient, method, params=Dict{String,Any}(); kwargs...) = runtime_request!(client.backend, method, params; kwargs...)
 runtime_notify!(client::DSHClient, method, params=nothing) = runtime_notify!(client.backend, method, params)
 subscribe_runtime!(listener, client::DSHClient) = subscribe_runtime!(listener, client.subscriptions)
 Base.isopen(client::DSHClient) = isopen(client.backend)
@@ -79,22 +78,26 @@ function connect_dsh(profile::DSHProfile=DSHProfile(); initialize=Dict{String,An
     end
     started = Base.invokelatest(backend_factory, dsh_command(profile);
         on_request=handler, on_notification=observer, stderr)
-    started.ok || return started
-    backend = started.value
+    started.ok ? initialize_dsh(started.value, subscriptions, params; context, timeout) : started
+end
+
+function initialize_dsh(backend, subscriptions, params; context, timeout)
     handshake = Threads.@spawn runtime_request!(backend, "initialize", params; context, timeout)
     wait(handshake; throw=false)
     response = istaskfailed(handshake) ? RpcResult(RpcError(nothing,
         JuliaForever2.JSONRPCTransport.task_failure_message(handshake))) : fetch(handshake)
     if !response.ok
         close(backend)
-        return response
+        response
+    else
+        info = response.value isa AbstractDict ? get(response.value, "serverInfo", nothing) : nothing
+        if info isa AbstractDict && get(info, "name", nothing) == "deepseek-harness-sdk-runtime"
+            RpcResult(DSHClient(backend, subscriptions, info))
+        else
+            close(backend)
+            RpcResult(RpcError(nothing, "DSH initialize returned an invalid server identity"))
+        end
     end
-    info = response.value isa AbstractDict ? get(response.value, "serverInfo", nothing) : nothing
-    if !(info isa AbstractDict) || get(info, "name", nothing) != "deepseek-harness-sdk-runtime"
-        close(backend)
-        return RpcResult(RpcError(nothing, "DSH initialize returned an invalid server identity"))
-    end
-    return RpcResult(DSHClient(backend, subscriptions, info))
 end
 
 """Ask the SDK to shut down within a bound, then always stop and reap its owned backend."""
@@ -123,28 +126,22 @@ dsh_content_blocks(text::AbstractString) = [Dict("type" => "text", "text" => Str
 dsh_content_blocks(blocks::AbstractVector) = blocks
 
 """Enqueue SDK input and return its durable receipt, without presenting it as a model answer."""
-dsh_prompt!(session::DSHSession, input; kwargs...) = runtime_request!(session.client, "session/prompt",
-    Dict("sessionId" => session.id, "contentBlocks" => dsh_content_blocks(input)); kwargs...)
+dsh_prompt!(session::DSHSession, input; kwargs...) = runtime_request!(session.client, "session/prompt", Dict("sessionId" => session.id, "contentBlocks" => dsh_content_blocks(input)); kwargs...)
 
 """Route SDK input through native prompt and slash-command handling."""
-dsh_query!(session::DSHSession, input; kwargs...) = runtime_request!(session.client, "session/query",
-    Dict("sessionId" => session.id, "contentBlocks" => dsh_content_blocks(input)); kwargs...)
+dsh_query!(session::DSHSession, input; kwargs...) = runtime_request!(session.client, "session/query", Dict("sessionId" => session.id, "contentBlocks" => dsh_content_blocks(input)); kwargs...)
 
 """Restore an exact persisted SDK session without adding input."""
-dsh_resume!(session::DSHSession; kwargs...) = runtime_request!(session.client, "session/resume",
-    Dict("sessionId" => session.id); kwargs...)
+dsh_resume!(session::DSHSession; kwargs...) = runtime_request!(session.client, "session/resume", Dict("sessionId" => session.id); kwargs...)
 
 """Wait for an SDK session and its managed descendants to settle."""
-dsh_wait!(session::DSHSession; kwargs...) = runtime_request!(session.client, "session/wait",
-    Dict("sessionId" => session.id); kwargs...)
+dsh_wait!(session::DSHSession; kwargs...) = runtime_request!(session.client, "session/wait", Dict("sessionId" => session.id); kwargs...)
 
 """Read the effective SDK session directory, including upstream missing-directory recovery."""
-dsh_working_directory(session::DSHSession; kwargs...) = runtime_request!(session.client, "session/working-directory/get",
-    Dict("sessionId" => session.id); kwargs...)
+dsh_working_directory(session::DSHSession; kwargs...) = runtime_request!(session.client, "session/working-directory/get", Dict("sessionId" => session.id); kwargs...)
 
 """Change the SDK session directory through the selected runtime's validation and permissions."""
-dsh_working_directory!(session::DSHSession, path::AbstractString; kwargs...) = runtime_request!(session.client,
-    "session/working-directory/set", Dict("sessionId" => session.id, "path" => String(path)); kwargs...)
+dsh_working_directory!(session::DSHSession, path::AbstractString; kwargs...) = runtime_request!(session.client, "session/working-directory/set", Dict("sessionId" => session.id, "path" => String(path)); kwargs...)
 
 """Mount an SDK client whose transport implementation is selected by the active native profile."""
 function dsh_sdk_plugin(name=:dsh_sdk; profile=DSHProfile(), initialize=Dict{String,Any}(),
@@ -154,8 +151,7 @@ function dsh_sdk_plugin(name=:dsh_sdk; profile=DSHProfile(), initialize=Dict{Str
         selected_initialize = get(context.config, :initialize, initialize)
         started = connect_dsh(selected_profile; initialize=selected_initialize,
             backend_factory=service(context, transport_service), kwargs...)
-        started.ok || return (ok=false, reason=started.error.message)
-        return provide!(context, service_name, started.value; cleanup=close)
+        started.ok ? provide!(context, service_name, started.value; cleanup=close) : (ok=false, reason=started.error.message)
     end
     return PluginSpec(name, setup; requires=[transport_service], provides=[service_name])
 end
@@ -166,8 +162,7 @@ function dsh_frontend_plugin(name=:dsh_web; profile=DSHProfile("web"; arguments=
     setup = context -> begin
         selected_profile = get(context.config, :profile, profile)
         started = Base.invokelatest(service(context, launcher_service), dsh_command(selected_profile); kwargs...)
-        started.ok || return (ok=false, reason=started.error.message)
-        return provide!(context, service_name, started.value; cleanup=close)
+        started.ok ? provide!(context, service_name, started.value; cleanup=close) : (ok=false, reason=started.error.message)
     end
     return PluginSpec(name, setup; requires=[launcher_service], provides=[service_name])
 end

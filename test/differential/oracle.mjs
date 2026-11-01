@@ -4,21 +4,59 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
-const { filterSessionEventDocuments } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
+const { filterSessionEventDocuments, filterSessionResults } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
-
-const { executeToolBatch } = await importSource('packages/core/tools/src/batch.ts', source => {
-  const start = source.indexOf('export async function executeToolBatch(')
-  const executor = referenceSource('packages/core/tools/src/executor.ts')
-  const errorStart = executor.indexOf('export class ToolBatchExecutionError extends Error {')
-  const errorEnd = executor.indexOf('/** The selected provider is missing', errorStart)
-  if (start < 0 || errorStart < 0 || errorEnd < 0) {
-    throw new Error('Locked DSH tool batch scheduler or error contract was not found')
-  }
-  return executor.slice(errorStart, errorEnd) + '\n' + source.slice(start)
+const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
+const { ApprovalReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async serviceAsk(')
+  const end = source.indexOf('  /**\n   * Run the `tools/post-execute`', start)
+  if (start < 0 || end < 0) throw new Error('Locked DSH approval method boundaries were not found')
+  return 'export class ApprovalReference { constructor(ctx) { this.ctx = ctx }\n'
+    + source.slice(start, end) + '\n}'
 })
 
-
+const { ToolCancellationReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async dispatchToolBody(')
+  const end = source.indexOf('  /**\n   * Run around-dispatch', start)
+  const helpers = source.indexOf('function isAborted(')
+  const helpersEnd = source.indexOf('export { executeToolBatch }', helpers)
+  if (start < 0 || end < 0 || helpers < 0 || helpersEnd < 0) {
+    throw new Error('Locked DSH tool cancellation method boundaries were not found')
+  }
+  return `const TOOL_ABORTED = 'ABORTED'
+const TOOL_ABORTED_BEFORE_DISPATCH = 'ABORTED_BEFORE_DISPATCH'
+${source.slice(helpers, helpersEnd)}
+export class ToolCancellationReference {
+  constructor(tool) {
+    this.tool = tool
+    this.cancellationStates = new WeakMap()
+  }
+  resolveExecution() { return this.tool }
+  createSuccessResult(_execution, _tool, value) {
+    return { isError: false, value, content: [] }
+  }
+${source.slice(start, end)}
+}`
+})
+const { PostToolReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async postExecute(')
+  const end = source.indexOf('  /** Registry-normalized results', start)
+  const helperStart = source.indexOf('function failureMessageFromContent(')
+  const helperEnd = source.indexOf('/** Snapshot and freeze one durable', helperStart)
+  if ([start, end, helperStart, helperEnd].some(index => index < 0)) {
+    throw new Error('Locked DSH post-execute method boundaries were not found')
+  }
+  return `${source.slice(helperStart, helperEnd)}
+const scopeTarget = (service, scope) => service
+export class PostToolReference {
+  constructor(decision) {
+    this.ctx = { waterfall: async () => decision }
+    this.tools = {}
+  }
+  markCanonical(_exec, value) { return value }
+${source.slice(start, end)}
+}`
+})
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
   const end = source.indexOf('/** Runtime patch applied to entries', start)
@@ -40,7 +78,233 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
   const patchEnd = include.indexOf('/** Runtime patch applied to entries', patchStart)
   return include.slice(patchStart, patchEnd) + '\n' + source.slice(start)
 })
+const { AcpSessionControlReference } = await importSource('packages/acp/acp/src/session.ts', source => {
+  const prompt = source.indexOf('  async prompt(')
+  const guardStart = source.indexOf('    if (this.inflight !== undefined) throw invalidParams(', prompt)
+  const guardEnd = source.indexOf('\n    const completion', guardStart)
+  const cancelStart = source.indexOf('  cancel(): void {', guardEnd)
+  const cancelEnd = source.indexOf('\n  }', cancelStart) + 4
+  if ([prompt, guardStart, guardEnd, cancelStart].some(index => index < 0)) {
+    throw new Error('Pinned ACP prompt admission or cancellation method is unavailable')
+  }
+  return `const invalidParams = message => new Error(message)
+export class AcpSessionControlReference {
+  constructor(agent) { this.agent = agent; this.inflight = undefined }
+  admit() {
+${source.slice(guardStart, guardEnd)}
+    this.inflight = { cancelled: false }
+  }
+  cancelPrompt() {
+    if (this.inflight !== undefined) this.inflight.cancelled = true
+  }
+${source.slice(cancelStart, cancelEnd)}
+}`
+})
+
+// Exercise pinned upstream fork-prefix and unfinished-turn closure code with no tool calls.
+const { buildForkSeed } = await importSource('packages/core/session/src/fork.ts', source => {
+  const repair = referenceSource('packages/core/session/src/repair.ts')
+  const repairStart = repair.indexOf('export function openTurnClosers(')
+  const repairEnd = repair.indexOf('\n/**\n * Track unanswered assistant tool requests', repairStart)
+  const forkStart = source.indexOf('export function buildForkSeed(')
+  if ([repairStart, repairEnd, forkStart].some(index => index < 0)) {
+    throw new Error('Pinned session fork boundaries were not found')
+  }
+  // No tool calls occur in these fixtures. Recovering incomplete calls remains outside this oracle.
+  return `const SessionSeq = value => value
+class ToolCallRecovery {
+  observe(_event) {}
+  results() { return [] }
+}
+${repair.slice(repairStart, repairEnd)}
+${source.slice(forkStart)}`
+})
+
 const settle = () => new Promise(resolve => setImmediate(resolve))
+
+/** Render a deterministic test output projection, independent of the policy implementation. */
+function completionDisplay(input, value) {
+  if (input.format === 'label') return String(input.prefix ?? '') + value.label
+  if (input.format === 'joined') return value.lines.join('|')
+  return String(value)
+}
+
+/** Exercise pinned DSH post-execute decisions with deterministic tool output fixtures. */
+async function toolCompletionCase(input) {
+  const successful = (input.initial ?? 'success') === 'success'
+  const initialValue = Object.hasOwn(input, 'initial_value') ? input.initial_value : 'done'
+  const result = successful
+    ? { isError: false, value: initialValue, content: [{ type: 'text', text: completionDisplay(input, initialValue) }] }
+    : { isError: true, error: { message: 'denied' }, content: [{ type: 'text', text: 'denied' }] }
+  const policy = input.policy === 'block'
+    ? { kind: 'block', feedback: [{ type: 'text', text: input.message }] }
+    : input.policy === 'replace'
+      ? { kind: 'accept', content: [{ type: 'text', text: input.message }] }
+      : input.policy === 'value'
+        ? { kind: 'accept', value: input.value }
+        : { kind: 'accept' }
+  const reference = new PostToolReference(policy)
+  let replacementRenders = 0
+  // Inject a test-only tool contract. The policy method itself comes unchanged
+  // from the pinned, hash-verified upstream source.
+  reference.resolveExecution = () => ({ output: { schema: input.schema ?? { type: 'string' } } })
+  reference.createSuccessResult = (_exec, tool, value) => {
+    const violations = validateJsonSchemaValue(tool.output.schema, value, 'value')
+    if (violations.length > 0) throw new TypeError('Invalid tool replacement')
+    replacementRenders++
+    return { isError: false, value, content: [{ type: 'text', text: completionDisplay(input, value) }] }
+  }
+  let completed
+  try {
+    completed = await reference.postExecute({ name: 'fixture', agent: {} }, result)
+  } catch (error) {
+    if (input.policy !== 'value') throw error
+    return { ok: false, text: 'completion rejected', retained: null,
+      called: input.initial !== 'guard', replacementRenders }
+  }
+  const observation = {
+    ok: !completed.isError,
+    text: completed.content.map(block => block.text).join('\n'),
+    retained: completed.isError ? null : completed.value,
+    called: input.initial !== 'guard',
+  }
+  if (input.policy === 'value') {
+    if (completed.isError) observation.text = 'completion rejected'
+    observation.replacementRenders = replacementRenders
+  }
+  return observation
+}
+
+/** Compare the original pinned upstream approval-resolution behavior in isolation. */
+async function toolApprovalCase(input) {
+  let available = input.channel !== 'missing'
+  let requests = 0
+  const service = { request: async () => {
+    requests++
+    return requests === 1 ? input.outcome : (input.next_outcome ?? input.outcome)
+  } }
+  const reference = new ApprovalReference({ get: key => key === 'approval' && available ? service : undefined })
+  const exec = { name: 'fixture', agent: {}, callId: 'fixture-call', signal: new AbortController().signal }
+  const ask = { kind: 'ask', ...Object.hasOwn(input, 'reason') ? { reason: input.reason } : {} }
+  const project = resolution => ({
+    allowed: resolution.decision.kind === 'allow',
+    reason: resolution.decision.kind === 'allow' ? null : resolution.decision.reason,
+    approvalCancelled: resolution.approvalCancelled,
+  })
+  const first = project(await reference.serviceAsk(exec, ask))
+  if (!input.withdraw && !input.next_outcome) return first
+  if (input.withdraw) available = false
+  return [first, project(await reference.serviceAsk(exec, ask))]
+}
+
+/** Compare a real pinned DSH tool-body cancellation decision, not a runtime adapter. */
+async function toolCancellationCase(input) {
+  const controller = new AbortController()
+  let invoked = 0
+  const reference = new ToolCancellationReference({ execute: async () => {
+    invoked++
+    if (input.async) await settle()
+    if (input.cancel_during) controller.abort()
+    return input.value
+  } })
+  const exec = { name: 'fixture', arguments: {}, signal: controller.signal }
+  reference.cancellationStates.set(exec, { callerSignal: controller.signal, bodyInvoked: false })
+  if (input.cancel_before) controller.abort()
+  const result = await reference.dispatchToolBody(exec)
+  return { allowed: !result.isError, invoked, retained: result.isError ? null : result.value }
+}
+
+async function toolBatchCase(input) {
+  const definitions = new Map(input.calls.filter(call => call.registered !== false).map(call => [call.id, call]))
+  const entered = new Map(input.calls.map(call => [call.id, Promise.withResolvers()]))
+  const controller = new AbortController()
+  if (input.cancel_before) controller.abort()
+  const started = []
+  let active = 0
+  let peak = 0
+  let exclusiveSafe = true
+  const outcome = await executeToolBatch({
+    calls: input.calls.map(call => ({ id: call.id, name: call.id, arguments: '{}' })),
+    signal: controller.signal,
+    maxParallelToolCalls: input.max_parallel,
+  }, {
+    executionMode(exec) {
+      return { kind: definitions.get(exec.callId)?.mode === 'parallel' ? 'parallel' : 'exclusive' }
+    },
+    async prepare(exec) {
+      const specification = definitions.get(exec.callId)
+      if (!specification || specification.deny) {
+        return { kind: 'final-result', exec, result: {
+          content: [{ type: 'text', text: 'Tool unavailable' }], isError: true,
+        } }
+      }
+      return { kind: 'dispatch', exec }
+    },
+    async dispatch(exec) {
+      const specification = definitions.get(exec.callId)
+      const reference = new ToolCancellationReference({ execute: async () => {
+        if (specification.mode !== 'parallel' && active !== 0) exclusiveSafe = false
+        active++
+        peak = Math.max(peak, active)
+        started.push(specification.id)
+        entered.get(specification.id).resolve()
+        if (specification.wait_for) await entered.get(specification.wait_for).promise
+        active--
+        if (specification.cancel) controller.abort()
+        return specification.id
+      } })
+      reference.cancellationStates.set(exec, { callerSignal: controller.signal, bodyInvoked: false })
+      const result = await reference.dispatchToolBody(exec)
+      return { kind: 'post-result', result }
+    },
+    async complete(exec, completed) { return completed.result },
+  }, () => input.max_parallel)
+  return {
+    results: outcome.results.map(entry => ({ id: entry.callId, ok: !entry.result.isError })),
+    executed: started.sort(),
+    barrierSafe: exclusiveSafe,
+    overlap: input.check_overlap ? peak >= 2 : null,
+  }
+}
+
+/** Exercise the pinned DSH tool registry's typed return and separate model rendering contract. */
+async function toolOutputProjectionCase(input) {
+  const { ToolsService, SystemPrompt } = await toolsReference()
+  const { context } = await scopeFixture(input, async context => {
+    await context.plugin(SystemPrompt)
+    await context.plugin(ToolsService)
+  }, ['tools', 'systemPrompt'])
+  let invoked = 0
+  let rendered = 0
+  const text = (args, value) => {
+    if (input.format === 'label') return `${args.prefix ?? ''}${value.label}`
+    if (input.format === 'joined') return value.lines.join('|')
+    if (input.format === 'summary') return `${value.label} (${value.count})`
+    if (input.format === 'silent') return ''
+    if (input.format === 'scalar') return String(value)
+    throw new Error('Unknown fixture presentation')
+  }
+  const dispose = context.tools.register({
+    name: 'projection', description: '', parameters: { type: 'object' },
+    output: { schema: input.schema, render: (args, value) => {
+      rendered++
+      return [{ type: 'text', text: text(args, value) }]
+    } },
+    execute: async () => { invoked++; return input.value },
+  })
+  const tool = context.tools.get('projection')
+  const value = await tool.execute(input.arguments, {})
+  const allowed = validateJsonSchemaValue(tool.output.schema, value, 'result').length === 0
+  const content = allowed ? tool.output.render(input.arguments, value) : null
+  dispose()
+  await context.fiber.dispose()
+  return {
+    accepted: allowed,
+    invoked, rendered,
+    display: content === null ? null : content.map(block => block.text).join('\\n'),
+    value: allowed ? value : null,
+  }
+}
 
 function toolArgumentsCase(input) {
   assertSupportedJsonSchema(input.schema)
@@ -52,58 +316,6 @@ function toolOutputsCase(input) {
   assertSupportedJsonSchema(input.schema)
   const violations = validateJsonSchemaValue(input.schema, input.value, 'result').sort()
   return { violations, accepted: violations.length === 0, schema: input.schema }
-}
-
-
-async function toolBatchCase(input) {
-  const definitions = new Map(input.tools.map(tool => [tool.name, tool]))
-  let active = 0
-  let exclusive = 0
-  let peak = 0
-  let exclusiveOverlap = false
-  const pipeline = {
-    executionMode(exec) {
-      return { kind: definitions.get(exec.name)?.parallel === true ? 'parallel' : 'exclusive' }
-    },
-    async prepare(exec) {
-      if (definitions.has(exec.name)) return { kind: 'dispatch', exec }
-      return { kind: 'post-result', exec, result: {
-        content: [{ type: 'text', text: 'unknown tool' }], isError: true,
-      } }
-    },
-    async dispatch(exec) {
-      const safe = definitions.get(exec.name).parallel === true
-      if ((safe && exclusive > 0) || (!safe && active > 0)) exclusiveOverlap = true
-      active++
-      if (!safe) exclusive++
-      peak = Math.max(peak, active)
-      await new Promise(resolve => setTimeout(resolve, exec.arguments.delay_ms))
-      active--
-      if (!safe) exclusive--
-      return { kind: 'post-result', result: {
-        content: [{ type: 'text', text: String(exec.arguments.value) }],
-        isError: exec.arguments.fail === true,
-      } }
-    },
-    async complete(execution, slot) { return slot.result },
-  }
-  const calls = input.calls.map((call, index) => ({
-    id: String(index + 1),
-    name: call.name,
-    arguments: JSON.stringify({
-      value: call.value, delay_ms: call.delay_ms ?? 0, fail: call.fail === true,
-    }),
-  }))
-  const settled = await executeToolBatch({
-    calls, signal: new AbortController().signal, maxParallelToolCalls: input.max_parallel,
-  }, pipeline, () => 1).catch(error => { throw error.cause ?? error })
-  return {
-    results: settled.results.map(({ callId, result }) => ({
-      id: callId, ok: !result.isError,
-      value: result.isError ? null : result.content[0].text,
-    })),
-    peak, exclusiveOverlap,
-  }
 }
 
 function patchCase(input) {
@@ -612,8 +824,86 @@ async function toolCase(input) {
 }
 
 
+/** Preserve PR #45's fixtures while replacing their delays with bounded rendezvous cohorts. */
+function toolBatchProjectionPeers(input) {
+  const safe = new Map(input.tools.map(tool => [tool.name, tool.parallel === true]))
+  const peers = input.calls.map(() => [])
+  const pending = []
+  input.calls.forEach((call, index) => {
+    if (safe.get(call.name)) pending.push(index)
+    if (!safe.get(call.name) || pending.length === input.max_parallel) {
+      for (const member of pending) peers[member] = [...pending]
+      pending.length = 0
+    }
+  })
+  for (const member of pending) peers[member] = [...pending]
+  return peers
+}
+
+/** Run the existing original pinned scheduler; callbacks model only bounded value/failure behavior. */
+async function toolBatchProjectionCase(input) {
+  const definitions = new Map(input.tools.map(tool => [tool.name, tool]))
+  const entered = input.calls.map(() => Promise.withResolvers())
+  const peers = toolBatchProjectionPeers(input)
+  let active = 0
+  let exclusive = 0
+  let peak = 0
+  let exclusiveOverlap = false
+  const pipeline = {
+    executionMode(exec) {
+      return { kind: definitions.get(exec.name)?.parallel === true ? 'parallel' : 'exclusive' }
+    },
+    async prepare(exec) {
+      if (definitions.has(exec.name)) return { kind: 'dispatch', exec }
+      return { kind: 'post-result', exec, result: {
+        content: [{ type: 'text', text: 'unknown tool' }], isError: true,
+      } }
+    },
+    async dispatch(exec) {
+      const safe = definitions.get(exec.name).parallel === true
+      if ((safe && exclusive > 0) || (!safe && active > 0)) exclusiveOverlap = true
+      active++
+      if (!safe) exclusive++
+      peak = Math.max(peak, active)
+      entered[exec.arguments.index].resolve()
+      await Promise.all(peers[exec.arguments.index].map(member => entered[member].promise))
+      active--
+      if (!safe) exclusive--
+      return { kind: 'post-result', result: {
+        content: [{ type: 'text', text: String(exec.arguments.value) }],
+        isError: exec.arguments.fail === true,
+      } }
+    },
+    async complete(_execution, slot) { return slot.result },
+  }
+  const calls = input.calls.map((call, index) => ({
+    id: String(index + 1), name: call.name,
+    arguments: JSON.stringify({ index, value: call.value, fail: call.fail === true }),
+  }))
+  let watchdog
+  // This deadline only bounds regressions; elapsed time does not determine any expected result.
+  const deadline = new Promise((_, reject) => {
+    watchdog = setTimeout(() => reject(new Error('Batch projection rendezvous timed out')), 30_000)
+  })
+  const settled = await Promise.race([
+    executeToolBatch({ calls, signal: new AbortController().signal,
+      maxParallelToolCalls: input.max_parallel }, pipeline, () => 1),
+    deadline,
+  ]).finally(() => clearTimeout(watchdog))
+  return {
+    results: settled.results.map(({ callId, result }) => ({
+      id: callId, ok: !result.isError,
+      value: result.isError ? null : result.content[0].text,
+    })),
+    peak, exclusiveOverlap,
+  }
+}
+
 function sessionQueryCase(input) {
-  const documents = input.sessions.flatMap(session => session.messages.map((message, index) => ({
+  const sessions = input.selected_sessions === undefined ? input.sessions
+    : filterSessionResults(input.sessions.map(session => ({ header: { id: session.name }, session })),
+      [{ kind: 'id', values: input.selected_sessions }]).map(record => record.session)
+  const documents = sessions.flatMap(session => session.messages.map((message, index) => ({
     sessionId: session.name,
     seq: index,
     type: `${message.role}/message`,
@@ -626,6 +916,11 @@ function sessionQueryCase(input) {
   const filters = [{ kind: 'text', text: input.text }]
   if (input.roles !== undefined) filters.push({ kind: 'type',
     values: input.roles.map(role => `${role}/message`) })
+  if (input.from_index !== undefined || input.to_index !== undefined) {
+    filters.push({ kind: 'seq',
+      ...input.from_index === undefined ? {} : { from: input.from_index - 1 },
+      ...input.to_index === undefined ? {} : { to: input.to_index - 1 } })
+  }
   const selected = filterSessionEventDocuments(documents, filters)
   return { ok: true, hits: selected.slice(0, input.limit ?? selected.length).map(document => ({
     session: input.source === 'live' ? null : document.sessionId,
@@ -636,14 +931,71 @@ function sessionQueryCase(input) {
   })) }
 }
 
+/** Compare a fork's visible message prefix using the unchanged pinned DSH seed algorithm. */
+function sessionForkCase(input) {
+  const events = []
+  input.messages.forEach((message, index) => {
+    const seq = events.length
+    events.push({ type: 'turn/start', seq, time: 0, data: { turn: index } })
+    events.push({ type: `${message.role}/message`, seq: seq + 1, time: 0,
+      data: { message: { role: message.role, content: [{ type: 'text', text: message.content }] } } })
+    events.push({ type: 'turn/end', seq: seq + 2, time: 0,
+      data: { turn: index, reason: { kind: 'completed' } } })
+  })
+  const boundary = input.at_index === undefined ? events.length - 1 : (input.at_index - 1) * 3 + 1
+  const seed = buildForkSeed(events, boundary)
+  const marker = seed.findIndex(event => event.type === 'session/end-seed')
+  if (marker !== boundary + 1 || seed[marker].data.inherited !== true) {
+    throw new Error('Pinned DSH fork did not preserve its inherited boundary')
+  }
+  if (input.at_index !== undefined
+    && seed.at(-1)?.data?.reason?.kind !== 'forked') {
+    throw new Error('Pinned DSH fork did not terminate the cut-open turn')
+  }
+  return { ok: true, messages: seed.slice(0, marker)
+    .filter(event => event.type === 'user/message' || event.type === 'assistant/message')
+    .map(event => ({ role: event.data.message.role,
+      content: event.data.message.content[0].text })) }
+}
+
+/** Project the pinned ACP admission guard and cancel method without a DSH runtime. */
+function sessionControlCase(input) {
+  const reference = new AcpSessionControlReference({ cancel: () => {} })
+  return input.operations.map(operation => {
+    if (operation === 'submit') {
+      try {
+        reference.admit()
+        return { accepted: true }
+      } catch {
+        return { accepted: false }
+      }
+    }
+    if (operation === 'cancel') {
+      const alreadyCancelled = reference.inflight?.cancelled === true
+      reference.cancel()
+      return { cancelled: !alreadyCancelled && reference.inflight?.cancelled === true }
+    }
+    if (operation === 'settle') {
+      const cancelled = reference.inflight?.cancelled === true
+      reference.inflight = undefined
+      return { cancelled }
+    }
+    throw new Error(`Unsupported session-control fixture operation: ${operation}`)
+  })
+}
+
 async function execute(input) {
+  if (input.kind === 'tool_completion') return Promise.all(input.cases.map(toolCompletionCase))
+  if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
   if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
   if (input.kind === 'tool_outputs') return input.cases.map(toolOutputsCase)
-  if (input.kind === 'tool_batches') return Promise.all(input.cases.map(toolBatchCase))
+  if (input.kind === 'tool_output_projection') return Promise.all(input.cases.map(toolOutputProjectionCase))
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
   if (input.kind === 'session_query') return input.cases.map(sessionQueryCase)
+  if (input.kind === 'session_control') return input.cases.map(sessionControlCase)
+  if (input.kind === 'session_fork') return input.cases.map(sessionForkCase)
   if (input.kind === 'transport') return Promise.all(input.cases.map(transportCase))
   if (input.kind === 'outgoing') return Promise.all(input.cases.map(outgoingCase))
   if (input.kind === 'recovery') return Promise.all(input.cases.map(recoveryCase))
@@ -652,6 +1004,9 @@ async function execute(input) {
   if (input.kind === 'replacements') return Promise.all(input.cases.map(replacementCase))
   if (input.kind === 'events') return Promise.all(input.cases.map(eventCase))
   if (input.kind === 'tools') return Promise.all(input.cases.map(toolCase))
+  if (input.kind === 'tool_batch') return Promise.all(input.cases.map(toolBatchCase))
+  if (input.kind === 'tool_batches') return Promise.all(input.cases.map(toolBatchProjectionCase))
+  if (input.kind === 'tool_cancellation') return Promise.all(input.cases.map(toolCancellationCase))
   if (input.kind === 'final_response') return input.cases.map(input => finalResponse(input.events))
   if (input.kind === 'launch') return input.cases.map(launchCase)
   throw new Error(`Unknown oracle operation: ${input.kind}`)

@@ -40,13 +40,13 @@ end
 components_command!(app::App, arguments) = (app.page = :components; nothing)
 
 function clear_command!(app::App, arguments)
-    app.busy && return nothing
-    clear_history!(app.session)
-    clear_preview!(app)
-    app.scroll = 0
-    return nothing
+    if !app.busy
+        clear_history!(app.session)
+        clear_preview!(app)
+        app.scroll = 0
+    end
+    nothing
 end
-
 function quit_command!(app::App, arguments)
     cleanup!(app)
     app.quit = true
@@ -66,27 +66,28 @@ function command!(app::App, input::AbstractString)
     app.menu = false
     Tachikoma.clear!(app.input)
     parts = split(strip(input); limit=2)
-    isempty(parts) && return nothing
+    isempty(parts) ? nothing : command!(app, parts)
+end
+
+function command!(app::App, parts::AbstractVector)
     index = findfirst(command -> command.name == parts[1], app.commands)
     if isnothing(index)
         app.status = "Unknown command: " * String(parts[1])
-        return nothing
+        nothing
+    else
+        arguments = length(parts) == 2 ? parts[2] : ""
+        Base.invokelatest(app.commands[index].action, app, arguments)
     end
-    arguments = length(parts) == 2 ? parts[2] : ""
-    return Base.invokelatest(app.commands[index].action, app, arguments)
 end
-
-
 function update!(app::App, event::TaskEvent)
     handlers = get(app.event_handlers, event.id, nothing)
-    isnothing(handlers) && return nothing
-    for handler in copy(handlers)
-        Base.invokelatest(handler.action, app, event.value)
+    if !isnothing(handlers)
+        for handler in copy(handlers)
+            Base.invokelatest(handler.action, app, event.value)
+        end
     end
-    return nothing
+    nothing
 end
-
-
 function command_menu(app::App, height::Int)
     matches = app.menu ? matching_commands(app) : Tuple{String,String}[]
     count = min(5, length(matches), max(0, height - 5))

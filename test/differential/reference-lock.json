@@ -40,6 +40,9 @@
     "packages/sdk/client/src/api.ts": "a287a1ef52d732455e5ac8f8610bb9cdabcc24a27c7347cb938673249db193ba",
     "packages/sdk/client/src/launch.ts": "d7187537945618d6190bf98ab5893de9a1a059e4e2ec4d3778386eaffe5148af",
     "packages/session-query/session-query/src/filters.ts": "574759cf15980ad2e0b69791d26c596c6a573bae52d613294e12770ac583ecdc",
-    "packages/session-query/session-query/src/config.ts": "5850ab0dd78a26843d6ff899f5bb85af4cc8745f163ff71a17586bcda5da570f"
+    "packages/session-query/session-query/src/config.ts": "5850ab0dd78a26843d6ff899f5bb85af4cc8745f163ff71a17586bcda5da570f",
+    "packages/acp/acp/src/session.ts": "e4d624d1a4d305d924ae0cff23e0f005becf9a797b02c037e45a1e86c3c17d12",
+    "packages/core/session/src/fork.ts": "de80ecbf0e6a7961c096a2d7f0304bc6f6c83f897268304e28352357da06bfb0",
+    "packages/core/session/src/repair.ts": "c2835c920aba203c709e44686e55f43bb4d357ea59cfef3561c371b8ff115540"
   }
 }

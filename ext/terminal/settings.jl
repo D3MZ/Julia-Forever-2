@@ -14,11 +14,16 @@ end
 
 
 function start_sign_in!(app::App, provider::Symbol; action=nothing)
-    dir = app.settings.directory
-    (app.busy || app.operations.closing[]) && return nothing
-    descriptor = provider_descriptor(app.settings.registry, provider)
-    selected_action = isnothing(action) ? (isnothing(descriptor) ? nothing : descriptor.auth) : action
-    isnothing(selected_action) && return nothing
+    if !app.busy && !app.operations.closing[]
+        descriptor = provider_descriptor(app.settings.registry, provider)
+        selected = isnothing(action) ? (isnothing(descriptor) ? nothing : descriptor.auth) : action
+        authenticate!(app, provider, selected)
+    end
+end
+
+authenticate!(app::App, provider, ::Nothing) = nothing
+
+function authenticate!(app::App, provider, action)
     flow = AuthFlow()
     app.settings.auth_flow = flow
     app.settings.auth_url = ""
@@ -28,13 +33,12 @@ function start_sign_in!(app::App, provider::Symbol; action=nothing)
     app.status = "Opening browser for sign-in…"
     task = Threads.@spawn begin
         announce = url -> enqueue_event!(app, TaskEvent(:auth_url, (flow, url)))
-        Base.invokelatest(selected_action, flow, provider, dir; announce)
+        Base.invokelatest(action, flow, provider, app.settings.directory; announce)
     end
     app.settings.auth_task = task
     notify_completion!(app, :auth_done, task, (flow, task); cleanup=() -> close(flow))
-    return task
+    task
 end
-
 function auth_url_received!(app::App, value)
     flow, url = value
     if app.settings.auth_flow === flow && active_auth(flow)
@@ -46,7 +50,13 @@ end
 
 function auth_finished!(app::App, value)
     flow, task = value
-    app.settings.auth_flow === flow || return nothing
+    if app.settings.auth_flow === flow
+        authenticated!(app, flow, task)
+    end
+    nothing
+end
+
+function authenticated!(app::App, flow, task)
     app.busy = false
     app.settings.auth_flow = nothing
     app.settings.auth_task = nothing
@@ -68,19 +78,22 @@ end
 
 
 function select_provider!(app::App)
-    isempty(app.settings.providers) && return nothing
-    descriptor = app.settings.providers[app.selected]
-    result = JuliaForever2.select_provider!(app.session.kernel, descriptor.id; dir=app.settings.directory, registry=app.settings.registry)
-    if !result.ok
-        app.status = result.reason
-        return nothing
+    if !isempty(app.settings.providers)
+        select!(app, app.settings.providers[app.selected])
     end
-    app.status = descriptor.label * (isnothing(descriptor.auth) ? " selected" : " selected — sign in from settings with s")
-    app.page = :chat
-    return nothing
+    nothing
 end
 
-
+function select!(app::App, descriptor::ProviderDescriptor)
+    result = JuliaForever2.select_provider!(app.session.kernel, descriptor.id; dir=app.settings.directory, registry=app.settings.registry)
+    if result.ok
+        app.status = descriptor.label * (isnothing(descriptor.auth) ? " selected" : " selected — sign in from settings with s")
+        app.page = :chat
+    else
+        app.status = result.reason
+    end
+    nothing
+end
 remember_provider!(app::App, provider::Symbol) = save_provider!(app.settings.directory, provider)
 
 settings_top(area::Rect) = max(area.y, area.y + area.height - 11)
@@ -104,8 +117,7 @@ function page_view!(app::App, ::Val{:auth}, frame::Frame)
     drawline!(buf, x + 1, y + 4, w - 2, "Complete authorization in your browser.", :text)
     drawline!(buf, x + 1, y + 6, w - 2, "If it did not open, copy this URL:", :text_dim)
     chars = collect(app.settings.auth_url)
-    for (i, part) in enumerate(Iterators.partition(chars, max(1, w - 2)))
-        i > h - 10 && break
+    for (i, part) in enumerate(Iterators.take(Iterators.partition(chars, max(1, w - 2)), max(0, h - 10)))
         drawline!(buf, x + 1, y + 6 + i, w - 2, String(collect(part)), :text)
     end
     drawline!(buf, x + 1, y + h - 1, w - 2, "esc cancel", :text_dim)

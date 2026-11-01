@@ -1,0 +1,21 @@
+:root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 1rem; }
+main { max-width: 70rem; margin: 0 auto; }
+header { padding-bottom: .75rem; }
+h1, h2 { margin-bottom: .25rem; }
+header p { margin-top: 0; }
+.panel { border: 1px solid CanvasText; border-radius: .5rem; padding: 1rem; margin-bottom: 1rem; }
+.grid { display: grid; grid-template-columns: minmax(11rem, 1fr) minmax(14rem, 3fr); gap: .5rem; align-items: center; }
+.actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .85rem 0; }
+input, select, textarea, button { font: inherit; padding: .45rem .6rem; }
+input, select, textarea { width: 100%; max-width: 100%; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .6; }
+#history { padding: 0; margin: 0 0 1rem; list-style: none; }
+#history li { border-bottom: 1px solid GrayText; padding: .65rem 0; }
+#history pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: .3rem 0; }
+#composer { display: grid; gap: .5rem; }
+#composer button { justify-self: start; }
+#status { min-height: 1.5rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 42rem) { .grid { grid-template-columns: 1fr; } }

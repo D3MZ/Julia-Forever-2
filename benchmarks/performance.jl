@@ -120,11 +120,12 @@ struct ReplayTransport{C}
 end
 function (transport::ReplayTransport)(url, method, body, headers, context, sink)
     if method == "GET"
-        return (status=200, body=transport.catalog)
+        (status=200, body=transport.catalog)
+    else
+        sink.sink.progress_interval = Inf
+        write_chunks!(sink, transport.fragments)
+        (status=200, body="")
     end
-    sink.sink.progress_interval = Inf
-    write_chunks!(sink, transport.fragments)
-    return (status=200, body="")
 end
 
 function provider_workload(api, provider, request)
@@ -140,9 +141,7 @@ end
 progress_value(::Nothing) = nothing
 progress_value(progress) = (progress.kind, progress.text)
 
-protocol_contents() = (ascii=repeat("Julia uses specialized methods and reusable buffers. ", 120),
-    unicode=repeat("Julia λ ∑ 日本語 café e\u0301 🧪. ", 120),
-    escapes=repeat("quoted \"text\"\n\tpath\\segment\r\n", 120))
+protocol_contents() = (ascii=repeat("Julia uses specialized methods and reusable buffers. ", 120), unicode=repeat("Julia λ ∑ 日本語 café e\u0301 🧪. ", 120), escapes=repeat("quoted \"text\"\n\tpath\\segment\r\n", 120))
 
 function workloads(api, fixture, directory)
     cases = Dict{String,Any}()

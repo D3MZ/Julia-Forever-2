@@ -1,8 +1,7 @@
 """Wrap printable ASCII by byte offsets; Unicode and control characters keep the grapheme path."""
 function wrap_printable_ascii_line(line::Union{String,SubString{String}}, width::Int)
     stop = ncodeunits(line)
-    stop == 0 && return [""]
-    lines = String[]
+    lines = stop == 0 ? [""] : String[]
     offset = 1
     capacity = max(1, width)
     while offset <= stop
@@ -22,48 +21,52 @@ function wrap_printable_ascii_line(line::Union{String,SubString{String}}, width:
 end
 
 function wrap_conversation_line(line::AbstractString, width::Int)
-    if line isa Union{String,SubString{String}} &&
-            all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
-        return wrap_printable_ascii_line(line, width)
+    if line isa Union{String,SubString{String}} && all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
+        wrap_printable_ascii_line(line, width)
+    else
+        wrapgraphemes(line, width)
     end
-    graphemes = Base.Unicode.graphemes(line)
-    current = iterate(graphemes)
-    isnothing(current) && return [""]
-    lines = String[]
-    first_index = firstindex(line)
-    while !isnothing(current)
-        next_index = first_index
-        last_space = first_index
-        after_space = current
-        columns = 0
-        while !isnothing(current)
-            grapheme, state = current
-            size = textwidth(grapheme)
-            if columns + size > width
-                if next_index == first_index
-                    next_index += ncodeunits(grapheme)
-                    current = iterate(graphemes, state)
-                end
-                break
-            end
-            columns += size
-            next_index += ncodeunits(grapheme)
-            current = iterate(graphemes, state)
-            if all(isspace, grapheme)
-                last_space = next_index
-                after_space = current
-            end
-        end
-        if !isnothing(current) && first_index < last_space < next_index
-            next_index = last_space
-            current = after_space
-        end
-        push!(lines, String(SubString(line, first_index, prevind(line, next_index))))
-        first_index = next_index
-    end
-    return lines
 end
 
+function wrapgraphemes(line::AbstractString, width)
+    graphemes = Base.Unicode.graphemes(line)
+    current = iterate(graphemes)
+    lines = isnothing(current) ? [""] : String[]
+    first = firstindex(line)
+    while !isnothing(current)
+        next, current = boundary(graphemes, current, first, width)
+        push!(lines, String(SubString(line, first, prevind(line, next))))
+        first = next
+    end
+    lines
+end
+
+function boundary(graphemes, current, first, width)
+    next = first
+    space = first
+    afterspace = current
+    columns = 0
+    full = false
+    while !isnothing(current) && !full
+        grapheme, state = current
+        size = textwidth(grapheme)
+        full = columns + size > width
+        if full
+            if next == first
+                next += ncodeunits(grapheme)
+                current = iterate(graphemes, state)
+            end
+        else
+            columns += size
+            next += ncodeunits(grapheme)
+            current = iterate(graphemes, state)
+            if all(isspace, grapheme)
+                space, afterspace = next, current
+            end
+        end
+    end
+    !isnothing(current) && first < space < next ? (space, afterspace) : (next, current)
+end
 """Wrap printable ASCII spans by byte ranges; retain grapheme-aware fallback for all other text."""
 function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     lines = Vector{Tachikoma.Span}[]
@@ -154,37 +157,53 @@ function conversation_lines(messages, width)
     return lines
 end
 
-function transcript_lines!(app::App, width::Int)
-    snapshot = history_snapshot(app.session, app.transcript.revision)
-    width_changed = app.transcript.width != width
-    isnothing(snapshot) && !width_changed && return app.transcript.lines
-    previous_messages = app.transcript.messages
-    messages = isnothing(snapshot) ? previous_messages : snapshot.messages
-    first_changed = width_changed ? 1 : max(1, min(snapshot.changed_from, length(messages) + 1) - 1)
-    first_changed = min(first_changed, length(app.transcript.chunks) + 1)
-    prefix = first_changed - 1
-    resize!(app.transcript.lines, prefix == 0 ? 0 : app.transcript.offsets[prefix])
-    previous_count = length(app.transcript.chunks)
-    for index in first_changed:length(messages)
-        reusable = !width_changed && index <= length(previous_messages) && index <= previous_count && message_layout_key(previous_messages, index) == message_layout_key(messages, index)
-        lines = reusable ? app.transcript.chunks[index] : message_lines(messages, index, width)
-        append!(app.transcript.lines, lines)
-        if index <= previous_count
-            app.transcript.chunks[index] = lines
-            app.transcript.offsets[index] = length(app.transcript.lines)
-        else
-            push!(app.transcript.chunks, lines)
-            push!(app.transcript.offsets, length(app.transcript.lines))
-        end
-    end
-    resize!(app.transcript.chunks, length(messages))
-    resize!(app.transcript.offsets, length(messages))
-    app.transcript.width = width
-    app.transcript.messages = messages
-    isnothing(snapshot) || (app.transcript.revision = snapshot.revision)
-    return app.transcript.lines
+struct TranscriptLayout{M}
+    messages::M
+    revision::UInt
+    width::Int
+    first::Int
+    resized::Bool
 end
 
+function TranscriptLayout(transcript::TranscriptState, snapshot, width::Int)
+    resized = transcript.width != width
+    messages = isnothing(snapshot) ? transcript.messages : snapshot.messages
+    revision = isnothing(snapshot) ? transcript.revision : snapshot.revision
+    first = resized ? 1 : max(1, min(snapshot.changed_from, length(messages) + 1) - 1)
+    TranscriptLayout(messages, revision, width, min(first, length(transcript.chunks) + 1), resized)
+end
+
+function transcript_lines!(app::App, width::Int)
+    snapshot = history_snapshot(app.session, app.transcript.revision)
+    if !isnothing(snapshot) || app.transcript.width != width
+        layout!(app.transcript, TranscriptLayout(app.transcript, snapshot, width))
+    end
+    app.transcript.lines
+end
+
+function layout!(transcript::TranscriptState, layout::TranscriptLayout)
+    prefix = layout.first - 1
+    resize!(transcript.lines, prefix == 0 ? 0 : transcript.offsets[prefix])
+    count = length(transcript.chunks)
+    for index in layout.first:length(layout.messages)
+        reusable = !layout.resized && index <= length(transcript.messages) && index <= count && message_layout_key(transcript.messages, index) == message_layout_key(layout.messages, index)
+        lines = reusable ? transcript.chunks[index] : message_lines(layout.messages, index, layout.width)
+        append!(transcript.lines, lines)
+        if index <= count
+            transcript.chunks[index] = lines
+            transcript.offsets[index] = length(transcript.lines)
+        else
+            push!(transcript.chunks, lines)
+            push!(transcript.offsets, length(transcript.lines))
+        end
+    end
+    resize!(transcript.chunks, length(layout.messages))
+    resize!(transcript.offsets, length(layout.messages))
+    transcript.width = layout.width
+    transcript.messages = layout.messages
+    transcript.revision = layout.revision
+    transcript.lines
+end
 """Discard transient output without changing committed conversation history."""
 function clear_preview!(app::App)
     transcript = app.transcript
@@ -204,18 +223,21 @@ end
 response_progress_received!(app::App, value) = nothing
 
 function response_progress_received!(app::App, value::NamedTuple{(:operation_id, :progress),Tuple{UInt64,ResponseProgress}})
-    active_operation(app, value.operation_id) || return nothing
-    value.progress.kind in (:answer, :code) || return nothing
-    transcript = app.transcript
-    previous = transcript.preview
-    if isnothing(previous) || previous.kind != value.progress.kind || previous.text != value.progress.text
-        transcript.preview = value.progress
-        transcript.preview_operation_id = value.operation_id
-        transcript.preview_dirty = true
+    if active_operation(app, value.operation_id) && value.progress.kind in (:answer, :code)
+        preview!(app.transcript, value.progress, value.operation_id)
     end
-    return nothing
+    nothing
 end
 
+function preview!(transcript::TranscriptState, progress::ResponseProgress, id::UInt64)
+    previous = transcript.preview
+    if isnothing(previous) || previous.kind != progress.kind || previous.text != progress.text
+        transcript.preview = progress
+        transcript.preview_operation_id = id
+        transcript.preview_dirty = true
+    end
+    nothing
+end
 response_committed!(app::App, value) = nothing
 
 function response_committed!(app::App, value::NamedTuple{(:operation_id,),Tuple{UInt64}})
@@ -233,10 +255,7 @@ function preview_lines!(app::App, width::Int)
         clear_preview!(app)
         progress = nothing
     end
-    if isnothing(progress)
-        return transcript.preview_lines
-    end
-    if transcript.preview_dirty || transcript.preview_width != width
+    if !isnothing(progress) && (transcript.preview_dirty || transcript.preview_width != width)
         messages = Message[Message(:assistant, progress.text, progress.kind)]
         empty!(transcript.preview_lines)
         append!(transcript.preview_lines, message_lines(messages, 1, width))
