@@ -4,3 +4,7 @@ Manifest.toml
 *.mem
 lcov.info
 .DS_Store
+
+# Python tooling
+__pycache__/
+*.pyc
