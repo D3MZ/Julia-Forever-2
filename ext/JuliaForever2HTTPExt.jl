@@ -91,37 +91,45 @@ web_session_cookie(access::WebAccess, request::HTTP.Request) = any(part -> strip
 
 const LOCAL_WEB_AUTHORITY = r"^(127\.0\.0\.1|localhost|\[::1\])(?::([0-9]{1,5}))?$"i
 
-"""Parse the literal loopback HTTP authority, rejecting remote and ambiguous host spellings."""
-function local_web_authority(value::AbstractString, scheme::AbstractString)
-    matched = match(LOCAL_WEB_AUTHORITY, value)
-    isnothing(matched) && return nothing
+"""Parse a literal loopback HTTP authority, using absence for invalid authority values."""
+local_web_authority(value::AbstractString, scheme::AbstractString) = local_web_authority(match(LOCAL_WEB_AUTHORITY, value), scheme)
+local_web_authority(::Nothing, ::AbstractString) = nothing
+
+function local_web_authority(matched::RegexMatch, scheme::AbstractString)
     digits = matched.captures[2]
     port = isnothing(digits) ? (scheme == "https" ? 443 : 80) : tryparse(Int, digits)
-    (isnothing(port) || !(1 <= port <= 65535)) && return nothing
-    return (lowercase(matched.captures[1]), port)
+    isnothing(port) || !(1 <= port <= 65535) ? nothing : (lowercase(matched.captures[1]), port)
 end
 
 """Compare the browser's Origin to its actual HTTP Host, including the listener port."""
-function matching_web_origin(host::AbstractString, origin::AbstractString)
-    matched = match(r"^(https?)://(.+)$"i, origin)
-    isnothing(matched) && return false
+matching_web_origin(host::AbstractString, origin::AbstractString) = matching_web_origin(host, match(r"^(https?)://(.+)$"i, origin))
+matching_web_origin(::AbstractString, ::Nothing) = false
+
+function matching_web_origin(host::AbstractString, matched::RegexMatch)
     scheme = lowercase(matched.captures[1])
     authority = local_web_authority(host, scheme)
-    return !isnothing(authority) && authority == local_web_authority(matched.captures[2], scheme)
+    !isnothing(authority) && authority == local_web_authority(matched.captures[2], scheme)
 end
 
 """Protect every browser entry point and API from DNS rebinding and cross-site initiation."""
 function trusted_web_request(request::HTTP.Request)
     host = HTTP.header(request, "Host")
-    isnothing(local_web_authority(host, "http")) && return false
-    lowercase(HTTP.header(request, "Sec-Fetch-Site")) == "cross-site" && return false
     origin = HTTP.header(request, "Origin")
-    return isempty(origin) || matching_web_origin(host, origin)
+    valid_host = !isnothing(local_web_authority(host, "http"))
+    same_site = lowercase(HTTP.header(request, "Sec-Fetch-Site")) != "cross-site"
+    valid_host && same_site && (isempty(origin) || matching_web_origin(host, origin))
 end
 
 function authorize_web_request(api, access::WebAccess, handler, trust, request::HTTP.Request)
-    Base.invokelatest(trust, request) === true ||
-        return response(403, "{\"error\":\"Untrusted browser authority\"}")
+    trusted = Base.invokelatest(trust, request) === true
+    if trusted
+        authorize_trusted_web_request(api, access, handler, request)
+    else
+        response(403, "{\"error\":\"Untrusted browser authority\"}")
+    end
+end
+
+function authorize_trusted_web_request(api, access::WebAccess, handler, request::HTTP.Request)
     uri = HTTP.URI(String(request.target))
     query = HTTP.queryparams(uri)
     if request.method == "GET" && uri.path == "/" && haskey(query, "access")
