@@ -1,0 +1,71 @@
+name: Pi differential
+
+on:
+  push:
+    paths:
+      - 'parity/**'
+      - 'src/**'
+      - 'Project.toml'
+      - '.github/workflows/pi-differential.yml'
+  pull_request:
+    paths:
+      - 'parity/**'
+      - 'src/**'
+      - 'Project.toml'
+      - '.github/workflows/pi-differential.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JULIA_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read reviewed oracle pin
+        id: pi
+        run: python3 -c 'import json, os; print("commit=" + json.load(open("parity/pi-lock.json"))["commit"], file=open(os.environ["GITHUB_OUTPUT"], "a"))'
+      - uses: actions/checkout@v4
+        with:
+          repository: earendil-works/pi
+          ref: ${{ steps.pi.outputs.commit }}
+          path: .pi-reference
+          persist-credentials: false
+      - name: Isolate reference source
+        run: |
+          mv .pi-reference "$RUNNER_TEMP/pi-reference"
+          echo "PI_REFERENCE=$RUNNER_TEMP/pi-reference" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Install pinned reference dependencies
+        working-directory: ${{ runner.temp }}/pi-reference
+        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --include-workspace-root --no-audit --no-fund
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13'
+      - uses: julia-actions/cache@v2
+      - name: Instantiate native Julia implementation
+        run: julia --project -e 'using Pkg; Pkg.instantiate()'
+      - name: Compare native implementation to unmodified Pi
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 parity/check.py --report "$RUNNER_TEMP/pi-parity.json" 2>&1 | tee "$RUNNER_TEMP/pi-differential.log"
+      - name: Archive exact candidate source
+        if: always()
+        run: git archive --format=tar.gz HEAD -o "$RUNNER_TEMP/candidate-source.tar.gz"
+      - name: Retain differential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-differential-evidence
+          path: |
+            ${{ runner.temp }}/pi-parity.json
+            ${{ runner.temp }}/pi-differential.log
+            ${{ runner.temp }}/candidate-source.tar.gz
+          if-no-files-found: error
