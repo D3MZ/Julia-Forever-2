@@ -27,10 +27,7 @@ function provider_selection_snapshot(kernel::Kernel)
 end
 
 """Read provider availability for settings without coupling views to credential storage."""
-function provider_settings_snapshot(dir::AbstractString=config_dir(); registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
-    return [(descriptor=descriptor, status=String(Base.invokelatest(descriptor.status, dir)))
-        for descriptor in provider_descriptors(registry)]
-end
+provider_settings_snapshot(dir::AbstractString=config_dir(); registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) = [(descriptor=descriptor, status=String(Base.invokelatest(descriptor.status, dir))) for descriptor in provider_descriptors(registry)]
 
 """Select and persist a provider only after its component is installed successfully."""
 select_provider!(kernel::Kernel, id::Symbol; dir::AbstractString=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) = select!(kernel, provider_from_name(id; dir, registry), id, dir)

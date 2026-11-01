@@ -37,10 +37,7 @@ mutable struct JsonRpcPeer{I,O}
 end
 
 """Create a line-delimited JSON-RPC peer over caller-owned streams, without starting a reader."""
-function JsonRpcPeer(input, output; on_request=nothing, on_notification=nothing)
-    return JsonRpcPeer(input, output, ReentrantLock(), ReentrantLock(), UInt8[],
-        Dict{Any,Channel{RpcResult}}(), Task[], nothing, nothing, nothing, on_request, on_notification)
-end
+JsonRpcPeer(input, output; on_request=nothing, on_notification=nothing) = JsonRpcPeer(input, output, ReentrantLock(), ReentrantLock(), UInt8[], Dict{Any,Channel{RpcResult}}(), Task[], nothing, nothing, nothing, on_request, on_notification)
 
 Base.isopen(peer::JsonRpcPeer) = lock(() -> isnothing(peer.failure), peer.lock)
 

@@ -53,9 +53,7 @@ mutable struct BatchExecution{C,L,E}
     completed::Channel{Int}
     index::Int
 
-    function BatchExecution(scope::ExtensionScope, calls::C, limit::L, context::E) where {C,L<:Integer,E}
-        limit >= 1 ? new{C,L,E}(scope, calls, limit, context, Vector{ExecutionResult}(undef, length(calls)), Dict{Int,Task}(), Channel{Int}(max(1, length(calls))), 1) : error("max_parallel must be a positive integer")
-    end
+    BatchExecution(scope::ExtensionScope, calls::C, limit::L, context::E) where {C,L<:Integer,E} = limit >= 1 ? new{C,L,E}(scope, calls, limit, context, Vector{ExecutionResult}(undef, length(calls)), Dict{Int,Task}(), Channel{Int}(max(1, length(calls))), 1) : error("max_parallel must be a positive integer")
 end
 
 """Run independently registered tools with exclusive barriers and bounded opt-in parallelism.

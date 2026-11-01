@@ -23,13 +23,9 @@ function request(url, method, body, headers, context::ExecutionContext; timeout=
     return response_result(response, text)
 end
 
-function transport_request(transport, url, body, headers, context::ExecutionContext)
-    return applicable(transport, url, body, headers, context) ? transport(url, body, headers, context) : transport(url, body, headers)
-end
+transport_request(transport, url, body, headers, context::ExecutionContext) =  applicable(transport, url, body, headers, context) ? transport(url, body, headers, context) : transport(url, body, headers)
 
-function transport_request(transport, url, method, body, headers, context::ExecutionContext, sink=nothing)
-    applicable(transport, url, method, body, headers, context, sink) ? transport(url, method, body, headers, context, sink) : buffered(transport, url, method, body, headers, context, sink)
-end
+transport_request(transport, url, method, body, headers, context::ExecutionContext, sink=nothing) = applicable(transport, url, method, body, headers, context, sink) ? transport(url, method, body, headers, context, sink) : buffered(transport, url, method, body, headers, context, sink)
 
 function buffered(transport, url, method, body, headers, context, sink)
     response = applicable(transport, url, method, body, headers, context) ? transport(url, method, body, headers, context) : transport(url, method, body, headers)

@@ -1,23 +1,13 @@
-function execute_session_action(executor, session, action, context)
-    return applicable(execute!, executor, action, context) ?
-        Base.invokelatest(execute!, executor, action, context) :
-        Base.invokelatest(execute!, executor, session, action, context)
-end
+execute_session_action(executor, session, action, context) =  applicable(execute!, executor, action, context) ? Base.invokelatest(execute!, executor, action, context) : Base.invokelatest(execute!, executor, session, action, context)
 
 execute_session_action(executor::JuliaExecutor, session, action, context) = Base.invokelatest(execute!, executor, session, action, context)
 
-function default_evaluate!(session::Session, action)
-    return execute_session_action(session.runtime.executor, session, action, current_execution_context())
-end
+default_evaluate!(session::Session, action) = execute_session_action(session.runtime.executor, session, action, current_execution_context())
 
 """Preserve existing callable and four-argument providers at the compatibility boundary."""
 respond(provider, messages, session, context::ExecutionContext) = provider(messages, session)
 
-function respond_model(provider, request::ModelRequest, session::Session, context::ExecutionContext)
-    return applicable(respond, provider, request, context) ?
-        Base.invokelatest(respond, provider, request, context) :
-        Base.invokelatest(respond, provider, request.messages, session, context)
-end
+respond_model(provider, request::ModelRequest, session::Session, context::ExecutionContext) =  applicable(respond, provider, request, context) ? Base.invokelatest(respond, provider, request, context) : Base.invokelatest(respond, provider, request.messages, session, context)
 
 apply_decision!(session::Session, answer::Answer, context) = ExecutionResult(answer)
 apply_decision!(session::Session, failure::Failure, context) = ExecutionResult(failure)
@@ -175,11 +165,7 @@ function record!(session::Session, action, context::ExecutionContext)
     append_message!(session, Message(:code_result, result.text; metadata=result))
     result
 end
-function child_session(session::Session, definition::AgentDefinition, isolated)
-    return Session(definition; messages=empty(session.conversation.messages),
-        working_directory=working_directory(session), parent_id=session.runtime.id,
-        root_id=session.runtime.root_id)
-end
+child_session(session::Session, definition::AgentDefinition, isolated) = Session(definition; messages=empty(session.conversation.messages), working_directory=working_directory(session), parent_id=session.runtime.id, root_id=session.runtime.root_id)
 
 function child_session(session::Session, ::Nothing, isolated::Bool)
     kernel = isolated ? fork_kernel(session.kernel) : session.kernel

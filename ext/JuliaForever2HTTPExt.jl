@@ -15,14 +15,9 @@ end
 Base.close(server::WebServer) = HTTP.forceclose(server.backend)
 JuliaForever2.web_url(server::WebServer) = "http://$(server.host):$(server.port)"
 
-function response(status::Integer, body::AbstractString, mime::AbstractString="application/json")
-    return HTTP.Response(status; headers=["Content-Type" => mime, "Cache-Control" => "no-store",
-        "X-Content-Type-Options" => "nosniff", "Referrer-Policy" => "no-referrer"], body)
-end
+response(status::Integer, body::AbstractString, mime::AbstractString="application/json") = HTTP.Response(status; headers=["Content-Type" => mime, "Cache-Control" => "no-store", "X-Content-Type-Options" => "nosniff", "Referrer-Policy" => "no-referrer"], body)
 
-function rpc_response(api::JuliaForever2.SessionAPI, request::HTTP.Request)
-    length(request.body) <= 1_048_576 ? dispatch(api, JSON.parse(String(request.body))) : response(413, "{\"error\":\"Payload too large\"}")
-end
+rpc_response(api::JuliaForever2.SessionAPI, request::HTTP.Request) = length(request.body) <= 1_048_576 ? dispatch(api, JSON.parse(String(request.body))) : response(413, "{\"error\":\"Payload too large\"}")
 
 dispatch(api::JuliaForever2.SessionAPI, frame) = response(400, "{\"error\":\"Invalid JSON-RPC request\"}")
 
@@ -87,9 +82,7 @@ end
 
 WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(port))
 """Start a token-authenticated loopback Web server backed only by Julia-native sessions."""
-function JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request)
-    serve(api, WebAddress(host, port), token, handler)
-end
+JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request) = serve(api, WebAddress(host, port), token, handler)
 
 function serve(api, address::WebAddress, token, handler)
     server = HTTP.serve!(request -> Base.invokelatest(handler, api, token, request), address.host, address.port; verbose=false, max_body_bytes=1_048_576)

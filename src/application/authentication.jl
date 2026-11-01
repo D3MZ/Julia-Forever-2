@@ -115,11 +115,7 @@ finish_authorization_registration!(provider, dir) = nothing
 auth_request(url::AbstractString, body::String, headers, context::ExecutionContext=ExecutionContext()) = http_request(url, "POST", body, headers, context; timeout=60.0)
 
 """Complete a provider authorization through its own exchange protocol."""
-function complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, callback;
-        transport=auth_request, identity=nothing, context=ExecutionContext(),
-        persist=(provider, data) -> (save_credentials!(dir, provider, data); true))
-    callback.ok ? complete_authorization!(Val(attempt.provider), dir, attempt, callback; transport, identity, context, persist) : (ok=false, reason=callback.reason)
-end
+complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, callback; transport=auth_request, identity=nothing, context=ExecutionContext(), persist=(provider, data) -> (save_credentials!(dir, provider, data); true)) = callback.ok ? complete_authorization!(Val(attempt.provider), dir, attempt, callback; transport, identity, context, persist) : (ok=false, reason=callback.reason)
 mutable struct AuthFlow{C}
     lock::ReentrantLock
     cancelled::Bool

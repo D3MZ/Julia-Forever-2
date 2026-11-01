@@ -29,9 +29,7 @@ function notify_completion!(app::App, id::Symbol, task::Task, value; cleanup=Ret
     return watcher
 end
 
-function ui_context(app::App)
-    return ExecutionContext(; event_sink=event -> enqueue_event!(app, TaskEvent(event.kind, event.data)))
-end
+ui_context(app::App) = ExecutionContext(; event_sink=event -> enqueue_event!(app, TaskEvent(event.kind, event.data)))
 
 function track_operation!(app::App, handle::TaskHandle, id::Symbol, status::AbstractString)
     clear_preview!(app)

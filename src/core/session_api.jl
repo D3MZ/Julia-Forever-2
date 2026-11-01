@@ -22,14 +22,9 @@ function api_session_summary(name::AbstractString, session::Session)
         "messages" => length(history_snapshot(session).messages))
 end
 
-function api_message(message::Message)
-    return Dict("role" => String(message.role), "kind" => String(message.kind), "content" => message.content)
-end
+api_message(message::Message) = Dict("role" => String(message.role), "kind" => String(message.kind), "content" => message.content)
 
-function api_hit(hit)
-    return Dict("session" => hit.session, "index" => hit.index, "role" => String(hit.role),
-        "kind" => String(hit.kind), "content" => hit.content)
-end
+api_hit(hit) = Dict("session" => hit.session, "index" => hit.index, "role" => String(hit.role), "kind" => String(hit.kind), "content" => hit.content)
 
 api_parameter(params::AbstractDict, key::String) = get(params, key, nothing)
 

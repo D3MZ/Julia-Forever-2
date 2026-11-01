@@ -50,9 +50,7 @@ function anthropic_model_usage!(state::ModelStreamState, raw::AbstractDict; init
     return nothing
 end
 
-function anthropic_block_start!(state::ModelStreamState, event::AbstractDict)
-    insertblock!(state, event["index"], anthropicblock(event["content_block"]))
-end
+anthropic_block_start!(state::ModelStreamState, event::AbstractDict) = insertblock!(state, event["index"], anthropicblock(event["content_block"]))
 
 function anthropicblock(source)
     kind = source["type"]

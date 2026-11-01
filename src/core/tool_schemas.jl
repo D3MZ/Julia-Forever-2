@@ -44,9 +44,7 @@ json_schema_matches(kind, ::AbstractVector) = kind == "array"
 """Reject schema keywords that this opt-in validator cannot enforce."""
 validate_checked_schema(node, path="schema") = error("$path must be a JSON Schema object")
 
-function validate_checked_schema(node::AbstractDict, path="schema")
-    all(key isa AbstractString for key in keys(node)) ? validateschema(node, path) : error("$path must use string property names")
-end
+validate_checked_schema(node::AbstractDict, path="schema") = all(key isa AbstractString for key in keys(node)) ? validateschema(node, path) : error("$path must use string property names")
 
 function validateschema(node, path)
     kind = get(node, "type", missing)
@@ -108,13 +106,9 @@ function properties!(allowed, node, path)
     nothing
 end
 
-function properties(value, path)
-    value isa AbstractDict && all(key isa AbstractString for key in keys(value)) ? value : error("$path.properties must be a dictionary with string keys")
-end
+properties(value, path) = value isa AbstractDict && all(key isa AbstractString for key in keys(value)) ? value : error("$path.properties must be a dictionary with string keys")
 
-function required(value, properties, path)
-    value isa AbstractVector && all(name -> name isa AbstractString && haskey(properties, name), value) ? value : error("$path.required must name declared string properties")
-end
+required(value, properties, path) = value isa AbstractVector && all(name -> name isa AbstractString && haskey(properties, name), value) ? value : error("$path.required must name declared string properties")
 
 additional(value::Bool, path) = value
 additional(value, path) = error("$path.additionalProperties must be a boolean")
@@ -130,9 +124,7 @@ function literals!(allowed, kind, node, path)
     nothing
 end
 
-function choices(value, kind, path)
-    value isa AbstractVector && !isempty(value) && all(item -> json_schema_matches(kind, item), value) ? value : error("$path.enum must contain values of the declared type")
-end
+choices(value, kind, path) = value isa AbstractVector && !isempty(value) && all(item -> json_schema_matches(kind, item), value) ? value : error("$path.enum must contain values of the declared type")
 
 function constant(node, kind, path)
     if !json_schema_matches(kind, node["const"])

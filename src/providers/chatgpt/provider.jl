@@ -91,9 +91,7 @@ function consume!(stream::ChatGPTStream, data::AbstractDict, event)
     nothing
 end
 
-function respond(provider::OpenAIProvider, request::ModelRequest, context::ExecutionContext)
-    cancelled(context) ? provider_failure("Request cancelled or timed out.") : authenticate(provider, request, context)
-end
+respond(provider::OpenAIProvider, request::ModelRequest, context::ExecutionContext) = cancelled(context) ? provider_failure("Request cancelled or timed out.") : authenticate(provider, request, context)
 
 function authenticate(provider::OpenAIProvider, request::ModelRequest, context)
     refreshed = refresh_chatgpt!(provider.dir; transport=provider.auth_transport, context)

@@ -322,9 +322,7 @@ event_value(value) = value
 event_value(value::Task) = event_value(fetch(value))
 event_bailed(value) = value !== nothing && value !== false
 
-function invoke_listener(invocation::EventInvocation, arguments; awaited=false)
-    claim_listener!(invocation.listener) ? invoke(invocation, arguments, awaited) : nothing
-end
+invoke_listener(invocation::EventInvocation, arguments; awaited=false) = claim_listener!(invocation.listener) ? invoke(invocation, arguments, awaited) : nothing
 
 function invoke(invocation::EventInvocation, arguments, awaited::Bool)
     value = Base.invokelatest(invocation.listener.callback, arguments...)
@@ -365,9 +363,7 @@ function dispatch_listeners(::Val{:parallel}, invocations, arguments)
     return nothing
 end
 
-function event_waterfall(invocations, index, arguments, inner)
-    index > length(invocations) ? Base.invokelatest(inner) : cascade(invocations[index], invocations, index, arguments, inner)
-end
+event_waterfall(invocations, index, arguments, inner) = index > length(invocations) ? Base.invokelatest(inner) : cascade(invocations[index], invocations, index, arguments, inner)
 
 function cascade(invocation::EventInvocation, invocations, index, arguments, inner)
     if claim_listener!(invocation.listener)
@@ -793,9 +789,7 @@ apply_tool_completion(decision, result::ExecutionResult) = ExecutionResult(false
 apply_tool_completion(decision, result::ExecutionResult, spec::ToolSpec, arguments) = apply_tool_completion(decision, result)
 
 """Reject attempts to revive a failure; validate and rerender substituted values."""
-function apply_tool_completion(decision::ToolResultValue, result::ExecutionResult, spec::ToolSpec, arguments)
-    result.ok ? substitute(decision, spec, arguments) : ExecutionResult(false, "Cannot replace a failed tool result")
-end
+apply_tool_completion(decision::ToolResultValue, result::ExecutionResult, spec::ToolSpec, arguments) = result.ok ? substitute(decision, spec, arguments) : ExecutionResult(false, "Cannot replace a failed tool result")
 
 function substitute(decision::ToolResultValue, spec::ToolSpec, arguments)
     value = decision.value
@@ -806,9 +800,7 @@ end
 tool_output_text(renderer, arguments, value) = Base.invokelatest(renderer, arguments, value)
 
 """A renderer is opt-in; its failure must not expose an otherwise valid tool value."""
-function present_tool_result(spec::ToolSpec, arguments, result::ExecutionResult)
-    isnothing(spec.output_renderer) ? result : render(spec, arguments, result)
-end
+present_tool_result(spec::ToolSpec, arguments, result::ExecutionResult) = isnothing(spec.output_renderer) ? result : render(spec, arguments, result)
 
 function render(spec::ToolSpec, arguments, result::ExecutionResult)
     worker = spawn_scoped(() -> Base.invokelatest(tool_output_text, spec.output_renderer, arguments, result.value))
@@ -906,9 +898,7 @@ fork_executor(executor::ToolExecutor) = ToolExecutor(ExtensionScope(executor.sco
 close_executor!(executor::ToolExecutor) = executor.owns_scope ? close(executor.scope) : nothing
 
 """Execute a protocol-independent tool action through an injected scoped tool registry."""
-function execute!(executor::ToolExecutor, action::ToolCall, context::ExecutionContext)
-    cancelled(context) ? ExecutionResult(false, "Cancelled") : execute(executor, action, context)
-end
+execute!(executor::ToolExecutor, action::ToolCall, context::ExecutionContext) = cancelled(context) ? ExecutionResult(false, "Cancelled") : execute(executor, action, context)
 
 function execute(executor::ToolExecutor, action::ToolCall, context::ExecutionContext)
     result = invoke_tool!(executor.scope, action.name, action.arguments; context)

@@ -77,9 +77,7 @@ function override!(target::AbstractDict, patch, identity, warn)
     nothing
 end
 """Apply ordered entry patches with explicit skipped-patch diagnostics."""
-function apply_entry_patches(entries::AbstractVector, patches; warn=Returns(nothing))
-    isnothing(patches) || ismissing(patches) || isempty(patches) ? copy(entries) : patch!(entry_patch_copy(entries), patches, warn)
-end
+apply_entry_patches(entries::AbstractVector, patches; warn=Returns(nothing)) = isnothing(patches) || ismissing(patches) || isempty(patches) ? copy(entries) : patch!(entry_patch_copy(entries), patches, warn)
 
 function patch!(result::AbstractVector, patches, warn)
     index = index_patch_entries!(Dict{Any,Any}(), result)

@@ -1,6 +1,4 @@
-function codex_sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), executable=Sys.which("codex"))
-    active_auth(flow) ? login!(flow, executable, announce) : (ok=false, reason="Sign-in cancelled.")
-end
+codex_sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), executable=Sys.which("codex")) = active_auth(flow) ? login!(flow, executable, announce) : (ok=false, reason="Sign-in cancelled.")
 
 function login!(flow::AuthFlow, ::Nothing, announce)
     close(flow.context)

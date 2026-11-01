@@ -34,12 +34,7 @@ struct ExecutionTaskScope{R,C,O,S}
     owners::S
 end
 
-function execution_task_scope(; runtime=get(task_local_storage(), :JuliaForever2_runtime, nothing),
-        context=get(task_local_storage(), :JuliaForever2_context, nothing),
-        owner_context=get(task_local_storage(), :JuliaForever2_owner_context, nothing),
-        owners=get(task_local_storage(), :JuliaForever2_owners, ()))
-    return ExecutionTaskScope(runtime, context, owner_context, owners)
-end
+execution_task_scope(; runtime=get(task_local_storage(), :JuliaForever2_runtime, nothing), context=get(task_local_storage(), :JuliaForever2_context, nothing), owner_context=get(task_local_storage(), :JuliaForever2_owner_context, nothing), owners=get(task_local_storage(), :JuliaForever2_owners, ())) = ExecutionTaskScope(runtime, context, owner_context, owners)
 
 function in_execution_scope(f, scope::ExecutionTaskScope)
     task_local_storage(:JuliaForever2_runtime, scope.runtime) do
