@@ -90,10 +90,13 @@ function session_lineage(record::SessionRecord)
         (id=UUID(String(identity["id"])), parent_id=isnothing(ancestor) ? nothing : UUID(String(ancestor)), root_id=UUID(String(identity["root_id"])))
     end
 end
-"""Read a saved session's persistent identity without restoring its execution environment."""
+"""Read persisted ancestry without materializing the session's message history."""
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
-    record = saved_session_record(store, name)
-    return isnothing(record) ? nothing : record.lineage
+    path = session_file(store, name)
+    if isnothing(path) || !isfile(path)
+        return nothing
+    end
+    session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
 end
 
 """Return stored descendants of a session identity in deterministic session-name order."""

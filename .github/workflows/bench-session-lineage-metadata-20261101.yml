@@ -1,0 +1,286 @@
+name: Session lineage metadata-only paired performance experiment
+on:
+  push:
+    branches:
+      - perf/session-lineage-metadata-20261101t1440
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: 'd2a0cacf910df92c4118b4955075624ac2966494'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Prepare exact main worktree and record environment
+        shell: bash
+        run: |
+          mkdir -p benchmark-evidence
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/lineage-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/lineage-baseline" >> "$GITHUB_ENV"
+          julia --version | tee benchmark-evidence/julia-version.txt
+          git rev-parse HEAD > benchmark-evidence/candidate-sha.txt
+          git -C "$RUNNER_TEMP/lineage-baseline" rev-parse HEAD > benchmark-evidence/baseline-sha.txt
+          lscpu > benchmark-evidence/runner-cpu.txt
+          uname -a > benchmark-evidence/runner-os.txt
+          env | grep -E '^(JULIA_|OPENBLAS_|GITHUB_RUN|RUNNER_)' | sort > benchmark-evidence/relevant-env.txt
+      - name: Install pinned Julia test dependencies
+        shell: bash
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()' 2>&1 | tee benchmark-evidence/dependency-status.txt
+      - name: Seven warmed alternating baseline/candidate pairs and CPU/allocation profiles
+        shell: bash
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/lineage-benchmark.jl" <<'JULIA'
+          using JuliaForever2, JSON, Profile, Statistics, SHA
+          using UUIDs: UUID, uuid5
+          
+          length(ARGS) == 2 || error("Expected baseline directory and evidence directory")
+          const baseline_directory = realpath(ARGS[1])
+          const evidence = abspath(ARGS[2])
+          mkpath(evidence)
+          
+          module BaselineNamespace end
+          Base.include(BaselineNamespace, joinpath(baseline_directory, "src/JuliaForever2.jl"))
+          const Baseline = BaselineNamespace.JuliaForever2
+          const Candidate = JuliaForever2
+          
+          const fixture_directory = mktempdir()
+          const fixture_store = Candidate.SessionStore(fixture_directory)
+          const session_count = 144
+          const messages_per_session = 128
+          const identities = [uuid5(UUID("bcb34f87-e386-4c32-8eef-8454546175db"),
+              "metadata-benchmark-$number") for number in 1:session_count]
+          session_name(number) = "session_" * lpad(number, 4, '0')
+          const fixture_lineage = Vector{Any}(undef, session_count)
+          
+          for number in 1:session_count
+              parent_id = number == 1 ? nothing :
+                  number <= 120 ? identities[number - 1] : identities[mod(number - 121, 24) + 1]
+              messages = Candidate.Message[Candidate.Message(isodd(position) ? :user : :assistant,
+                  "transcript $number message $position " * repeat("tool execution result ", 3), :text)
+                  for position in 1:messages_per_session]
+              session = Candidate.Session(Candidate.Kernel(); messages, id=identities[number],
+                  parent_id, root_id=identities[1])
+              fixture_lineage[number] = Candidate.session_lineage(session)
+              Candidate.save_session!(fixture_store, session_name(number), session).ok ||
+                  error("Cannot save fixture $number")
+              close(session)
+          end
+          
+          const old_store = Baseline.SessionStore(fixture_directory)
+          const new_store = Candidate.SessionStore(fixture_directory)
+          
+          function restore_example(package, store)
+              session = package.load_session(store, session_name(77), package.Kernel())
+              isnothing(session) && error("Expected stored session")
+              messages = package.history_snapshot(session).messages
+              result = (length(messages), first(messages).content, last(messages).content)
+              close(session)
+              return result
+          end
+          
+          const workloads = [
+              ("integration/descendants-all", package ->
+                  package.session_descendants(package === Baseline ? old_store : new_store,
+                      identities[1]; include_self=true)),
+              ("integration/descendants-deep", package ->
+                  package.session_descendants(package === Baseline ? old_store : new_store,
+                      identities[16]; include_self=false)),
+              ("integration/lineage-catalog", package -> [
+                  package.session_lineage(package === Baseline ? old_store : new_store,
+                      session_name(number)) for number in 1:session_count]),
+              ("lineage/one-heavy", package ->
+                  package.session_lineage(package === Baseline ? old_store : new_store, session_name(77))),
+              ("lineage/first-heavy", package ->
+                  package.session_lineage(package === Baseline ? old_store : new_store, session_name(1))),
+              ("control/missing-lineage", package ->
+                  package.session_lineage(package === Baseline ? old_store : new_store, "does_not_exist")),
+              ("control/restore-session", package ->
+                  restore_example(package, package === Baseline ? old_store : new_store)),
+              ("control/stored-search", package ->
+                  package.search_history(package === Baseline ? old_store : new_store,
+                      "transcript 77"; sessions=[session_name(77)], limit=4)),
+          ]
+          
+          function measure(f)
+              GC.gc()
+              times_ns = Int[]
+              for _ in 1:9
+                  start = time_ns()
+                  f()
+                  push!(times_ns, time_ns() - start)
+              end
+              (times_ns=times_ns, median_ns=median(times_ns),
+                  allocated_bytes=Base.@allocated(f()), allocation_count=Base.@allocations(f()))
+          end
+          
+          function ci_95(values)
+              length(values) == 7 || error("Expected seven pairs")
+              seed = UInt64(0x5a1e_1a6e)
+              resamples = Float64[]
+              for _ in 1:12000
+                  draw = Float64[]
+                  for _ in 1:length(values)
+                      seed = seed * UInt64(6364136223846793005) + UInt64(1442695040888963407)
+                      push!(draw, values[Int(mod(seed, UInt64(length(values)))) + 1])
+                  end
+                  push!(resamples, median(draw))
+              end
+              return (lower=quantile(resamples, 0.025), upper=quantile(resamples, 0.975))
+          end
+          
+          function profile_workload(f, prefix)
+              GC.gc()
+              Profile.clear()
+              f()
+              Profile.@profile begin
+                  for _ in 1:16
+                      f()
+                  end
+              end
+              open(joinpath(evidence, prefix * "-cpu.txt"), "w") do output
+                  Profile.print(output; format=:flat, sortedby=:count)
+              end
+              Profile.Allocs.clear()
+              Profile.Allocs.@profile sample_rate=0.025 f()
+              locations = Dict{String,Tuple{Int,Int}}()
+              for allocation in Profile.Allocs.fetch().allocs
+                  isempty(allocation.stacktrace) && continue
+                  frame = first(allocation.stacktrace)
+                  for location in allocation.stacktrace
+                      if endswith(string(location.file), "session_store.jl")
+                          frame = location
+                          break
+                      end
+                  end
+                  label = string(frame.file, ":", frame.line, " ", frame.func)
+                  count, bytes = get(locations, label, (0, 0))
+                  locations[label] = (count + 1, bytes + allocation.size)
+              end
+              records = [(site=site, count=value[1], bytes=value[2]) for (site, value) in locations]
+              sort!(records; by=x -> x.bytes, rev=true)
+              write(joinpath(evidence, prefix * "-allocation-sites.json"),
+                  JSON.json((sample_rate=0.025, sites=records)))
+              Profile.Allocs.clear()
+          end
+          
+          metadata = (baseline_sha=readchomp(Cmd(["git", "-C", baseline_directory, "rev-parse", "HEAD"])),
+              candidate_sha=readchomp(Cmd(["git", "rev-parse", "HEAD"])),
+              julia_version=string(VERSION), julia_threads=Threads.nthreads(),
+              blas_threads=Base.BLAS.get_num_threads(), cpu=Sys.CPU_NAME,
+              logical_cpus=Sys.CPU_THREADS, architecture=string(Sys.ARCH),
+              os=string(Sys.KERNEL), json_version=string(Base.pkgversion(JSON)),
+              baseline_project_sha256=bytes2hex(sha256(read(joinpath(baseline_directory, "Project.toml")))),
+              candidate_project_sha256=bytes2hex(sha256(read("Project.toml"))),
+              baseline_test_project_sha256=bytes2hex(sha256(read(joinpath(baseline_directory, "test/Project.toml")))),
+              candidate_test_project_sha256=bytes2hex(sha256(read("test/Project.toml"))),
+              fixture_directory=fixture_directory, session_count=session_count,
+              messages_per_session=messages_per_session, fixture_bytes=sum(filesize(joinpath(fixture_directory, file)) for file in readdir(fixture_directory)),
+              pairs=7, repetitions_per_side=9, warmups_per_side=5,
+              order="AB,BA,AB,BA,AB,BA,AB", confidence="12,000 deterministic bootstrap median resamples",
+              environment="same Julia process, machine, project, dependencies, input files, thread count")
+          write(joinpath(evidence, "metadata.json"), JSON.json(metadata))
+          write(joinpath(evidence, "fixture-sha256.txt"),
+              bytes2hex(sha256(join((read(joinpath(fixture_directory, name), String) for name in sort(readdir(fixture_directory))), ""))))
+          
+          const summaries = Dict{String,Any}()
+          const raw = Dict{String,Any}()
+          const correctness = Dict{String,Any}()
+          gate_failures = String[]
+          for (name, workload) in workloads
+              baseline_fn = () -> workload(Baseline)
+              candidate_fn = () -> workload(Candidate)
+              old_value = baseline_fn()
+              new_value = candidate_fn()
+              equal = isequal(old_value, new_value)
+              correctness[name] = equal
+              equal || push!(gate_failures, "$name baseline/candidate output mismatch")
+              for _ in 1:5
+                  baseline_fn()
+                  candidate_fn()
+              end
+              pairs = Any[]
+              ratios = Float64[]
+              allocated_old, allocated_new = Int[], Int[]
+              for pair in 1:7
+                  if isodd(pair)
+                      old = measure(baseline_fn)
+                      new = measure(candidate_fn)
+                  else
+                      new = measure(candidate_fn)
+                      old = measure(baseline_fn)
+                  end
+                  push!(pairs, (pair=pair, order=isodd(pair) ? "AB" : "BA",
+                      baseline=old, candidate=new))
+                  push!(ratios, 1 - new.median_ns / old.median_ns)
+                  push!(allocated_old, old.allocated_bytes)
+                  push!(allocated_new, new.allocated_bytes)
+              end
+              ci = ci_95(ratios)
+              result = (median_improvement=median(ratios), ci_95=ci,
+                  worst_paired_improvement=minimum(ratios),
+                  baseline_allocated_bytes=median(allocated_old),
+                  candidate_allocated_bytes=median(allocated_new))
+              summaries[name] = result
+              raw[name] = pairs
+              write(joinpath(evidence, "raw-paired.json"), JSON.json(raw))
+              write(joinpath(evidence, "summary.json"), JSON.json(summaries))
+              write(joinpath(evidence, "correctness.json"), JSON.json(correctness))
+              println(name, " median=", round(result.median_improvement * 100; digits=2),
+                  "%, 95% CI lower=", round(ci.lower * 100; digits=2),
+                  "%, allocations=", result.baseline_allocated_bytes, "->",
+                  result.candidate_allocated_bytes)
+              if startswith(name, "control/")
+                  if result.median_improvement < -0.05 || ci.lower < -0.10
+                      push!(gate_failures, "$name material or statistically plausible regression")
+                  end
+              else
+                  if result.median_improvement < -0.05 || ci.lower < -0.10
+                      push!(gate_failures, "$name material or statistically plausible regression")
+                  end
+              end
+          end
+          
+          for prefix in ("baseline", "candidate")
+              package = prefix == "baseline" ? Baseline : Candidate
+              profile_workload(() -> first(workloads)[2](package), prefix)
+          end
+          
+          representative = summaries["integration/descendants-all"]
+          if representative.median_improvement < 0.10 ||
+                  representative.ci_95.lower <= 0.10 ||
+                  representative.worst_paired_improvement <= 0.10
+              push!(gate_failures, "Representative integration improvement does not confidently exceed 10%")
+          end
+          write(joinpath(evidence, "acceptance-gate.json"),
+              JSON.json((passed=isempty(gate_failures), failures=gate_failures, representative)))
+          println("ACCEPTANCE: ", isempty(gate_failures) ? "PASS" : "FAIL")
+          foreach(println, gate_failures)
+          isempty(gate_failures) || exit(1)
+          JULIA
+          julia --project=test "$RUNNER_TEMP/lineage-benchmark.jl" "$BASELINE_DIR" "$GITHUB_WORKSPACE/benchmark-evidence" 2>&1 | tee benchmark-evidence/benchmark.log
+      - name: Focused core correctness, syntax lint and Aqua
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl core lint aqua 2>&1 | tee benchmark-evidence/correctness.log
+      - name: Upload raw measurements even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-lineage-metadata-paired-raw-profiles
+          path: benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30

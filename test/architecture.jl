@@ -570,3 +570,32 @@ end
         @test isnothing(JuliaForever2.load_profile(store, Symbol("")))
     end
 end
+
+
+@testset "Metadata-only persisted lineage retains restore and descendant semantics" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        root = Session(Kernel(); messages=[Message(:user, "persistent record $index", :text)
+            for index in 1:96])
+        root_identity = JuliaForever2.session_lineage(root)
+        @test JuliaForever2.save_session!(store, "root", root).ok
+        child = Session(Kernel(); messages=[Message(:assistant, "child message $index", :text)
+            for index in 1:96], parent_id=root_identity.id, root_id=root_identity.root_id)
+        child_identity = JuliaForever2.session_lineage(child)
+        @test JuliaForever2.save_session!(store, "child", child).ok
+
+        @test JuliaForever2.session_lineage(store, "root") == root_identity
+        @test JuliaForever2.session_lineage(store, :child) == child_identity
+        @test JuliaForever2.session_descendants(store, "root") == ["child"]
+        @test JuliaForever2.session_descendants(store, root_identity.id; include_self=true) == ["child", "root"]
+        @test isnothing(JuliaForever2.session_lineage(store, "missing"))
+        @test isnothing(JuliaForever2.session_lineage(store, "../invalid"))
+        restored = JuliaForever2.load_session(store, "child", Kernel())
+        @test !isnothing(restored)
+        @test length(JuliaForever2.history_snapshot(restored).messages) == 96
+        @test JuliaForever2.history_snapshot(restored).messages[end].content == "child message 96"
+        close(restored)
+        close(child)
+        close(root)
+    end
+end
