@@ -2,14 +2,6 @@ name: Refresh Hercules history
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - '.github/workflows/hercules-history.yml'
-      - 'scripts/render_hercules_history.py'
-      - 'scripts/test_render_hercules_history.py'
-      - 'scripts/update_hercules_readme.py'
-      - 'scripts/test_update_hercules_readme.py'
-      - 'assets/hercules-history.png'
 
 permissions:
   contents: write

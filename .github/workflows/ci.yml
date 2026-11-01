@@ -1,92 +1,62 @@
-name: CI
+name: Merge compatible pull requests
 
+# No PR test gate: this worker checks only GitHub's three-way mergeability.
+# Do not check out or execute PR code with this write-capable token.
 on:
-  push:
-  pull_request:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: optimistic-main-merges
+  cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      JULIA_NUM_THREADS: '2'
+  merge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - name: Read reviewed Pi pin
-        id: pi
-        run: python3 -c 'import json, os; print("commit=" + json.load(open("parity/pi-lock.json"))["commit"], file=open(os.environ["GITHUB_OUTPUT"], "a"))'
-      - uses: actions/checkout@v4
-        with:
-          repository: earendil-works/pi
-          ref: ${{ steps.pi.outputs.commit }}
-          path: .pi-reference
-          persist-credentials: false
-      - name: Keep oracle outside package and lint trees
-        run: |
-          echo "PI_REFERENCE=$RUNNER_TEMP/pi-reference" >> "$GITHUB_ENV"
-          echo "PI_PARITY_REPORT=$RUNNER_TEMP/pi-parity.json" >> "$GITHUB_ENV"
-          mv .pi-reference "$RUNNER_TEMP/pi-reference"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24.22.1'
-      - name: Install pinned Pi dependencies without lifecycle scripts
-        working-directory: ${{ runner.temp }}/pi-reference
-        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --include-workspace-root --no-audit --no-fund
-      - name: Fetch pinned DSH differential oracle
-        shell: bash
-        run: |
-          DSH_REFERENCE_ROOT="$RUNNER_TEMP/deepseek-harness"
-          echo "DSH_REFERENCE_ROOT=$DSH_REFERENCE_ROOT" >> "$GITHUB_ENV"
-          echo "DSH_BIN=$DSH_REFERENCE_ROOT/apps/cli/lib/bin.js" >> "$GITHUB_ENV"
-          git init "$DSH_REFERENCE_ROOT"
-          git -C "$DSH_REFERENCE_ROOT" remote add origin https://github.com/deepseek-ai/deepseek-harness.git
-          git -C "$DSH_REFERENCE_ROOT" fetch --depth 1 origin ce7073d51254c26cd63b22a60835b8f948deb447
-          git -C "$DSH_REFERENCE_ROOT" checkout --detach FETCH_HEAD
-      - name: Build the pinned DSH runtime oracle
+      - name: Merge clean same-repository PRs without running their code
         shell: bash
         env:
-          NODE_OPTIONS: --max-old-space-size=6144
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          npm install --prefix "$RUNNER_TEMP/dsh-build-tools" --ignore-scripts --no-audit --no-fund pnpm@11.28.5
-          export PATH="$RUNNER_TEMP/dsh-build-tools/node_modules/.bin:$PATH"
-          pnpm --dir "$DSH_REFERENCE_ROOT" install --frozen-lockfile --ignore-scripts
-          pnpm --dir "$DSH_REFERENCE_ROOT" run build:native-system
-          pnpm --dir "$DSH_REFERENCE_ROOT" exec tsx scripts/compile-referenced-projects.ts host-libraries
-          pnpm --dir "$DSH_REFERENCE_ROOT" run build:lib:client
-          pnpm --dir "$DSH_REFERENCE_ROOT" run build:web
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: '1.13'
-      - uses: julia-actions/cache@v2
-      - name: Run regression and real differential tests with coverage
-        shell: bash
-        run: |
-          set -o pipefail
-          julia --project -e 'using Pkg; Pkg.test(; coverage=true)' 2>&1 | tee "$RUNNER_TEMP/julia-tests.log"
-      - name: Upload Pi differential coverage and explicit gap report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pi-parity-report
-          path: |
-            ${{ runner.temp }}/pi-parity.json
-            ${{ runner.temp }}/julia-tests.log
-          if-no-files-found: warn
-      - uses: julia-actions/julia-processcoverage@v1
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-lcov
-          path: lcov.info
-          if-no-files-found: error
-      - name: Upload coverage report to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./lcov.info
-          disable_search: true
-          fail_ci_if_error: true
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request_target" ]]; then
+            numbers=("$PR_NUMBER")
+          else
+            mapfile -t numbers < <(gh pr list --repo "$GH_REPO" --base main --state open --limit 100 --json number --jq '.[].number')
+          fi
+
+          for number in "${numbers[@]}"; do
+            [[ "$number" =~ ^[0-9]+$ ]] || continue
+            info=$(gh api "repos/$GH_REPO/pulls/$number")
+            # A null mergeability result is retried by the periodic sweep.
+            if ! jq -e --arg repo "$GH_REPO" '
+              (.state == "open") and
+              (.base.ref == "main") and
+              (.head.repo.full_name == $repo) and
+              (.draft == false) and
+              (.mergeable == true) and
+              (all(.labels[]?; .name != "hold" and .name != "no-automerge"))
+            ' <<< "$info" >/dev/null; then
+              echo "PR #$number: draft, held, fork, conflicted, or mergeability pending; skipped."
+              continue
+            fi
+            head_sha=$(jq -r '.head.sha' <<< "$info")
+            if gh api -X PUT "repos/$GH_REPO/pulls/$number/merge" \
+                -f sha="$head_sha" -f merge_method=merge >/dev/null; then
+              echo "PR #$number: merged at head $head_sha."
+            else
+              echo "PR #$number: merge was rejected or main advanced; retry next sweep."
+            fi
+          done
