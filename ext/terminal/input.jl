@@ -48,7 +48,6 @@ function edit_prompt_control!(input::TextInput, key::Char)
     end
 end
 
-"""Route decoded terminal keys through the reusable prompt editor."""
 """Find the end of the next whitespace-delimited word."""
 function next_word_cursor(input::TextInput)
     cursor, count = input.cursor, length(input.buffer)
