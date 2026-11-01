@@ -13,7 +13,7 @@ jobs:
       JULIA_NUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
       JULIA_PKG_PRECOMPILE_AUTO: '0'
-      BASELINE_SHA: '5f7a7845d3cf48a9e4d0a470043f77e2880952be'
+      BASELINE_SHA: 'bfb82da497e1b3213d7ecce172f88dc7f24aff3a'
     steps:
       - uses: actions/checkout@v4
         with:
