@@ -233,3 +233,23 @@ end
     completed = JuliaForever2.codex_completed_usage(Dict("type" => "turn.completed", "usage" => Dict("input_tokens" => 7)))
     @test completed.input_tokens == 7
 end
+
+@testset "Conversation mutations expose their updated state for composition" begin
+    conversation = Conversation()
+    first = JuliaForever2.UsageReport(2, 3, 0.25)
+    @test JuliaForever2.record_usage!(conversation, first) === conversation
+    @test JuliaForever2.record_usage!(conversation,
+        Dict("input_tokens" => 4, "output_tokens" => 5, "cost" => 0.5)) === conversation
+    accounting = JuliaForever2.usage_snapshot(conversation)
+    @test accounting == (input_tokens=6, output_tokens=8, cost=0.75,
+        reported=true, cost_known=true, partial=false)
+
+    JuliaForever2.append_message!(conversation, Message(:user, "previous message"))
+    revision = JuliaForever2.history_revision(conversation)
+    @test JuliaForever2.clear_history!(conversation) === conversation
+    cleared = JuliaForever2.history_snapshot(conversation)
+    @test isempty(cleared.messages)
+    @test cleared.changed_from == 1
+    @test cleared.revision == revision + UInt(1)
+    @test JuliaForever2.usage_snapshot(conversation) == accounting
+end
