@@ -14,6 +14,7 @@ const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), St
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["session_markdown"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_markdown.json"), String))
+CASES["session_titles"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_titles.json"), String))
 CASES["session_control"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_control.json"), String))
 CASES["session_fork"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_fork.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
@@ -1175,6 +1176,33 @@ function session_markdown_result(input)
     return rendered
 end
 
+"""Exercise durable Julia title lifecycle while comparing text behavior to exact pinned DSH source."""
+function session_titles_result(input)
+    max_bytes, max_words, fallback_bytes = input["maxBytes"], input["maxWords"], input["fallbackBytes"]
+    normalized = JuliaForever2.normalize_session_title(input["text"]; max_bytes)
+    fallback = JuliaForever2.fallback_session_title(input["text"]; max_words, max_bytes=fallback_bytes)
+    renamed = JuliaForever2.normalize_session_title(input["rename"]; max_bytes)
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        titles = JuliaForever2.SessionTitleService(; store, max_bytes, max_words,
+            fallback_max_bytes=fallback_bytes)
+        session = Session(Kernel())
+        append_message!(session, Message(:user, input["text"]))
+        @test JuliaForever2.session_title(titles, session) ==
+            (isempty(fallback) ? nothing : fallback)
+        if !isempty(renamed)
+            @test JuliaForever2.rename_session_title!(titles, session, input["rename"]) == renamed
+            replayed = JuliaForever2.SessionTitleService(; store, max_bytes, max_words,
+                fallback_max_bytes=fallback_bytes)
+            @test JuliaForever2.session_title(replayed, session) == renamed
+            @test JuliaForever2.refresh_session_title!(replayed, session) ==
+                (isempty(fallback) ? nothing : fallback)
+        end
+        close(session)
+    end
+    return normalize(Dict("normalized" => normalized, "fallback" => fallback, "renamed" => renamed))
+end
+
 """Compare native per-session turn admission and cancellation to the pinned ACP control projection."""
 function session_control_result(input)
     entered = Channel{Base.Event}(8)
@@ -1299,7 +1327,7 @@ end
 
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
-            ("session_query", session_query_result), ("session_markdown", session_markdown_result), ("session_control", session_control_result),
+            ("session_query", session_query_result), ("session_markdown", session_markdown_result), ("session_titles", session_titles_result), ("session_control", session_control_result),
             ("session_fork", session_fork_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
