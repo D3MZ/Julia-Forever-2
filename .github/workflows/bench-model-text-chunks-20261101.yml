@@ -1,0 +1,286 @@
+name: Model text streaming chunk buffering paired experiment
+on:
+  push:
+    branches:
+      - perf/model-text-chunks-20261101t0807
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: '4728701d5d4d8b335b4a824d0f0a268869206833'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Record runner and exact baseline worktree
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/model-stream-evidence"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/model-stream-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/model-stream-baseline" >> "$GITHUB_ENV"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/model-stream-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/model-stream-baseline" rev-parse HEAD | tee "$RUNNER_TEMP/model-stream-evidence/baseline-sha.txt"
+          julia --version | tee "$RUNNER_TEMP/model-stream-evidence/julia-version.txt"
+          lscpu > "$RUNNER_TEMP/model-stream-evidence/runner-cpu.txt"
+          uname -a > "$RUNNER_TEMP/model-stream-evidence/runner-os.txt"
+      - name: Instantiate the single shared Julia test environment
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()' 2>&1 | tee "$RUNNER_TEMP/model-stream-evidence/packages.txt"
+      - name: Write experiment runner in CI workspace
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/model_text_benchmark.jl" <<'JULIA'
+          using JSON, JuliaForever2, Profile, Statistics, SHA
+          
+          length(ARGS) == 2 || error("Expected baseline directory and evidence directory")
+          const baseline_dir = realpath(ARGS[1])
+          const candidate_dir = realpath(joinpath(@__DIR__, ".."))
+          const evidence_dir = abspath(ARGS[2])
+          mkpath(evidence_dir)
+          
+          module BaselineModel
+              using JSON
+              using JuliaForever2: ModelSpec, ModelRequest, Message, Reply, UsageReport,
+                  ExecutionContext, HarnessEvent, cancelled, emit!, parse_json, decode_reply,
+                  wire_content, SSEDecoder, HTTPTransport
+              import JuliaForever2: response_reply, response_usage
+          end
+          module CandidateModel
+              using JSON
+              using JuliaForever2: ModelSpec, ModelRequest, Message, Reply, UsageReport,
+                  ExecutionContext, HarnessEvent, cancelled, emit!, parse_json, decode_reply,
+                  wire_content, SSEDecoder, HTTPTransport
+              import JuliaForever2: response_reply, response_usage
+          end
+          
+          for (module_name, directory) in ((BaselineModel, baseline_dir), (CandidateModel, candidate_dir))
+              Base.include(module_name, joinpath(directory, "src/providers/http_models/backend.jl"))
+              Base.include(module_name, joinpath(directory, "src/providers/http_models/openai_chat.jl"))
+          end
+          
+          function make_frames(chunks; thinking=false)
+              frames = String[]
+              for delta in chunks
+                  payload = Dict{String,Any}("content" => delta)
+                  thinking && (payload["reasoning_content"] = "reasoning " * delta)
+                  event = Dict("choices" => [Dict("delta" => payload, "finish_reason" => nothing)])
+                  push!(frames, "data: " * JSON.json(event) * "\n\n")
+              end
+              push!(frames, "data: " * JSON.json(Dict("choices" =>
+                  [Dict("delta" => Dict{String,Any}(), "finish_reason" => "stop")])) * "\n\n")
+              return frames
+          end
+          
+          const fixtures = Dict{String,Vector{String}}(
+              "integration/long-text-1000-chunks" => make_frames([repeat("Julia model output across streaming tool and conversation boundaries. ", 4) for _ in 1:1000]),
+              "integration/medium-text-400-chunks" => make_frames([repeat("Long assistant response with detailed state: ", 5) for _ in 1:400]),
+              "integration/unicode-500-chunks" => make_frames([repeat("λ🚀日本語 中文 Ελληνικά ", 8) for _ in 1:500]),
+              "integration/thinking-240-chunks" => make_frames([repeat("reasoned assistant text λ ", 6) for _ in 1:240]; thinking=true),
+              "control/single-chunk" => make_frames(["A single assistant message."]),
+              "control/short-12-chunks" => make_frames([repeat("short response ", 4) for _ in 1:12]),
+              "control/normal-64-chunks" => make_frames([repeat("regular response with λ ", 3) for _ in 1:64]),
+              "control/empty-chunks" => make_frames(["", "", "hello", ""]),
+          )
+          
+          function workload(model_module, frames; fragmented=false)
+              model = JuliaForever2.ModelSpec(:benchmark, "streamed-model")
+              request = JuliaForever2.ModelRequest([JuliaForever2.Message(:user, "Explain the run")],
+                  "", nothing, nothing, nothing)
+              transport = (url, method, body, headers, context, decoder) -> begin
+                  for frame in frames
+                      if fragmented
+                          bytes = codeunits(frame)
+                          for offset in 1:17:length(bytes)
+                              write(decoder, @view bytes[offset:min(offset + 16, length(bytes))])
+                          end
+                      else
+                          write(decoder, frame)
+                      end
+                  end
+                  (status=200, reason="OK")
+              end
+              backend = model_module.HTTPModelBackend(model_module.OpenAIChatProtocol(),
+                  "https://offline.invalid"; transport)
+              return () -> begin
+                  events = JuliaForever2.HarnessEvent[]
+                  context = JuliaForever2.ExecutionContext(; event_sink=event -> push!(events, event))
+                  response = model_module.respond_model(backend, model, request, context)
+                  conversation = JuliaForever2.Conversation()
+                  JuliaForever2.append_message!(conversation,
+                      JuliaForever2.Message(:assistant, response.reply.content, response.reply.kind))
+                  snapshot = JuliaForever2.history_snapshot(conversation)
+                  result = (reply_kind=response.reply.kind,
+                      transcript=only(snapshot.messages).content,
+                      blocks=[(block["type"], get(block, "text", get(block, "thinking", "")))
+                          for block in response.message["content"]],
+                      stop_reason=response.message["stopReason"],
+                      event_types=[event.data["type"] for event in events if event.kind == :model_stream],
+                      event_count=length(events))
+                  close(context)
+                  return result
+              end
+          end
+          
+          function trial(f)
+              GC.gc()
+              times = Int[]
+              for _ in 1:9
+                  start = time_ns()
+                  f()
+                  push!(times, time_ns() - start)
+              end
+              return (times_ns=times, median_ns=median(times),
+                  allocated_bytes=Base.@allocated(f()), allocation_count=Base.@allocations(f()))
+          end
+          
+          function confidence_lower(improvements)
+              state = UInt64(0xf423a3125)
+              medians = Float64[]
+              for _ in 1:10000
+                  samples = Float64[]
+                  for _ in eachindex(improvements)
+                      state = state * UInt64(6364136223846793005) + UInt64(1442695040888963407)
+                      push!(samples, improvements[Int(mod(state, UInt64(length(improvements)))) + 1])
+                  end
+                  push!(medians, median(samples))
+              end
+              return quantile(medians, 0.025)
+          end
+          
+          function profile_workload(f, label)
+              f()
+              Profile.clear()
+              Profile.@profile begin
+                  stop_at = time_ns() + 350_000_000
+                  while time_ns() < stop_at
+                      f()
+                  end
+              end
+              open(joinpath(evidence_dir, label * "-cpu.txt"), "w") do output
+                  Profile.print(output; format=:flat, sortedby=:count)
+              end
+              Profile.Allocs.clear()
+              Profile.Allocs.@profile sample_rate=0.03 f()
+              sites = Dict{String,Tuple{Int,Int}}()
+              for allocation in Profile.Allocs.fetch().allocs
+                  isempty(allocation.stacktrace) && continue
+                  frame = first(allocation.stacktrace)
+                  for location in allocation.stacktrace
+                      if endswith(string(location.file), "backend.jl")
+                          frame = location
+                          break
+                      end
+                  end
+                  site = string(frame.file, ":", frame.line, " ", frame.func)
+                  count, bytes = get(sites, site, (0, 0))
+                  sites[site] = (count + 1, bytes + allocation.size)
+              end
+              records = [(site=key, count=value[1], bytes=value[2]) for (key, value) in sites]
+              sort!(records; by=record -> record.bytes, rev=true)
+              write(joinpath(evidence_dir, label * "-allocation-sites.json"),
+                  JSON.json((sample_rate=0.03, sites=records)))
+              Profile.Allocs.clear()
+          end
+          
+          const metadata = (baseline_sha=readchomp(Cmd(["git", "-C", baseline_dir, "rev-parse", "HEAD"])),
+              candidate_sha=readchomp(Cmd(["git", "-C", candidate_dir, "rev-parse", "HEAD"])),
+              julia_version=string(VERSION), julia_threads=Threads.nthreads(),
+              cpu=Sys.CPU_NAME, logical_cpus=Sys.CPU_THREADS, os=string(Sys.KERNEL),
+              architecture=string(Sys.ARCH), json_version=string(Base.pkgversion(JSON)),
+              baseline_project_sha256=bytes2hex(sha256(read(joinpath(baseline_dir, "test/Project.toml")))),
+              candidate_project_sha256=bytes2hex(sha256(read(joinpath(candidate_dir, "test/Project.toml")))),
+              pairs=7, repetitions_per_side=9, warmups_per_side=6,
+              ordering="AB,BA,AB,BA,AB,BA,AB",
+              bootstrap="10,000 deterministic resampled paired median percentage improvements; lower 2.5 percentile",
+              integration="actual production OpenAI streaming protocol, SSE framing, JSON parsing, event routing, completion and conversation commit",
+              input_frames=Dict(name => (frames=length(frames), bytes=sum(ncodeunits, frames))
+                  for (name, frames) in fixtures))
+          write(joinpath(evidence_dir, "environment.json"), JSON.json(metadata))
+          
+          results = Dict{String,Any}()
+          for name in sort!(collect(keys(fixtures)))
+              frames = fixtures[name]
+              baseline = workload(BaselineModel, frames; fragmented=occursin("unicode", name))
+              candidate = workload(CandidateModel, frames; fragmented=occursin("unicode", name))
+              first_result = baseline()
+              candidate() == first_result || error("Baseline/candidate semantic mismatch: " * name)
+              for _ in 1:6
+                  baseline()
+                  candidate()
+              end
+              base_trials, new_trials = Any[], Any[]
+              for pair in 1:7
+                  if isodd(pair)
+                      push!(base_trials, trial(baseline))
+                      push!(new_trials, trial(candidate))
+                  else
+                      push!(new_trials, trial(candidate))
+                      push!(base_trials, trial(baseline))
+                  end
+              end
+              improvements = [1.0 - new_trials[i].median_ns / base_trials[i].median_ns for i in 1:7]
+              result = (baseline=base_trials, candidate=new_trials, paired_improvements=improvements,
+                  median_improvement=median(improvements), ci95_lower_improvement=confidence_lower(improvements),
+                  minimum_pair_improvement=minimum(improvements),
+                  baseline_median_allocations=median(getproperty.(base_trials, :allocation_count)),
+                  candidate_median_allocations=median(getproperty.(new_trials, :allocation_count)),
+                  baseline_median_bytes=median(getproperty.(base_trials, :allocated_bytes)),
+                  candidate_median_bytes=median(getproperty.(new_trials, :allocated_bytes)),
+                  correctness="exact final reply, message blocks, ordered events, stop reason and committed conversation")
+              results[name] = result
+              write(joinpath(evidence_dir, "paired-raw.json"), JSON.json((metadata=metadata, results=results)))
+              println(name, ": median improvement=", round(100 * result.median_improvement; digits=3),
+                  "% 95% lower=", round(100 * result.ci95_lower_improvement; digits=3),
+                  "% worst pair=", round(100 * result.minimum_pair_improvement; digits=3), "%")
+              flush(stdout)
+          end
+          
+          profile_workload(workload(BaselineModel, fixtures["integration/long-text-1000-chunks"]), "baseline-long-integration")
+          profile_workload(workload(CandidateModel, fixtures["integration/long-text-1000-chunks"]), "candidate-long-integration")
+          profile_workload(workload(BaselineModel, fixtures["control/short-12-chunks"]), "baseline-short-control")
+          profile_workload(workload(CandidateModel, fixtures["control/short-12-chunks"]), "candidate-short-control")
+          
+          primary = results["integration/long-text-1000-chunks"]
+          no_regressions = all(result -> result.median_improvement >= -0.05 &&
+              result.ci95_lower_improvement >= -0.10, values(results))
+          passed = primary.median_improvement > 0.10 && primary.ci95_lower_improvement > 0.10 &&
+              primary.minimum_pair_improvement > 0.10 && no_regressions
+          write(joinpath(evidence_dir, "gate.json"), JSON.json((
+              passed=passed, no_regressions=no_regressions,
+              median_improvement=primary.median_improvement,
+              ci95_lower_improvement=primary.ci95_lower_improvement,
+              worst_pair=primary.minimum_pair_improvement)))
+          println("PERFORMANCE_GATE=", passed ? "PASS" : "FAIL")
+          passed || error("Performance acceptance failed; do not create a PR")
+          JULIA
+          cp "$RUNNER_TEMP/model_text_benchmark.jl" "$RUNNER_TEMP/model-stream-evidence/benchmark-source.jl"
+      - name: Profile and benchmark seven alternating paired comparisons
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test "$RUNNER_TEMP/model_text_benchmark.jl" "$BASELINE_DIR" "$RUNNER_TEMP/model-stream-evidence" 2>&1 | tee "$RUNNER_TEMP/model-stream-evidence/benchmark.log"
+      - name: Verify providers, SSE streaming, lint, Aqua and JET
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl providers streaming lint aqua jet 2>&1 | tee "$RUNNER_TEMP/model-stream-evidence/verification.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: model-text-paired-timings-allocations-profiles
+          path: ${{ runner.temp }}/model-stream-evidence/
+          if-no-files-found: warn
+          retention-days: 30
