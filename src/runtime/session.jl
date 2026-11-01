@@ -125,7 +125,7 @@ session_lineage(session::Session) = (id=session.runtime.id, parent_id=session.ru
 
 """Fork a Julia message prefix into a separately owned session with a fresh root identity."""
 function fork_session(source::Session, messages::AbstractVector{<:Message})
-    inherited = deepcopy(messages)
+    inherited = deepcopy(Message[message for message in messages])
     kernel = fork_kernel(source.kernel)
     return Session(kernel; executor=fork_executor(source.runtime.executor),
         messages=inherited, definition=source.definition, owns_kernel=true,
