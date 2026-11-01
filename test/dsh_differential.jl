@@ -1231,6 +1231,12 @@ function session_fork_result(input)
     push!(inherited[1].metadata["tags"], "branch")
     @test history_snapshot(source).messages[1].metadata["tags"] == ["source"]
     append_message!(branch, Message(:user, "branch-only"))
+    typed = [Message(:user, "specialized"; metadata=Dict("tags" => ["typed"]))]
+    separately_forked = JuliaForever2.fork_session(source, typed)
+    append_message!(separately_forked, Message(:assistant, "continuation"))
+    @test length(history_snapshot(separately_forked).messages) == 2
+    @test history_snapshot(separately_forked).messages[1].metadata["tags"] == ["typed"]
+    close(separately_forked)
     @test length(history_snapshot(source).messages) == length(input["messages"])
     @test length(history_snapshot(branch).messages) == length(inherited) + 1
     invalid = session_api_request!(api, "session/fork",
