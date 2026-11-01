@@ -10,9 +10,11 @@ menu_preference(app::App, name::AbstractString, fallback::AbstractString) =
     get(app.menus.preferences, String(name), String(fallback))
 
 """Build the current settings tree from the actual terminal state and capabilities."""
-function menu_snapshot(app::App; images::Bool=app.menus.images,
-        models=[(provider="demo", id="alpha", reasoning=true)],
+function menu_snapshot(app::App; images::Bool=app.menus.images, models=nothing,
         themes=["system", "dark", "light"])
+    available_models = isnothing(models) ?
+        [(provider=string(model.provider), id=model.id, reasoning=true)
+            for model in provider_models(app.settings.registry)] : models
     choose(id, label, options) = menu_node(id, label; choices=options)
     flag(id, label) = choose(id, label, ["true", "false"])
     nodes = Dict{String,Any}[
@@ -51,10 +53,10 @@ function menu_snapshot(app::App; images::Bool=app.menus.images,
             flag("anthropic-extra-usage", "Anthropic extra usage")]),
     ])
     thinking_levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
-    model_options = isempty(models) ? [menu_node("__none__", "No models available")] :
+    model_options = isempty(available_models) ? [menu_node("__none__", "No models available")] :
         [menu_node(string(model.provider, "/", model.id), string(model.id, " [", model.provider, "]"))
-            for model in models]
-    selected_model = isempty(models) ? nothing : first(models)
+            for model in available_models]
+    selected_model = isempty(available_models) ? nothing : first(available_models)
     levels = isnothing(selected_model) ? String[] :
         selected_model.reasoning ? thinking_levels : ["off"]
     push!(nodes, menu_node("model-thinking", "Default thinking level per model"; children=[
@@ -105,7 +107,7 @@ end
 
 """Every selectable leaf resolves to a real Julia callback, not an inert menu label."""
 function menu_action(app::App, path::AbstractVector{<:AbstractString};
-        models=[(provider="demo", id="alpha", reasoning=true)],
+        models=nothing,
         themes=["system", "dark", "light"])
     isempty(path) && return nothing
     first(path) == "settings" || return nothing

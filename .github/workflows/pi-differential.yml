@@ -1,5 +1,9 @@
 name: Pi differential
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     paths:
@@ -13,6 +17,8 @@ on:
     paths:
       - 'parity/**'
       - 'src/**'
+      - 'ext/**'
+      - 'test/**'
       - 'Project.toml'
       - '.github/workflows/pi-differential.yml'
   workflow_dispatch:

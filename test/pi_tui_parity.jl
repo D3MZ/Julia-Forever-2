@@ -32,10 +32,12 @@ using JSON
                     function check_actions(nodes, trail=String[])
                         for node in nodes
                             path = [trail; node["id"]]
-                            @test terminal.menu_action(app, path) isa Function
+                            @test terminal.menu_action(app, path;
+                                models=[(provider="demo", id="alpha", reasoning=true)]) isa Function
                             if haskey(node, "choices")
                                 for value in node["choices"]
-                                    @test terminal.menu_action(app, [path; String(value)]) isa Function
+                                    @test terminal.menu_action(app, [path; String(value)];
+                                        models=[(provider="demo", id="alpha", reasoning=true)]) isa Function
                                 end
                             end
                             haskey(node, "children") && check_actions(node["children"], path)
