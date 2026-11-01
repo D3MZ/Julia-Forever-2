@@ -71,10 +71,15 @@ function model_cost!(state::ModelStreamState)
     usage = state.message["usage"]
     rates = get(model_metadata(state.model), "cost", Dict{String,Any}())
     cost = usage["cost"]
-    for name in ("input", "output", "cacheRead", "cacheWrite")
-        cost[name] = usage[name] * get(rates, name, 0) / 1_000_000
+    for name in ("input", "output", "cacheRead")
+        cost[name] = (get(rates, name, 0) / 1_000_000) * usage[name]
     end
-    cost["total"] = sum(cost[name] for name in ("input", "output", "cacheRead", "cacheWrite"))
+    cache_write_1h = min(get(usage, "cacheWrite1h", 0), usage["cacheWrite"])
+    cache_write_5m = usage["cacheWrite"] - cache_write_1h
+    cache_write_rate = get(rates, "cacheWrite", 0)
+    cost["cacheWrite"] = (cache_write_rate / 1_000_000) * cache_write_5m +
+        (get(rates, "cacheWrite1h", cache_write_rate) / 1_000_000) * cache_write_1h
+    cost["total"] = cost["input"] + cost["output"] + cost["cacheRead"] + cost["cacheWrite"]
     return nothing
 end
 

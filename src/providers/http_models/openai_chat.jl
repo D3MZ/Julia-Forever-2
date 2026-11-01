@@ -115,3 +115,17 @@ function consume_model_event!(protocol::OpenAIChatProtocol, state::ModelStreamSt
     end
     return nothing
 end
+
+function finish_protocol_stream!(::OpenAIChatProtocol, state::ModelStreamState)
+    finish_model_blocks!(state)
+    cancelled(state.context) && return nothing
+    if state.message["stopReason"] == "pending" && isempty(state.error)
+        state.error = "Stream ended without finish_reason"
+    end
+    if !isempty(state.error)
+        state.message["errorDetails"] = Dict{String,Any}(
+            "kind" => "provider_error", "message" => state.error,
+            "name" => "Error", "provider" => string(state.model.provider))
+    end
+    return nothing
+end

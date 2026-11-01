@@ -37,6 +37,8 @@ def main() -> int:
     reference = Path(arguments.reference).resolve()
     lock = json.loads((ROOT / 'parity/pi-lock.json').read_text())
     manifest = json.loads((ROOT / 'parity/capabilities.json').read_text())
+    if manifest['baseline_commit'] != lock['commit']:
+        raise ValueError('Capability manifest and Pi pin refer to different commits')
     for extension_path in sorted((ROOT / 'parity/capabilities.d').glob('*.json')):
         extension = json.loads(extension_path.read_text())
         if extension['baseline_commit'] != lock['commit']:

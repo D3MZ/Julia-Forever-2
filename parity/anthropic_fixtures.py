@@ -4,7 +4,7 @@ import json
 
 def anthropic_scenarios() -> list[dict]:
     scenarios = []
-    for case in ['text', 'thinking', 'redacted', 'tools', 'length', 'refusal', 'sensitive',
+    for case in ['text', 'thinking', 'redacted', 'tools', 'length', 'refusal', 'sensitive', 'cache-one-hour',
                  'missing-stop', 'missing-reason']:
         for fragment in [1, 7, 4096]:
             events = [{'type': 'message_start', 'message': {
@@ -13,6 +13,8 @@ def anthropic_scenarios() -> list[dict]:
                 'usage': {'input_tokens': 24, 'output_tokens': 0,
                           'cache_read_input_tokens': 5, 'cache_creation_input_tokens': 3},
             }}]
+            if case == 'cache-one-hour':
+                events[0]['message']['usage']['cache_creation'] = {'ephemeral_1h_input_tokens': 2}
             if case == 'thinking':
                 events.extend([
                     {'type': 'content_block_start', 'index': 0,
@@ -73,4 +75,6 @@ def anthropic_scenarios() -> list[dict]:
                 'options': {'maxTokens': 128, 'temperature': 0},
                 'fragment': fragment, 'response': response,
             })
+            if case == 'cache-one-hour':
+                scenarios[-1]['model']['cost']['cacheWrite1h'] = 2
     return scenarios

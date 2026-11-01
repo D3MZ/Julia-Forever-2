@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "baseline_commit": "8ffea8a1bfdc32523ab056549b26141018c1e700",
-  "source_url_template": "https://github.com/earendil-works/pi/blob/8ffea8a1bfdc32523ab056549b26141018c1e700/{path}",
+  "baseline_commit": "2c8d1feb147f6b3d97e855da803bfe7b19f3c403",
+  "source_url_template": "https://github.com/earendil-works/pi/blob/2c8d1feb147f6b3d97e855da803bfe7b19f3c403/{path}",
   "inventory_complete": false,
   "policy": "Only successful execution against pinned, unmodified Pi establishes the scoped differential contract. Catalog inclusion, copied expected outputs, skipped tests and gaps are never parity evidence.",
   "core_policy": "The kernel owns generic request/event/action/history/cancellation/lifetime contracts only. Provider protocols/auth/catalogs, persistence, tools, resources, UI and policy are replaceable extensions. Existing code-mode and provider APIs remain backward compatible.",
