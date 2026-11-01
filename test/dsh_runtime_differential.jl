@@ -330,6 +330,36 @@ function native_workspace_comparison(reference, directory)
     return actual, expected
 end
 
+function native_session_history(directory, temporary)
+    registry = JuliaForever2.PluginRegistry()
+    registered = JuliaForever2.register_plugin!(registry,
+        JuliaForever2.session_store_plugin(joinpath(temporary, "julia-sessions")))
+    registered.ok || error(registered.reason)
+    base = Kernel()
+    host = JuliaForever2.PluginHost(base; registry)
+    activated = JuliaForever2.activate!(host, JuliaForever2.Profile(:resume, [:session_store]))
+    activated.ok || error(activated.reason)
+    store = component(host, :session_store)
+
+    initial = Session(Kernel(); owns_kernel=true, working_directory=directory)
+    JuliaForever2.append_message!(initial, Message(:user, FIRST_PROMPT))
+    JuliaForever2.append_message!(initial, Message(:assistant, LOCAL_RESPONSE))
+    saved = JuliaForever2.save_session!(store, "differential-persisted", initial)
+    saved.ok || error(saved.reason)
+    close(initial)
+
+    resumed = JuliaForever2.load_session(store, "differential-persisted", Kernel(); owns_kernel=true)
+    isnothing(resumed) && error("Native saved session was not found")
+    restored_directory = JuliaForever2.working_directory(resumed)
+    JuliaForever2.append_message!(resumed, Message(:user, RESUMED_PROMPT))
+    history = [Dict("role" => String(message.role), "text" => message.content)
+        for message in JuliaForever2.history_snapshot(resumed).messages]
+    close(resumed)
+    close(host)
+    close(base)
+    return Dict("directory" => restored_directory, "history" => history)
+end
+
 @testset "Pinned DSH transport differentials using test-only protocol clients" begin
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
@@ -361,6 +391,12 @@ end
             compared = successful_turn_comparison(directory, temporary)
             @test compared.candidate == compared.reference
             @test compared.candidate_requests == compared.reference_requests
+            @testset "Native Julia persisted session history" begin
+                resumed = native_session_history(directory, temporary)
+                expected = Dict("directory" => compared.reference["phases"][1]["directory"],
+                    "history" => compared.reference_requests[2]["history"])
+                @test resumed == expected
+            end
         end
     end
 end
