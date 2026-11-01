@@ -18,7 +18,7 @@ function session_record(session::Session)
     return lock(session.runtime.execution_lock) do
         messages = [Dict("role" => String(message.role), "content" => message.content,
             "kind" => String(message.kind)) for message in history_snapshot(session).messages]
-        return (messages, directory=working_directory(session))
+        return (messages=messages, directory=working_directory(session))
     end
 end
 
@@ -51,7 +51,7 @@ function saved_session_record(store::SessionStore, name::Union{Symbol,AbstractSt
     entries isa AbstractVector || error("Invalid session messages: $name")
     messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"]))
         for entry in entries]
-    return (messages, directory=String(data["working_directory"]))
+    return (messages=messages, directory=String(data["working_directory"]))
 end
 
 """Resume a saved session using a caller-owned Julia kernel or independent agent definition."""
