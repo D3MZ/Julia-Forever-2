@@ -153,9 +153,21 @@ function indexed_session_candidates(index::SessionSearchIndex, text::AbstractStr
     end
     unique!(grams)
     isempty(grams) && return 1:length(index.documents)
-    candidates = copy(get(index.postings, first(grams), BitSet()))
+    seed = get(index.postings, first(grams), nothing)
+    isnothing(seed) && return copy(index.unicode_documents)
+    smallest = length(seed)
     for gram in Iterators.drop(grams, 1)
-        intersect!(candidates, get(index.postings, gram, BitSet()))
+        posting = get(index.postings, gram, nothing)
+        isnothing(posting) && return copy(index.unicode_documents)
+        count = length(posting)
+        if count < smallest
+            seed, smallest = posting, count
+        end
+    end
+    candidates = copy(seed)
+    for gram in grams
+        posting = index.postings[gram]
+        posting === seed || intersect!(candidates, posting)
         isempty(candidates) && break
     end
     union!(candidates, index.unicode_documents)
