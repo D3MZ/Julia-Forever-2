@@ -422,7 +422,7 @@
       ],
       "limits": [
         "Only 31 JSON-compatible fixtures against the original pinned validator; unsupported-schema diagnostics, unbounded nesting, non-JSON objects, batch execution and every other DSH tool-executor behavior remain unverified.",
-        "Validation is opt-in via CheckedJSONSchema; existing opaque ToolSpec schemas remain caller-defined. This does not establish native parity for DSH tool approval, scheduling, cancellation, or output validation."
+        "Argument validation is opt-in via CheckedJSONSchema; existing opaque ToolSpec input schemas remain caller-defined. Separately checked outputs have only bounded schema-level evidence; approval, scheduling, cancellation, and complete tool-result rendering/presentation remain unverified."
       ]
     },
     {
