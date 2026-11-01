@@ -1,4 +1,4 @@
-using UUIDs: UUID, uuid4
+using UUIDs: UUID, uuid4, uuid5
 
 struct TaskHandle{S,C}
     task::Task

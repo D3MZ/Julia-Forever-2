@@ -62,7 +62,7 @@ function saved_session_record(store::SessionStore, name::Union{Symbol,AbstractSt
     messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"]))
         for entry in entries]
     lineage = if version == 1
-        id = uuid4()
+        id = uuid5(UUID("075b3f8b-fd8a-400f-9aeb-7c9970270ab2"), joinpath(store.directory, String(name)))
         (id=id, parent_id=nothing, root_id=id)
     else
         identity = data["lineage"]

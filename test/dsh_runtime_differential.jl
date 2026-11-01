@@ -365,25 +365,25 @@ end
 """Compare the native Julia API's session operations with pinned upstream SDK behavior."""
 function native_session_api_comparison(reference, directory, temporary)
     operations = Dict(item["name"] => item["result"] for item in reference["operations"])
-    store = SessionStore(joinpath(temporary, "api-store"))
-    api = SessionAPI(; store)
-    open_result = session_api_request!(api, "session/open",
+    store = JuliaForever2.SessionStore(joinpath(temporary, "api-store"))
+    api = JuliaForever2.SessionAPI(; store)
+    open_result = JuliaForever2.session_api_request!(api, "session/open",
         Dict("session" => "api-reference", "workingDirectory" => directory))
-    initial = session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
-    selected = session_api_request!(api, "session/workspace/set",
+    initial = JuliaForever2.session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
+    selected = JuliaForever2.session_api_request!(api, "session/workspace/set",
         Dict("session" => "api-reference", "path" => "child"))
-    changed = session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
-    invalid = session_api_request!(api, "session/workspace/set",
+    changed = JuliaForever2.session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
+    invalid = JuliaForever2.session_api_request!(api, "session/workspace/set",
         Dict("session" => "api-reference", "path" => "does-not-exist"))
-    retained = session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
-    blank = session_api_request!(api, "session/search",
+    retained = JuliaForever2.session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
+    blank = JuliaForever2.session_api_request!(api, "session/search",
         Dict("session" => "api-reference", "text" => " \n "))
-    absent = session_api_request!(api, "session/resume", Dict("session" => "never-saved"))
-    unknown = session_api_request!(api, "unrecognized/method")
-    session_api_request!(api, "session/save", Dict("session" => "api-reference"))
+    absent = JuliaForever2.session_api_request!(api, "session/resume", Dict("session" => "never-saved"))
+    unknown = JuliaForever2.session_api_request!(api, "unrecognized/method")
+    JuliaForever2.session_api_request!(api, "session/save", Dict("session" => "api-reference"))
     resumed_identity = open_result["id"]
-    session_api_request!(api, "session/close", Dict("session" => "api-reference"))
-    resumed = session_api_request!(api, "session/resume", Dict("session" => "api-reference"))
+    JuliaForever2.session_api_request!(api, "session/close", Dict("session" => "api-reference"))
+    resumed = JuliaForever2.session_api_request!(api, "session/resume", Dict("session" => "api-reference"))
     actual = Dict("initial" => initial["workingDirectory"], "set" => selected isa AbstractDict,
         "changed" => changed["workingDirectory"], "missing" => !(invalid isa JuliaForever2.RpcError),
         "retained" => retained["workingDirectory"], "blank" => !(blank isa JuliaForever2.RpcError),
@@ -405,7 +405,7 @@ end
 
 """Compare Web authentication and HTML capability, not DSH's frontend bytes or URL layout."""
 function native_web_comparison(reference, temporary)
-    api = SessionAPI()
+    api = JuliaForever2.SessionAPI()
     server = JuliaForever2.start_web_server(api)
     origin = JuliaForever2.web_url(server)
     authorization = ["Authorization" => "Bearer $(server.token)"]

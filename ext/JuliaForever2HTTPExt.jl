@@ -2,7 +2,6 @@ module JuliaForever2HTTPExt
 
 using HTTP
 using JSON
-using Sockets
 using UUIDs: uuid4
 using JuliaForever2
 
@@ -17,7 +16,7 @@ Base.close(server::WebServer) = close(server.backend)
 JuliaForever2.web_url(server::WebServer) = "http://$(server.host):$(server.port)"
 
 function response(status::Integer, body::AbstractString, mime::AbstractString="application/json")
-    return HTTP.Response(status, ["Content-Type" => mime, "Cache-Control" => "no-store",
+    return HTTP.Response(status; headers=["Content-Type" => mime, "Cache-Control" => "no-store",
         "X-Content-Type-Options" => "nosniff", "Referrer-Policy" => "no-referrer"], body)
 end
 
@@ -44,7 +43,7 @@ end
 
 function web_request(api::JuliaForever2.SessionAPI, token::AbstractString, request::HTTP.Request)
     HTTP.header(request, "Authorization") == "Bearer $token" ||
-        return HTTP.Response(401, ["WWW-Authenticate" => "Bearer", "Cache-Control" => "no-store"], "Unauthorized")
+        return HTTP.Response(401; headers=["WWW-Authenticate" => "Bearer", "Cache-Control" => "no-store"], body="Unauthorized")
     target = HTTP.URI(String(request.target)).path
     if request.method == "GET" && target == "/"
         return response(200, "<!doctype html><html lang=\"en\"><head><title>JuliaForever2</title></head><body><h1>JuliaForever2</h1><p>Native session API: /api/rpc</p></body></html>", "text/html; charset=utf-8")
@@ -62,17 +61,9 @@ function JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI;
     host in ("127.0.0.1", "localhost", "::1") ||
         error("Native Web binds loopback only; use a TLS reverse proxy for remote access")
     0 <= port <= 65535 || error("Invalid Web port")
-    actual_port = if port == 0
-        listener = Sockets.listen(Sockets.ip"127.0.0.1", 0)
-        selected = Int(last(Sockets.getsockname(listener)))
-        close(listener)
-        selected
-    else
-        Int(port)
-    end
     server = HTTP.serve!(request -> Base.invokelatest(handler, api, token, request),
-        String(host), actual_port; verbose=false)
-    return WebServer(server, String(host), actual_port, String(token))
+        String(host), Int(port); verbose=false, max_body_bytes=1_048_576)
+    return WebServer(server, String(host), Int(HTTP.port(server)), String(token))
 end
 
 """An optional HTTP extension publishes an independently replaceable native Web service."""
