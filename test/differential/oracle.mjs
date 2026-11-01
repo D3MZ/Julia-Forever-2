@@ -128,17 +128,20 @@ async function toolBatchCase(input) {
     },
     async dispatch(exec) {
       const specification = definitions.get(exec.callId)
-      if (specification.mode !== 'parallel' && active !== 0) exclusiveSafe = false
-      active++
-      peak = Math.max(peak, active)
-      started.push(specification.id)
-      entered.get(specification.id).resolve()
-      if (specification.wait_for) await entered.get(specification.wait_for).promise
-      active--
-      if (specification.cancel) controller.abort()
-      return { kind: 'post-result', result: {
-        content: [{ type: 'text', text: specification.id }], isError: false,
-      } }
+      const reference = new ToolCancellationReference({ execute: async () => {
+        if (specification.mode !== 'parallel' && active !== 0) exclusiveSafe = false
+        active++
+        peak = Math.max(peak, active)
+        started.push(specification.id)
+        entered.get(specification.id).resolve()
+        if (specification.wait_for) await entered.get(specification.wait_for).promise
+        active--
+        if (specification.cancel) controller.abort()
+        return specification.id
+      } })
+      reference.cancellationStates.set(exec, { callerSignal: controller.signal, bodyInvoked: false })
+      const result = await reference.dispatchToolBody(exec)
+      return { kind: 'post-result', result }
     },
     async complete(exec, completed) { return completed.result },
   }, () => input.max_parallel)
