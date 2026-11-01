@@ -1150,7 +1150,7 @@ function session_markdown_result(input)
     opened = JuliaForever2.session_api_request!(api, "session/open", Dict("session" => "markdown"))
     opened isa AbstractDict || error("Could not open native Markdown export session")
     for message in messages
-        append_message!(api.sessions["markdown"], message)
+        JuliaForever2.append_message!(api.sessions["markdown"], message)
     end
     params = Dict{String,Any}("session" => "markdown")
     isnothing(title) || (params["title"] = title)
