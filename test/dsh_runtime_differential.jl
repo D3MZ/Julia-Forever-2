@@ -185,7 +185,7 @@ function observe_web(feature, home, output_path, diagnostics_path)
         push!(responses, merge(Dict("method" => method, "path" => path), result.observation))
     end
     trust_cases = JSON.parsefile(joinpath(@__DIR__, "differential", "web-request-trust.json"))
-    port = match(r":(\\d+)$", origin).captures[1]
+    port = last(split(origin, ':'))
     trust = Any[]
     for entry in trust_cases
         headers = [String(name) => replace(String(value), "<port>" => port) for (name, value) in entry["headers"]]
@@ -501,7 +501,7 @@ function native_web_request_trust_comparison(reference)
     api = JuliaForever2.SessionAPI()
     server = JuliaForever2.start_web_server(api)
     origin = JuliaForever2.web_url(server)
-    port = match(r":(\\d+)$", origin).captures[1]
+    port = last(split(origin, ':'))
     scenarios = JSON.parsefile(joinpath(@__DIR__, "differential", "web-request-trust.json"))
     actual = Any[]
     for entry in scenarios
