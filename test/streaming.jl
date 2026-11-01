@@ -155,3 +155,32 @@ end
     @test protocol_progress(policy, raw"""{"kind":"answer","content":"first\nlast\uD800""").text == "first\nlast"
     @test isnothing(protocol_progress(policy, raw"""{"kind":"answer","content":"first\nlast\q"}"""))
 end
+
+
+@testset "JSON-RPC fragmented notifications preserve frames and malformed-line recovery" begin
+    payload = repeat("λ / 你好 / accented é / message ", 175)
+    first_frame = JSON.json(Dict("jsonrpc" => "2.0", "method" => "payload/update",
+        "params" => Dict("text" => payload)))
+    second_frame = JSON.json(Dict("jsonrpc" => "2.0", "method" => "payload/update",
+        "params" => Dict("text" => "recovered")))
+    wire = first_frame * "\n" * "{not valid json}\n" * second_frame * "\n"
+    bytes = collect(codeunits(wire))
+    for width in (1, 7, 64, 1024, length(bytes))
+        received = String[]
+        peer = JuliaForever2.JsonRpcPeer(IOBuffer(), IOBuffer();
+            on_notification = (method, params) -> push!(received, string(method, ": ", params["text"])))
+        for offset in 1:width:length(bytes)
+            JuliaForever2.feed!(peer, @view(bytes[offset:min(offset + width - 1, length(bytes))]))
+        end
+        JuliaForever2.drain!(peer)
+        @test received == ["payload/update: " * payload, "payload/update: recovered"]
+        @test isempty(peer.buffer)
+        @test isopen(peer)
+        JuliaForever2.feed!(peer, "{\"jsonrpc\":")
+        @test !isempty(peer.buffer)
+        JuliaForever2.feed!(peer, "\"2.0\",\"method\":\"payload/update\",\"params\":{\"text\":\"tail\"}}\n")
+        JuliaForever2.drain!(peer)
+        @test received[end] == "payload/update: tail"
+        @test isempty(peer.buffer)
+    end
+end
