@@ -476,19 +476,28 @@ async function toolCase(input) {
   }, ['tools', 'systemPrompt'])
   const registrations = new Map()
   const results = []
+  const executions = []
+  const guardCalls = []
   for (const operation of input.operations) {
     const scope = scopes.get(operation.scope ?? 'root')
     if (operation.type === 'register') {
       try {
         const dispose = scope.ctx.tools.register({
           name: operation.name, description: operation.description ?? '', parameters: operation.schema ?? { type: 'object' },
-          output: { schema: {}, render: () => [] }, execute: async () => operation.value ?? null,
+          output: { schema: {}, render: () => [] }, execute: async () => { executions.push(operation.name); return operation.value ?? null },
         })
         registrations.set(operation.id, dispose)
         results.push({ accepted: true })
       } catch {
         results.push({ accepted: false })
       }
+    } else if (operation.type === 'guard') {
+      const dispose = scope.ctx.tools.guard(exec => {
+        guardCalls.push(operation.id)
+        return operation.names.includes(exec.name) ? operation.reason : undefined
+      })
+      registrations.set(operation.id, dispose)
+      results.push({ accepted: true })
     } else if (operation.type === 'restrict') {
       try {
         registrations.set(operation.id, scope.ctx.tools.restrict(operation.filter))
@@ -506,6 +515,15 @@ async function toolCase(input) {
       const definition = context.tools.get(operation.name, scope.key)
       results.push(definition === undefined ? { ok: false, value: null }
         : { ok: true, value: await definition.execute(operation.arguments ?? {}, {}) })
+    } else if (operation.type === 'invoke_guarded') {
+      const args = operation.arguments ?? {}
+      const denial = context.tools.checkGuards({ name: operation.name, arguments: args, agent: scope.key })
+      const definition = context.tools.get(operation.name, scope.key)
+      results.push(denial !== undefined ? { ok: false, value: null, reason: denial }
+        : definition === undefined ? { ok: false, value: null, reason: 'Unknown tool' }
+        : { ok: true, value: await definition.execute(args, {}), reason: null })
+    } else if (operation.type === 'trace') {
+      results.push({ executions: [...executions], guards: [...guardCalls] })
     } else {
       throw new Error(`Unknown tool fixture operation: ${operation.type}`)
     }

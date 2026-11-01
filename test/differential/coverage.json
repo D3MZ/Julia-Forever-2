@@ -223,7 +223,7 @@
     },
     {
       "kind": "tools",
-      "case_count": 17,
+      "case_count": 21,
       "status": "required-differential-cases",
       "sources": [
         {
@@ -260,11 +260,13 @@
         "scope-local exemptions",
         "restriction and registration disposal",
         "selected callback result",
-        "native Session ToolExecutor integration"
+        "native Session ToolExecutor integration",
+        "root-to-leaf, plugin-owned monotonic tool guards evaluated before body dispatch, including inherited scope denials, exact-disposer removal, and local tool shadowing"
       ],
       "limits": [
         "Registry and selected-definition dispatch only; the reference invokes the actual selected definition execute callback directly. DSH executor admission, approval, guard, schema validation, output rendering, timeouts and parallel batches are not exercised.",
-        "Generic native ToolSpec does not impose DSH reserved names or mandatory output schemas. Invalid-registration comparisons cover acceptance, not language-specific exception messages."
+        "Generic native ToolSpec does not impose DSH reserved names or mandatory output schemas. Invalid-registration comparisons cover acceptance, not language-specific exception messages.",
+        "Guard scenarios compare the pinned ToolsService.checkGuards() evaluation and selected-definition execution projection against native guarded invocation; DSH approval policy, full pipeline scheduling, and arbitrary concurrent disposal are not established."
       ]
     },
     {

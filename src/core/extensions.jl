@@ -1,5 +1,6 @@
 abstract type AbstractEventListener end
 abstract type AbstractToolEntry end
+abstract type AbstractToolGuard end
 
 struct ToolSpec{S,F}
     name::Symbol
@@ -27,6 +28,7 @@ mutable struct ExtensionScope
     tools::Dict{Symbol,AbstractToolEntry}
     tool_order::Vector{Symbol}
     restrictions::Vector{ToolRestriction}
+    guards::Vector{AbstractToolGuard}
     resources::Vector{ResourceRegistration}
     users::Int
     closed::Bool
@@ -36,7 +38,7 @@ end
 function ExtensionScope(parent::Union{Nothing,ExtensionScope}=nothing)
     scope = ExtensionScope(parent, isnothing(parent) ? ReentrantLock() : parent.lock,
         ExtensionScope[], Dict{Symbol,Vector{AbstractEventListener}}(), Dict{Symbol,AbstractToolEntry}(),
-        Symbol[], ToolRestriction[], ResourceRegistration[], 0, false)
+        Symbol[], ToolRestriction[], AbstractToolGuard[], ResourceRegistration[], 0, false)
     if !isnothing(parent)
         lock(parent.lock) do
             if !isopen(parent)
@@ -545,6 +547,64 @@ function restrict_tools!(scope::ExtensionScope; allow=nothing, deny=nothing, own
     return (ok=true, reason="", registration)
 end
 
+
+mutable struct ToolGuardEntry{F,O} <: AbstractToolGuard
+    scope::ExtensionScope
+    callback::F
+    owner::O
+    active::Bool
+end
+
+function retire_tool_guard!(entry::ToolGuardEntry)
+    lock(entry.scope.lock) do
+        entry.active = false
+        filter!(guard -> guard !== entry, entry.scope.guards)
+    end
+    return nothing
+end
+
+"""Register a reversible, scope-inherited tool denial policy owned by a plugin or scope."""
+function register_tool_guard!(scope::ExtensionScope, callback; owner=nothing)
+    entry = ToolGuardEntry(scope, callback, owner, true)
+    accepted = lock(scope.lock) do
+        isopen(scope) || return false
+        push!(scope.guards, entry)
+        return true
+    end
+    accepted || return (ok=false, reason="Extension scope is closed", registration=nothing)
+    registration = own_resource!(scope, entry; cleanup=retire_tool_guard!)
+    isnothing(owner) || own_resource!(owner, registration; cleanup=release!)
+    return (ok=true, reason="", registration)
+end
+
+"""Retain the exact guard generations and scopes while a tool call is being admitted."""
+function acquire_tool_guards(scope::ExtensionScope)
+    return lock(scope.lock) do
+        invocations = EventInvocation[]
+        for layer in reverse(extension_chain(scope)), guard in layer.guards
+            guard.active && isopen(layer) || continue
+            retention = isnothing(guard.owner) ? nothing : acquire_plugin!(guard.owner)
+            !isnothing(guard.owner) && isnothing(retention) && continue
+            scopes = extension_chain(layer)
+            for retained in scopes
+                retained.users += 1
+            end
+            push!(invocations, EventInvocation(guard, retention, scopes, nothing))
+        end
+        return invocations
+    end
+end
+
+"""Evaluate root-to-leaf guards; only `nothing` permits the next policy."""
+function first_tool_denial(invocations, call)
+    for invocation in invocations
+        denial = Base.invokelatest(invocation.listener.callback, call)
+        isnothing(denial) && continue
+        return denial isa AbstractString ? String(denial) : "Tool guard must return a string or nothing"
+    end
+    return nothing
+end
+
 function acquire_tool!(scope::ExtensionScope, name::Symbol)
     return lock(scope.lock) do
         entry = visible_tool_entry(scope, name)
@@ -579,16 +639,25 @@ end
 tool_result(value::ExecutionResult) = value
 tool_result(value) = ExecutionResult(true, value isa AbstractString ? value : repr(value), value)
 
-"""Invoke the selected tool with its exact resource generation retained until asynchronous work settles."""
+"""Invoke a tool only after all inherited plugin-owned guards permit its call."""
 function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
     invocation = acquire_tool!(scope, name)
     isnothing(invocation) && return ExecutionResult(false, "Unknown tool: $name")
-    worker = spawn_scoped(() -> event_value(Base.invokelatest(invocation.listener.spec.call, arguments...)))
+    guards = acquire_tool_guards(scope)
+    worker = spawn_scoped() do
+        call = ToolCall(name, length(arguments) == 1 ? first(arguments) : arguments)
+        denial = first_tool_denial(guards, call)
+        isnothing(denial) ? event_value(Base.invokelatest(invocation.listener.spec.call, arguments...)) :
+            ExecutionResult(false, denial)
+    end
     wait(worker; throw=false)
-    cleanup = spawn_cleanup(() -> release_tool!(invocation))
-    wait(cleanup; throw=false)
+    guard_cleanup = spawn_cleanup(() -> release_event_invocations!(guards))
+    tool_cleanup = spawn_cleanup(() -> release_tool!(invocation))
+    wait(guard_cleanup; throw=false)
+    wait(tool_cleanup; throw=false)
     istaskfailed(worker) && return ExecutionResult(false, sprint(showerror, TaskFailedException(worker)))
-    istaskfailed(cleanup) && return ExecutionResult(false, sprint(showerror, TaskFailedException(cleanup)))
+    istaskfailed(guard_cleanup) && return ExecutionResult(false, sprint(showerror, TaskFailedException(guard_cleanup)))
+    istaskfailed(tool_cleanup) && return ExecutionResult(false, sprint(showerror, TaskFailedException(tool_cleanup)))
     return tool_result(fetch(worker))
 end
 
