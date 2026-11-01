@@ -536,7 +536,7 @@ end
         for (name, value) in [("one", "ABABA needle token"), ("two", "café needle token"),
                 ("three", "aaaa aaaa AaAa"), ("four", "中文 язык"), ("five", "ABC xyz")]
             session = Session(Kernel())
-            append_message!(session.conversation, Message(:user, value, :text))
+            JuliaForever2.append_message!(session.conversation, Message(:user, value, :text))
             @test JuliaForever2.save_session!(store, name, session).ok
             close(session)
         end
@@ -568,5 +568,68 @@ end
         @test isnothing(JuliaForever2.load_profile(store, "linked"))
         @test JuliaForever2.load_profile(store, "local").plugins == [:example]
         @test isnothing(JuliaForever2.load_profile(store, Symbol("")))
+    end
+end
+
+
+@testset "Metadata-only persisted lineage retains restore and descendant semantics" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        root = Session(Kernel(); messages=[Message(:user, "persistent record $index", :text)
+            for index in 1:96])
+        root_identity = JuliaForever2.session_lineage(root)
+        @test JuliaForever2.save_session!(store, "root", root).ok
+        child = Session(Kernel(); messages=[Message(:assistant, "child message $index", :text)
+            for index in 1:96], parent_id=root_identity.id, root_id=root_identity.root_id)
+        child_identity = JuliaForever2.session_lineage(child)
+        @test JuliaForever2.save_session!(store, "child", child).ok
+
+        @test JuliaForever2.session_lineage(store, "root") == root_identity
+        @test JuliaForever2.session_lineage(store, :child) == child_identity
+        @test JuliaForever2.session_descendants(store, "root") == ["child"]
+        @test JuliaForever2.session_descendants(store, root_identity.id; include_self=true) == ["child", "root"]
+        @test isnothing(JuliaForever2.session_lineage(store, "missing"))
+        @test isnothing(JuliaForever2.session_lineage(store, "../invalid"))
+        restored = JuliaForever2.load_session(store, "child", Kernel())
+        @test !isnothing(restored)
+        @test length(JuliaForever2.history_snapshot(restored).messages) == 96
+        @test JuliaForever2.history_snapshot(restored).messages[end].content == "child message 96"
+        close(restored)
+        close(child)
+        close(root)
+    end
+end
+
+@testset "Metadata-only lineage preserves saved-record validation" begin
+    valid = Dict("role" => "user", "content" => "hello", "kind" => "text")
+    cases = (
+        (Dict("content" => "hello", "kind" => "text"), :normal, KeyError),
+        (Dict("role" => "user", "kind" => "text"), :normal, KeyError),
+        (Dict("role" => "user", "content" => "hello"), :normal, KeyError),
+        (Dict("role" => 7, "content" => "hello", "kind" => 7), :normal, nothing),
+        (Dict("role" => "user", "content" => 7, "kind" => "text"), :normal, MethodError),
+        (valid, :missing_directory, KeyError),
+        (valid, :invalid_directory, MethodError),
+    )
+    for (entry, directory_kind, expected) in cases
+        mktempdir() do directory
+            store = JuliaForever2.SessionStore(directory)
+            identity = "075b3f8b-fd8a-400f-9aeb-7c9970270ab2"
+            data = Dict{String,Any}("format" => "JuliaForever2.session", "version" => 2,
+                "name" => "broken", "working_directory" => directory, "messages" => [entry],
+                "lineage" => Dict("id" => identity, "parent_id" => nothing, "root_id" => identity))
+            directory_kind == :missing_directory && delete!(data, "working_directory")
+            directory_kind == :invalid_directory && (data["working_directory"] = 7)
+            write(joinpath(directory, "broken.json"), JuliaForever2.JSON.json(data))
+            if isnothing(expected)
+                record = JuliaForever2.saved_session_record(store, "broken")
+                @test record.messages[1].role == Symbol("7")
+                @test record.messages[1].kind == Symbol("7")
+                @test JuliaForever2.session_lineage(store, "broken") == record.lineage
+            else
+                @test_throws expected JuliaForever2.saved_session_record(store, "broken")
+                @test_throws expected JuliaForever2.session_lineage(store, "broken")
+            end
+        end
     end
 end

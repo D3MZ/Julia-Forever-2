@@ -520,7 +520,7 @@ function native_web_console_comparison(sdk_reference, web_reference, directory, 
     page = HTTP.request("GET", origin * "/", headers; status_exception=false)
     script = HTTP.request("GET", origin * "/app.js", headers; status_exception=false)
     style = HTTP.request("GET", origin * "/app.css", headers; status_exception=false)
-    anonymous_asset = HTTP.request("GET", origin * "/app.js"; status_exception=false)
+    anonymous_asset = HTTP.request("GET", origin * "/app.js"; cookies=false, status_exception=false)
     html = String(page.body)
     javascript = String(script.body)
     opened = web_console_rpc(origin, cookie, "session/open",
