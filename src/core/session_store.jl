@@ -33,9 +33,12 @@ function persist!(store::SessionStore, name, session::Session, path::AbstractStr
     lineage = record.lineage
     data = Dict("format" => "JuliaForever2.session", "version" => 2, "name" => String(name),
         "working_directory" => record.directory, "messages" => record.messages,
-        "compaction" => saved_compaction(record.compaction), "lineage" => Dict("id" => string(lineage.id),
+        "lineage" => Dict("id" => string(lineage.id),
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
+    if !isnothing(record.compaction)
+        data["compaction"] = saved_compaction(record.compaction)
+    end
     serialized = JSON.json(data) * "\n"
     lock(store.lock) do
         mkpath(store.directory; mode=0o700)
