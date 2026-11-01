@@ -193,3 +193,46 @@ end
         "257 registered providers=", wide_bytes, " bytes; target growth <= 32768 bytes")
     @test wide_bytes <= narrow_bytes + 32_768
 end
+
+@testset "Filtered model catalogs avoid unrelated registry snapshots" begin
+    model = JuliaForever2.ModelSpec(:filtered_catalog_target, "selected-model")
+    embedding = JuliaForever2.ModelSpec(:filtered_catalog_target, "vector-model"; kind=:embedding)
+    factory = JuliaForever2.ProviderFactory(Returns(nothing); models=() -> [model, embedding])
+    descriptor = JuliaForever2.ProviderDescriptor(:filtered_catalog_target, "Target", factory)
+    narrow = JuliaForever2.ProviderRegistry()
+    wide = JuliaForever2.ProviderRegistry()
+    for registry in (narrow, wide)
+        JuliaForever2.register_provider!(registry, descriptor)
+    end
+    for index in 1:256
+        JuliaForever2.register_provider!(wide,
+            JuliaForever2.ProviderDescriptor(Symbol("unrelated_catalog_", index), "Unrelated", Returns(nothing)))
+    end
+
+    @test JuliaForever2.provider_models(narrow; provider=:filtered_catalog_target) == [model]
+    @test JuliaForever2.provider_models(wide; provider="filtered_catalog_target", kind=:all) == [model, embedding]
+    @test JuliaForever2.provider_models(wide; provider=:filtered_catalog_target, kind=:embedding) == [embedding]
+    @test isempty(JuliaForever2.provider_models(wide; provider=:missing_catalog))
+    @test JuliaForever2.provider_models(wide; kind=:all) == [model, embedding]
+
+    function count_filtered_models(registry, iterations)
+        matches = 0
+        for _ in 1:iterations
+            models = JuliaForever2.provider_models(registry; provider=:filtered_catalog_target)
+            matches += (length(models) == 1 && only(models) === model)
+        end
+        return matches
+    end
+
+    repetitions = 100
+    @test count_filtered_models(narrow, repetitions) == repetitions
+    @test count_filtered_models(wide, repetitions) == repetitions
+    GC.gc()
+    narrow_bytes = @allocated count_filtered_models(narrow, repetitions)
+    GC.gc()
+    wide_bytes = @allocated count_filtered_models(wide, repetitions)
+    println("Filtered provider catalog allocations over ", repetitions, " warmed calls: ",
+        "1 provider=", narrow_bytes, " bytes; 257 providers=", wide_bytes,
+        " bytes; target growth <= 32768 bytes")
+    @test wide_bytes <= narrow_bytes + 32_768
+end
