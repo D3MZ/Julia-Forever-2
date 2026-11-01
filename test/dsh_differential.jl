@@ -924,7 +924,8 @@ function session_query_result(input)
             messages = Message[Message(Symbol(entry["role"]), entry["content"]) for entry in specification["messages"]]
             session = Session(Kernel(); messages, owns_kernel=true)
             results = JuliaForever2.search_history(session, input["text"];
-                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)))
+                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)),
+                from_index=get(input, "from_index", nothing), to_index=get(input, "to_index", nothing))
             close(session)
             results
         else
@@ -944,7 +945,9 @@ function session_query_result(input)
                 close(session)
             end
             results = JuliaForever2.search_history(component(host, :session_query), input["text"];
-                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)))
+                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)),
+                sessions=get(input, "selected_sessions", nothing),
+                from_index=get(input, "from_index", nothing), to_index=get(input, "to_index", nothing))
             close(host)
             close(base)
             results
@@ -1007,8 +1010,9 @@ function session_api_persisted_search_result(input; indexed=false)
             JuliaForever2.SessionAPI(; store)
         end
         parameters = Dict{String,Any}("text" => input["text"])
-        for key in ("roles", "limit")
-            haskey(input, key) && (parameters[key] = input[key])
+        for (input_key, rpc_key) in (("roles", "roles"), ("limit", "limit"),
+                ("selected_sessions", "sessions"), ("from_index", "fromIndex"), ("to_index", "toIndex"))
+            haskey(input, input_key) && (parameters[rpc_key] = input[input_key])
         end
         reply = JuliaForever2.session_api_request!(api, "session/search/all", parameters)
         close(api)
@@ -1054,8 +1058,9 @@ function session_api_overridden_query_result(input)
             saved.ok || error(saved.reason)
         end
         parameters = Dict{String,Any}("text" => input["text"])
-        for key in ("roles", "limit")
-            haskey(input, key) && (parameters[key] = input[key])
+        for (input_key, rpc_key) in (("roles", "roles"), ("limit", "limit"),
+                ("selected_sessions", "sessions"), ("from_index", "fromIndex"), ("to_index", "toIndex"))
+            haskey(input, input_key) && (parameters[rpc_key] = input[input_key])
         end
         reply = JuliaForever2.session_api_request!(component(host, :session_api),
             "session/search/all", parameters)

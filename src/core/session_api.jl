@@ -102,7 +102,21 @@ function api_search_parameters(params::AbstractDict)
     limit = get(params, "limit", typemax(Int))
     limit isa Integer && !(limit isa Bool) && limit >= 0 ||
         return RpcError(-32602, "Invalid search limit")
-    return (text=String(text), roles, limit)
+    sessions = get(params, "sessions", nothing)
+    (isnothing(sessions) || (sessions isa AbstractVector &&
+        all(name -> name isa AbstractString, sessions))) ||
+        return RpcError(-32602, "Search sessions must be an array of strings")
+    from_index = get(params, "fromIndex", nothing)
+    to_index = get(params, "toIndex", nothing)
+    for index in (from_index, to_index)
+        isnothing(index) && continue
+        index isa Integer && !(index isa Bool) && index >= 1 ||
+            return RpcError(-32602, "Search index bounds must be positive integers")
+    end
+    if !isnothing(from_index) && !isnothing(to_index) && from_index > to_index
+        return RpcError(-32602, "Search lower index exceeds upper index")
+    end
+    return (text=String(text), roles, limit, sessions, from_index, to_index)
 end
 
 function api_session_search(api::SessionAPI, params::AbstractDict)
@@ -110,8 +124,11 @@ function api_session_search(api::SessionAPI, params::AbstractDict)
     session isa RpcError && return session
     selection = api_search_parameters(params)
     selection isa RpcError && return selection
+    isnothing(selection.sessions) ||
+        return RpcError(-32602, "Session selection requires persisted search")
     return [api_hit(hit) for hit in search_history(session, selection.text;
-        roles=selection.roles, limit=selection.limit)]
+        roles=selection.roles, limit=selection.limit,
+        from_index=selection.from_index, to_index=selection.to_index)]
 end
 
 """Search persisted history without opening or executing sessions; query sources use Julia dispatch."""
@@ -125,7 +142,8 @@ function api_persisted_search(api::SessionAPI, params::AbstractDict)
     selection = api_search_parameters(params)
     selection isa RpcError && return selection
     return [api_hit(hit) for hit in search_history(source, selection.text;
-        roles=selection.roles, limit=selection.limit)]
+        roles=selection.roles, limit=selection.limit, sessions=selection.sessions,
+        from_index=selection.from_index, to_index=selection.to_index)]
 end
 
 function api_session_workspace(api::SessionAPI, params::AbstractDict; change=false)

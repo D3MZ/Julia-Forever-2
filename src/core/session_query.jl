@@ -47,10 +47,30 @@ function session_query_pattern(text::AbstractString)
     return Regex(String(take!(pattern)), "i")
 end
 
+"""Validate inclusive, one-based message positions before selecting any history."""
+function session_search_window(from_index, to_index)
+    for index in (from_index, to_index)
+        isnothing(index) && continue
+        index isa Integer && !(index isa Bool) && index >= 1 ||
+            error("Session query indices must be positive integers")
+    end
+    if !isnothing(from_index) && !isnothing(to_index)
+        from_index <= to_index || error("Session query lower index exceeds upper index")
+    end
+    return nothing
+end
+
+session_index_selected(index, from_index, to_index) =
+    (isnothing(from_index) || index >= from_index) &&
+    (isnothing(to_index) || index <= to_index)
+
+session_name_selection(names) = isnothing(names) ? nothing : Set(String.(names))
+
 function append_session_matches!(hits::Vector{SessionSearchHit}, messages, identity,
-        pattern::Regex, allowed_roles, limit::Integer)
+        pattern::Regex, allowed_roles, limit::Integer, from_index, to_index)
     for (index, message) in enumerate(messages)
         length(hits) >= limit && break
+        session_index_selected(index, from_index, to_index) || continue
         if !isnothing(allowed_roles) && !(message.role in allowed_roles)
             continue
         end
@@ -61,25 +81,31 @@ function append_session_matches!(hits::Vector{SessionSearchHit}, messages, ident
 end
 
 """Search a detached snapshot of a live session without changing its conversation."""
-function search_history(session::Session, text::AbstractString; roles=nothing, limit::Integer=typemax(Int))
+function search_history(session::Session, text::AbstractString; roles=nothing, limit::Integer=typemax(Int),
+        from_index=nothing, to_index=nothing)
     limit >= 0 || error("Session query limit must be nonnegative")
+    session_search_window(from_index, to_index)
     pattern = session_query_pattern(text)
     allowed = isnothing(roles) ? nothing : Set(Symbol.(roles))
     return append_session_matches!(SessionSearchHit[], history_snapshot(session).messages,
-        nothing, pattern, allowed, limit)
+        nothing, pattern, allowed, limit, from_index, to_index)
 end
 
 """Search stored sessions in deterministic name/message order without activating agents."""
-function search_history(store::SessionStore, text::AbstractString; roles=nothing, limit::Integer=typemax(Int))
+function search_history(store::SessionStore, text::AbstractString; roles=nothing, limit::Integer=typemax(Int),
+        sessions=nothing, from_index=nothing, to_index=nothing)
     limit >= 0 || error("Session query limit must be nonnegative")
+    session_search_window(from_index, to_index)
     pattern = session_query_pattern(text)
     allowed = isnothing(roles) ? nothing : Set(Symbol.(roles))
+    selected = session_name_selection(sessions)
     hits = SessionSearchHit[]
     for name in session_names(store)
         length(hits) >= limit && break
+        !isnothing(selected) && !(name in selected) && continue
         record = saved_session_record(store, name)
         isnothing(record) && continue
-        append_session_matches!(hits, record.messages, name, pattern, allowed, limit)
+        append_session_matches!(hits, record.messages, name, pattern, allowed, limit, from_index, to_index)
     end
     return hits
 end
@@ -183,10 +209,13 @@ function indexed_session_candidates(index::SessionSearchIndex, text::AbstractStr
 end
 
 """Search a cached inverted index; SessionStore writes invalidate it automatically."""
-function search_history(index::SessionSearchIndex, text::AbstractString; roles=nothing, limit::Integer=typemax(Int))
+function search_history(index::SessionSearchIndex, text::AbstractString; roles=nothing, limit::Integer=typemax(Int),
+        sessions=nothing, from_index=nothing, to_index=nothing)
     limit >= 0 || error("Session query limit must be nonnegative")
+    session_search_window(from_index, to_index)
     pattern = session_query_pattern(text)
     allowed = isnothing(roles) ? nothing : Set(Symbol.(roles))
+    selected = session_name_selection(sessions)
     return lock(index.lock) do
         revision = lock(() -> index.store.revision, index.store.lock)
         revision == index.revision || refresh_index!(index)
@@ -194,6 +223,8 @@ function search_history(index::SessionSearchIndex, text::AbstractString; roles=n
         for document_id in indexed_session_candidates(index, text)
             length(hits) >= limit && break
             hit = index.documents[document_id]
+            !isnothing(selected) && !(hit.session in selected) && continue
+            session_index_selected(hit.index, from_index, to_index) || continue
             !isnothing(allowed) && !(hit.role in allowed) && continue
             occursin(pattern, hit.content) && push!(hits, hit)
         end
