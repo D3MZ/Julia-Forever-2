@@ -1,8 +1,9 @@
 """An owned, replaceable interface to independent Julia sessions and their durable state."""
-mutable struct SessionAPI{F,S,Q}
+mutable struct SessionAPI{F,S,Q,T}
     factory::F
     store::S
     query::Q
+    titles::T
     lock::ReentrantLock
     sessions::Dict{String,Session}
     handles::Dict{String,TaskHandle}
@@ -10,7 +11,7 @@ mutable struct SessionAPI{F,S,Q}
 end
 
 """Construct a native session API; factories return a Kernel or AgentDefinition."""
-SessionAPI(; factory=Kernel, store=nothing, query=nothing) = SessionAPI(factory, store, query, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), false)
+SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=SessionTitles()) = SessionAPI(factory, store, query, titles, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), false)
 
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
@@ -21,6 +22,14 @@ function api_session_summary(name::AbstractString, session::Session)
         "parent" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
         "root" => string(lineage.root_id), "workingDirectory" => working_directory(session),
         "messages" => lock(() -> length(session.conversation.messages), session.conversation.lock))
+end
+
+"""Expose stable identity separately from editable human-facing title text."""
+function api_session_summary(api::SessionAPI, name::AbstractString, session::Session)
+    summary = api_session_summary(name, session)
+    explicit = session_title(api.titles, name)
+    summary["title"] = isnothing(explicit) ? session_title_fallback(session) : explicit
+    summary
 end
 
 api_message(message::Message) = Dict("role" => String(message.role), "kind" => String(message.kind), "content" => message.content)
@@ -74,7 +83,10 @@ function restore!(api::SessionAPI, name, directory, resume)
     else
         session = restore(Base.invokelatest(api.factory), record, directory)
         api.sessions[String(name)] = session
-        api_session_summary(name, session)
+        if !isnothing(record)
+            restore_session_title!(api.titles, name, get(record, :title, nothing))
+        end
+        api_session_summary(api, name, session)
     end
 end
 
@@ -86,12 +98,41 @@ function api_close_session!(api::SessionAPI, params::AbstractDict)
         lock(api.lock) do
             pop!(api.sessions, name, nothing)
             pop!(api.handles, name, nothing)
+            forget_session_title!(api.titles, name)
         end
         close(session)
         Dict("closed" => true)
     end
 end
-api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(params["session"], session), api_session(api, params))
+api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(api, params["session"], session), api_session(api, params))
+
+"""Enumerate stable session names and optional display titles without opening saved sessions."""
+function api_session_list_details(api::SessionAPI, params::AbstractDict)
+    lock(api.lock) do
+        [api_session_summary(api, name, api.sessions[name]) for name in sort!(collect(keys(api.sessions)))]
+    end
+end
+
+"""Rename an open session without changing its stable identity or changing the agent."""
+function api_session_rename!(api::SessionAPI, params::AbstractDict)
+    apply(api_session(api, params)) do session
+        proposed = api_parameter(params, "title")
+        if !(proposed isa AbstractString)
+            RpcError(-32602, "Session title must be a string")
+        else
+            name = String(params["session"])
+            lock(api.lock) do
+                if api.closed || get(api.sessions, name, nothing) !== session
+                    RpcError(-32000, "Session is not available: $name")
+                else
+                    accepted = rename_session_title!(api.titles, name, proposed)
+                    accepted.ok ? Dict("title" => accepted.title, "session" => name) :
+                        RpcError(-32602, accepted.reason)
+                end
+            end
+        end
+    end
+end
 api_session_messages(api::SessionAPI, params::AbstractDict) = apply(session -> api_message.(history_snapshot(session).messages), api_session(api, params))
 
 """Export public session text through a Julia-owned, replaceable Markdown renderer."""
@@ -170,10 +211,16 @@ function workspace(session::Session, path::AbstractString)
 end
 function api_session_save(api::SessionAPI, params::AbstractDict)
     stored(api, params) do session
-        saved = save_session!(api.store, params["session"], session)
+        saved = save_session_titled!(api.store, params["session"], session,
+            session_title(api.titles, params["session"]))
         saved.ok ? Dict("saved" => true) : RpcError(-32602, saved.reason)
     end
 end
+
+"""Allow alternate persistence services to ignore or explicitly support session titles."""
+save_session_titled!(store, name, session, title) = save_session!(store, name, session)
+save_session_titled!(store::SessionStore, name, session, title) =
+    save_session!(store, name, session; title)
 
 stored(f, api::SessionAPI, params) = isnothing(api.store) ? RpcError(-32601, "No persistent session store is configured") : apply(f, api_session(api, params))
 api_session_children(api::SessionAPI, params::AbstractDict) = stored(session -> session_descendants(api.store, session), api, params)
@@ -286,7 +333,7 @@ function api_fork_snapshot!(api::SessionAPI, source::Session, destination::Strin
         inherited = messages[1:Int(last)]
         child = Base.invokelatest(fork_session, source, inherited)
         api.sessions[destination] = child
-        api_session_summary(destination, child)
+        api_session_summary(api, destination, child)
     end
 end
 
@@ -301,6 +348,8 @@ const SESSION_OPERATIONS = Dict(
     "session/open" => api_open_session!,
     "session/resume" => (api, params) -> api_open_session!(api, params; resume=true),
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
+    "session/list/details" => api_session_list_details,
+    "session/rename" => api_session_rename!,
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,
     "session/markdown" => api_session_markdown,
@@ -340,13 +389,14 @@ function Base.close(api::SessionAPI)
     nothing
 end
 """Install the replaceable Julia session API service under a profile."""
-function session_api_plugin(; name=:session_api, service_name=:session_api, store_service=nothing, query_service=nothing, factory=Kernel)
+function session_api_plugin(; name=:session_api, service_name=:session_api, store_service=nothing, query_service=nothing, title_service=nothing, factory=Kernel)
     contract = Symbol(service_name)
-    dependencies = unique(Symbol[Symbol(name) for name in (store_service, query_service) if !isnothing(name)])
+    dependencies = unique(Symbol[Symbol(name) for name in (store_service, query_service, title_service) if !isnothing(name)])
     setup = context -> begin
         store = isnothing(store_service) ? nothing : service(context, Symbol(store_service))
         query = isnothing(query_service) ? nothing : service(context, Symbol(query_service))
-        provide!(context, contract, SessionAPI(; factory, store, query); requires=dependencies, cleanup=close)
+        titles = isnothing(title_service) ? SessionTitles() : service(context, Symbol(title_service))
+        provide!(context, contract, SessionAPI(; factory, store, query, titles); requires=dependencies, cleanup=close)
     end
     PluginSpec(name, setup; requires=dependencies, provides=[contract])
 end

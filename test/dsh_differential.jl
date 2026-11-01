@@ -1290,11 +1290,50 @@ function session_title_result(input)
     title = input["input"]
     max_bytes = input["max_bytes"]
     max_words = input["max_words"]
-    normalize(Dict(
+    result = normalize(Dict(
         "normalized" => JuliaForever2.normalize_session_title(title; max_bytes),
         "fallback" => JuliaForever2.fallback_session_title(title; max_words, max_bytes),
         "truncated" => JuliaForever2.truncate_session_title(title, max_bytes),
     ))
+    verify_session_title_lifecycle(input, result["normalized"])
+    result
+end
+
+"""Exercise native rename, display and durable continuation under the same differential inputs."""
+function verify_session_title_lifecycle(input, expected)
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(joinpath(directory, "sessions"))
+        titles = JuliaForever2.SessionTitles(; max_bytes=input["max_bytes"])
+        api = JuliaForever2.SessionAPI(; store, titles)
+        opened = JuliaForever2.session_api_request!(api, "session/open", Dict("session" => "title-case"))
+        @test opened isa AbstractDict
+        append_message!(api.sessions["title-case"], Message(:user, input["input"]))
+        renamed = JuliaForever2.session_api_request!(api, "session/rename",
+            Dict("session" => "title-case", "title" => input["input"]))
+        if isempty(expected)
+            @test renamed isa JuliaForever2.RpcError
+        else
+            @test renamed isa AbstractDict
+            @test renamed["title"] == expected
+            detail = JuliaForever2.session_api_request!(api, "session/describe", Dict("session" => "title-case"))
+            listed = JuliaForever2.session_api_request!(api, "session/list/details")
+            @test detail["title"] == expected
+            @test length(listed) == 1 && listed[1]["title"] == expected
+            @test JuliaForever2.session_api_request!(api, "session/save",
+                Dict("session" => "title-case"))["saved"]
+        end
+        close(api)
+        if !isempty(expected)
+            restored = JuliaForever2.SessionAPI(; store,
+                titles=JuliaForever2.SessionTitles(; max_bytes=input["max_bytes"]))
+            reopened = JuliaForever2.session_api_request!(restored, "session/resume",
+                Dict("session" => "title-case"))
+            @test reopened["title"] == expected
+            @test reopened["session"] == "title-case"
+            close(restored)
+        end
+    end
+    nothing
 end
 
 @testset "DSH full-product proof requires complete native differential evidence" begin
