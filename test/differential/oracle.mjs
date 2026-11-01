@@ -38,6 +38,25 @@ export class ToolCancellationReference {
 ${source.slice(start, end)}
 }`
 })
+const { PostToolReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async postExecute(')
+  const end = source.indexOf('  /** Registry-normalized results', start)
+  const helperStart = source.indexOf('function failureMessageFromContent(')
+  const helperEnd = source.indexOf('/** Snapshot and freeze one durable', helperStart)
+  if ([start, end, helperStart, helperEnd].some(index => index < 0)) {
+    throw new Error('Locked DSH post-execute method boundaries were not found')
+  }
+  return `${source.slice(helperStart, helperEnd)}
+const scopeTarget = (service, scope) => service
+export class PostToolReference {
+  constructor(decision) {
+    this.ctx = { waterfall: async () => decision }
+    this.tools = {}
+  }
+  markCanonical(_exec, value) { return value }
+${source.slice(start, end)}
+}`
+})
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
   const end = source.indexOf('/** Runtime patch applied to entries', start)
@@ -60,6 +79,27 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
   return include.slice(patchStart, patchEnd) + '\n' + source.slice(start)
 })
 const settle = () => new Promise(resolve => setImmediate(resolve))
+
+/** Compare the original pinned upstream post-execute policy decision behavior. */
+async function toolCompletionCase(input) {
+  const successful = (input.initial ?? 'success') === 'success'
+  const result = successful
+    ? { isError: false, value: 'done', content: [{ type: 'text', text: 'done' }] }
+    : { isError: true, error: { message: 'denied' }, content: [{ type: 'text', text: 'denied' }] }
+  const policy = input.policy === 'block'
+    ? { kind: 'block', feedback: [{ type: 'text', text: input.message }] }
+    : input.policy === 'replace'
+      ? { kind: 'accept', content: [{ type: 'text', text: input.message }] }
+      : { kind: 'accept' }
+  const reference = new PostToolReference(policy)
+  const completed = await reference.postExecute({ name: 'fixture', agent: {} }, result)
+  return {
+    ok: !completed.isError,
+    text: completed.content.map(block => block.text).join('\\n'),
+    retained: completed.isError ? null : completed.value,
+    called: input.initial !== 'guard',
+  }
+}
 
 /** Compare the original pinned upstream approval-resolution behavior in isolation. */
 async function toolApprovalCase(input) {
@@ -696,6 +736,7 @@ function sessionQueryCase(input) {
 }
 
 async function execute(input) {
+  if (input.kind === 'tool_completion') return Promise.all(input.cases.map(toolCompletionCase))
   if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
   if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
   if (input.kind === 'tool_outputs') return input.cases.map(toolOutputsCase)
