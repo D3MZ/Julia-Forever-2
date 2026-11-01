@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native plugin profile activation and independently implemented seams have bounded differential evidence. Production no longer launches or wraps the DSH SDK/runtime/Web; test-only DSH client scenarios and DSH-specific utility launch comparisons do not establish native SDK or Web parity. Full feature superset remains unproven.",
+  "assessment": "Native plugin profile activation and independently implemented seams have bounded differential evidence. Production no longer launches or wraps the DSH SDK/runtime/Web; test-only DSH client scenarios and DSH-specific utility launch comparisons do not establish native SDK or Web parity. Full feature superset remains unproven. Native live and persisted literal history search is compared with pinned DSH semantic-text predicates on bounded fixtures; indexed search, tracing and full DSH session-query behavior remain unverified.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -368,6 +368,35 @@
       "limits": [
         "Only the common observable projection of plugin identity, order, and whole plugin configuration replacement is compared; DSH bundle discovery, patch grammar, hot reload, service bindings, and native plugin lifecycle require separate evidence.",
         "Saved-profile format, filesystem semantics and name resolution are native Julia design choices, not claimed to match DSH persistence implementation; reference covers the shared composition projection only."
+      ]
+    },
+    {
+      "kind": "session_query",
+      "case_count": 11,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/session-query/session-query/src/filters.ts",
+          "symbols": [
+            "filterSessionEventDocuments",
+            "compileSessionTextFilter"
+          ]
+        },
+        {
+          "path": "packages/session-query/session-query/src/config.ts",
+          "symbols": [
+            "SessionQueryError"
+          ]
+        }
+      ],
+      "compares": [
+        "literal, case-insensitive and whitespace-flexible search over conversation text",
+        "literal handling of regex metacharacters and Unicode case folding",
+        "role predicates, multi-session ordering, bounded search and live snapshots"
+      ],
+      "limits": [
+        "The reference receives simple semantic text documents; Julia searches user/assistant message text. Full DSH event extraction, index-backed ranking, lineage, other event types and complete session-query service parity are unverified.",
+        "Only the eleven pinned differential fixtures are checked."
       ]
     }
   ],
@@ -1815,9 +1844,11 @@
     },
     {
       "family": "session-query",
-      "status": "unverified",
+      "status": "unverified-remainder",
       "compatibility_route": "native-implementation-unverified",
-      "compared_subsets": [],
+      "compared_subsets": [
+        "session_query"
+      ],
       "packages": [
         {
           "name": "@deepseek-ai/dsh-session-log-export",
