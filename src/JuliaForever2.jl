@@ -30,6 +30,7 @@ public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, e
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
 public ToolSpec, ToolCall, ToolExecutor, ToolBatch, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!, invoke_tool_batch!, tool_concurrency_safe
 public CheckedJSONSchema, tool_argument_violations, tool_output_violations, tool_schema_definition
+public AbstractToolApprovalRequest, ToolApprovalRequest, tool_approval_reason, tool_approval_outcome
 public RpcError, RpcResult, JsonRpcPeer, request!, notify!, feed!, start!, drain!
 public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!, start_runtime, finish_runtime!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers

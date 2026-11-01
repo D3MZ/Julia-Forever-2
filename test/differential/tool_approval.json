@@ -1,0 +1,53 @@
+[
+  {
+    "name": "missing channel denies with supplied reason",
+    "channel": "missing",
+    "reason": "Review required"
+  },
+  {
+    "name": "missing channel denies by default",
+    "channel": "missing"
+  },
+  {
+    "name": "one-call grant executes callback",
+    "channel": "present",
+    "outcome": "allowed-once",
+    "reason": "Review required"
+  },
+  {
+    "name": "explicit rejection prevents execution",
+    "channel": "present",
+    "outcome": "rejected"
+  },
+  {
+    "name": "unavailable channel denies",
+    "channel": "present",
+    "outcome": "unavailable",
+    "reason": "Review required"
+  },
+  {
+    "name": "cancelled approval denies",
+    "channel": "present",
+    "outcome": "cancelled"
+  },
+  {
+    "name": "async approval is awaited",
+    "channel": "present",
+    "outcome": "allowed-once",
+    "async": true
+  },
+  {
+    "name": "withdrawn approval channel immediately fails closed",
+    "channel": "present",
+    "outcome": "allowed-once",
+    "withdraw": true,
+    "reason": "Review required"
+  },
+  {
+    "name": "one-shot grant does not authorize a subsequent call",
+    "channel": "present",
+    "outcome": "allowed-once",
+    "next_outcome": "rejected",
+    "reason": "Review required"
+  }
+]
