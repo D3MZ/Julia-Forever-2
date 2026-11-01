@@ -12,8 +12,11 @@ CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "prof
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
+CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
+CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
 CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
+CASES["tool_completion"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_completion.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -694,6 +697,67 @@ function tool_outputs_result(input)
         "schema" => JuliaForever2.tool_schema_definition(schema)))
 end
 
+"""Use Julia tool output renderers without converting canonical values to display text."""
+function tool_output_projection_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    invoked = Ref(0)
+    rendered = Ref(0)
+    function renderer(arguments, value)
+        rendered[] += 1
+        format = input["format"]
+        format == "label" && return string(get(arguments, "prefix", ""), value["label"])
+        format == "joined" && return join(value["lines"], "|")
+        format == "summary" && return string(value["label"], " (", value["count"], ")")
+        format == "silent" && return ""
+        format == "scalar" && return string(value)
+        error("Unknown fixture presentation")
+    end
+    specification = JuliaForever2.ToolSpec(:projection, Dict("type" => "object"),
+        arguments -> begin
+            invoked[] += 1
+            return deepcopy(input["value"])
+        end; output_schema=JuliaForever2.CheckedJSONSchema(input["schema"]), render_output=renderer)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    result = JuliaForever2.invoke_tool!(scope, :projection, input["arguments"])
+    result.ok || isnothing(result.value) || error("Tool failure exposed the canonical value")
+    close(scope)
+    return normalize(Dict("accepted" => result.ok, "invoked" => invoked[],
+        "rendered" => rendered[], "display" => result.ok ? result.text : nothing,
+        "value" => result.ok ? result.value : nothing))
+end
+
+"""Compare post-tool acceptance, blocking, and presentation with the pinned DSH policy stage."""
+function tool_completion_result(input)
+    root = JuliaForever2.ExtensionScope()
+    scope = JuliaForever2.ExtensionScope(root)
+    invoked = Ref(0)
+    specification = JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
+        invoked[] += 1
+        return get(input, "initial", "success") == "failed" ?
+            ExecutionResult(false, "denied") : "done"
+    end)
+    installed = JuliaForever2.register_tool!(root, specification)
+    installed.ok || error(installed.reason)
+    if get(input, "initial", "success") == "guard"
+        guarded = JuliaForever2.register_tool_guard!(root, call -> "denied")
+        guarded.ok || error(guarded.reason)
+    end
+    policy = get(input, "policy", "none")
+    if policy != "none"
+        JuliaForever2.on!(scope, :tool_completion) do call, result
+            policy == "block" && return JuliaForever2.ToolResultBlock(input["message"])
+            policy == "replace" && return JuliaForever2.ToolResultText(input["message"])
+            return nothing
+        end
+    end
+    result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}())
+    close(scope)
+    close(root)
+    return normalize(Dict("ok" => result.ok, "text" => result.text,
+        "retained" => result.ok ? result.value : nothing, "called" => invoked[] > 0))
+end
+
 """Compare Julia-owned approval routing against the original pinned upstream approval service outcomes."""
 function tool_approval_result(input)
     root = JuliaForever2.ExtensionScope()
@@ -743,6 +807,27 @@ function tool_approval_result(input)
     close(scope)
     close(root)
     return normalize(outcomes)
+end
+
+"""Compare cancellation after a Julia-owned tool body starts with the pinned DSH lifecycle."""
+function tool_cancellation_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    context = ExecutionContext()
+    invoked = Ref(0)
+    specification = JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
+        invoked[] += 1
+        get(input, "async", false) && yield()
+        get(input, "cancel_during", false) && cancel!(context)
+        return input["value"]
+    end)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    get(input, "cancel_before", false) && cancel!(context)
+    result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}(); context)
+    close(scope)
+    close(context)
+    return normalize(Dict("allowed" => result.ok, "invoked" => invoked[],
+        "retained" => result.ok ? result.value : nothing))
 end
 
 """Compare native tool-batch scheduling with the original pinned DSH scheduler."""
@@ -887,11 +972,27 @@ end
     @test actual == expected
 end
 
+@testset "DSH full-product proof requires complete native differential evidence" begin
+    verified = COVERAGE["verified_source_families"]
+    cases = Set(area["kind"] for area in COVERAGE["native_comparisons"])
+    evidence = !isempty(verified) && all(verified) do family
+        get(family, "native", false) === true &&
+            !isempty(get(family, "implementation_paths", String[])) &&
+            !isempty(get(family, "differential_kinds", String[])) &&
+            all(kind -> kind in cases, family["differential_kinds"])
+    end
+    proven = COVERAGE["inventory_complete"] === true &&
+        isempty(COVERAGE["unverified_source_families"]) && evidence
+    @test COVERAGE["superset_proven"] === proven
+end
+
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
-            ("tool_batch", tool_batch_result), ("tool_approval", tool_approval_result),
+            ("tool_output_projection", tool_output_projection_result),
+            ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
+            ("tool_approval", tool_approval_result), ("tool_completion", tool_completion_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),

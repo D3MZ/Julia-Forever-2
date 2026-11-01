@@ -15,6 +15,48 @@ const { ApprovalReference } = await importSource('packages/core/tools/src/pipeli
     + source.slice(start, end) + '\n}'
 })
 
+const { ToolCancellationReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async dispatchToolBody(')
+  const end = source.indexOf('  /**\n   * Run around-dispatch', start)
+  const helpers = source.indexOf('function isAborted(')
+  const helpersEnd = source.indexOf('export { executeToolBatch }', helpers)
+  if (start < 0 || end < 0 || helpers < 0 || helpersEnd < 0) {
+    throw new Error('Locked DSH tool cancellation method boundaries were not found')
+  }
+  return `const TOOL_ABORTED = 'ABORTED'
+const TOOL_ABORTED_BEFORE_DISPATCH = 'ABORTED_BEFORE_DISPATCH'
+${source.slice(helpers, helpersEnd)}
+export class ToolCancellationReference {
+  constructor(tool) {
+    this.tool = tool
+    this.cancellationStates = new WeakMap()
+  }
+  resolveExecution() { return this.tool }
+  createSuccessResult(_execution, _tool, value) {
+    return { isError: false, value, content: [] }
+  }
+${source.slice(start, end)}
+}`
+})
+const { PostToolReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
+  const start = source.indexOf('  private async postExecute(')
+  const end = source.indexOf('  /** Registry-normalized results', start)
+  const helperStart = source.indexOf('function failureMessageFromContent(')
+  const helperEnd = source.indexOf('/** Snapshot and freeze one durable', helperStart)
+  if ([start, end, helperStart, helperEnd].some(index => index < 0)) {
+    throw new Error('Locked DSH post-execute method boundaries were not found')
+  }
+  return `${source.slice(helperStart, helperEnd)}
+const scopeTarget = (service, scope) => service
+export class PostToolReference {
+  constructor(decision) {
+    this.ctx = { waterfall: async () => decision }
+    this.tools = {}
+  }
+  markCanonical(_exec, value) { return value }
+${source.slice(start, end)}
+}`
+})
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
   const end = source.indexOf('/** Runtime patch applied to entries', start)
@@ -38,6 +80,27 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
 })
 const settle = () => new Promise(resolve => setImmediate(resolve))
 
+/** Compare the original pinned upstream post-execute policy decision behavior. */
+async function toolCompletionCase(input) {
+  const successful = (input.initial ?? 'success') === 'success'
+  const result = successful
+    ? { isError: false, value: 'done', content: [{ type: 'text', text: 'done' }] }
+    : { isError: true, error: { message: 'denied' }, content: [{ type: 'text', text: 'denied' }] }
+  const policy = input.policy === 'block'
+    ? { kind: 'block', feedback: [{ type: 'text', text: input.message }] }
+    : input.policy === 'replace'
+      ? { kind: 'accept', content: [{ type: 'text', text: input.message }] }
+      : { kind: 'accept' }
+  const reference = new PostToolReference(policy)
+  const completed = await reference.postExecute({ name: 'fixture', agent: {} }, result)
+  return {
+    ok: !completed.isError,
+    text: completed.content.map(block => block.text).join('\\n'),
+    retained: completed.isError ? null : completed.value,
+    called: input.initial !== 'guard',
+  }
+}
+
 /** Compare the original pinned upstream approval-resolution behavior in isolation. */
 async function toolApprovalCase(input) {
   let available = input.channel !== 'missing'
@@ -58,6 +121,23 @@ async function toolApprovalCase(input) {
   if (!input.withdraw && !input.next_outcome) return first
   if (input.withdraw) available = false
   return [first, project(await reference.serviceAsk(exec, ask))]
+}
+
+/** Compare a real pinned DSH tool-body cancellation decision, not a runtime adapter. */
+async function toolCancellationCase(input) {
+  const controller = new AbortController()
+  let invoked = 0
+  const reference = new ToolCancellationReference({ execute: async () => {
+    invoked++
+    if (input.async) await settle()
+    if (input.cancel_during) controller.abort()
+    return input.value
+  } })
+  const exec = { name: 'fixture', arguments: {}, signal: controller.signal }
+  reference.cancellationStates.set(exec, { callerSignal: controller.signal, bodyInvoked: false })
+  if (input.cancel_before) controller.abort()
+  const result = await reference.dispatchToolBody(exec)
+  return { allowed: !result.isError, invoked, retained: result.isError ? null : result.value }
 }
 
 async function toolBatchCase(input) {
@@ -88,17 +168,20 @@ async function toolBatchCase(input) {
     },
     async dispatch(exec) {
       const specification = definitions.get(exec.callId)
-      if (specification.mode !== 'parallel' && active !== 0) exclusiveSafe = false
-      active++
-      peak = Math.max(peak, active)
-      started.push(specification.id)
-      entered.get(specification.id).resolve()
-      if (specification.wait_for) await entered.get(specification.wait_for).promise
-      active--
-      if (specification.cancel) controller.abort()
-      return { kind: 'post-result', result: {
-        content: [{ type: 'text', text: specification.id }], isError: false,
-      } }
+      const reference = new ToolCancellationReference({ execute: async () => {
+        if (specification.mode !== 'parallel' && active !== 0) exclusiveSafe = false
+        active++
+        peak = Math.max(peak, active)
+        started.push(specification.id)
+        entered.get(specification.id).resolve()
+        if (specification.wait_for) await entered.get(specification.wait_for).promise
+        active--
+        if (specification.cancel) controller.abort()
+        return specification.id
+      } })
+      reference.cancellationStates.set(exec, { callerSignal: controller.signal, bodyInvoked: false })
+      const result = await reference.dispatchToolBody(exec)
+      return { kind: 'post-result', result }
     },
     async complete(exec, completed) { return completed.result },
   }, () => input.max_parallel)
@@ -107,6 +190,45 @@ async function toolBatchCase(input) {
     executed: started.sort(),
     barrierSafe: exclusiveSafe,
     overlap: input.check_overlap ? peak >= 2 : null,
+  }
+}
+
+/** Exercise the pinned DSH tool registry's typed return and separate model rendering contract. */
+async function toolOutputProjectionCase(input) {
+  const { ToolsService, SystemPrompt } = await toolsReference()
+  const { context } = await scopeFixture(input, async context => {
+    await context.plugin(SystemPrompt)
+    await context.plugin(ToolsService)
+  }, ['tools', 'systemPrompt'])
+  let invoked = 0
+  let rendered = 0
+  const text = (args, value) => {
+    if (input.format === 'label') return `${args.prefix ?? ''}${value.label}`
+    if (input.format === 'joined') return value.lines.join('|')
+    if (input.format === 'summary') return `${value.label} (${value.count})`
+    if (input.format === 'silent') return ''
+    if (input.format === 'scalar') return String(value)
+    throw new Error('Unknown fixture presentation')
+  }
+  const dispose = context.tools.register({
+    name: 'projection', description: '', parameters: { type: 'object' },
+    output: { schema: input.schema, render: (args, value) => {
+      rendered++
+      return [{ type: 'text', text: text(args, value) }]
+    } },
+    execute: async () => { invoked++; return input.value },
+  })
+  const tool = context.tools.get('projection')
+  const value = await tool.execute(input.arguments, {})
+  const allowed = validateJsonSchemaValue(tool.output.schema, value, 'result').length === 0
+  const content = allowed ? tool.output.render(input.arguments, value) : null
+  dispose()
+  await context.fiber.dispose()
+  return {
+    accepted: allowed,
+    invoked, rendered,
+    display: content === null ? null : content.map(block => block.text).join('\\n'),
+    value: allowed ? value : null,
   }
 }
 
@@ -653,9 +775,11 @@ function sessionQueryCase(input) {
 }
 
 async function execute(input) {
+  if (input.kind === 'tool_completion') return Promise.all(input.cases.map(toolCompletionCase))
   if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
   if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
   if (input.kind === 'tool_outputs') return input.cases.map(toolOutputsCase)
+  if (input.kind === 'tool_output_projection') return Promise.all(input.cases.map(toolOutputProjectionCase))
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
@@ -669,6 +793,7 @@ async function execute(input) {
   if (input.kind === 'events') return Promise.all(input.cases.map(eventCase))
   if (input.kind === 'tools') return Promise.all(input.cases.map(toolCase))
   if (input.kind === 'tool_batch') return Promise.all(input.cases.map(toolBatchCase))
+  if (input.kind === 'tool_cancellation') return Promise.all(input.cases.map(toolCancellationCase))
   if (input.kind === 'final_response') return input.cases.map(input => finalResponse(input.events))
   if (input.kind === 'launch') return input.cases.map(launchCase)
   throw new Error(`Unknown oracle operation: ${input.kind}`)

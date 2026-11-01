@@ -395,7 +395,6 @@ end
     close(context)
 end
 
-
 @testset "OpenAI streamed text and thinking chunks preserve completed content" begin
     deltas = [isodd(index) ? repeat("Julia answer λ 🚀 ", 10) :
         repeat("model tool output: ", 11) for index in 1:120]
@@ -434,4 +433,77 @@ end
     @test only(filter(event -> event["type"] == "thinking_end", emitted))["content"] == join(thinking)
     @test last(emitted)["type"] == "done"
     close(context)
+end
+
+@testset "Buffered model text survives failed and cancelled streams" begin
+    frame = "data: " * JSON.json(Dict("choices" => [Dict("delta" => Dict(
+        "content" => "partial answer λ", "reasoning_content" => "partial thought 🚀"),
+        "finish_reason" => nothing)])) * "\n\n"
+    for (status, cancel_request, stop_reason) in ((502, false, "error"),
+            (200, true, "aborted"), (0, true, "aborted"))
+        events = HarnessEvent[]
+        context = ExecutionContext(; event_sink=event -> push!(events, event))
+        transport = (url, method, body, headers, request_context, decoder) -> begin
+            write(decoder, frame)
+            cancel_request && JuliaForever2.cancel!(request_context)
+            return (status=status, reason="simulated failure")
+        end
+        backend = JuliaForever2.HTTPModelBackend(JuliaForever2.OpenAIChatProtocol(),
+            "https://offline.invalid"; transport)
+        request = JuliaForever2.ModelRequest([Message(:user, "hello")],
+            "", nothing, nothing, nothing)
+        completion = JuliaForever2.respond_model(backend,
+            JuliaForever2.ModelSpec(:synthetic, "test-model"), request, context)
+        blocks = Dict(block["type"] => block[block["type"]] for block in completion.message["content"])
+        @test blocks == Dict("thinking" => "partial thought 🚀", "text" => "partial answer λ")
+        @test completion.message["stopReason"] == stop_reason
+        @test completion.reply.kind == :error
+        emitted = [event.data["type"] for event in events if event.kind == :model_stream]
+        @test last(emitted) == "error"
+        @test ("text_end" in emitted) == (status == 200)
+        close(context)
+    end
+end
+
+@testset "Streaming tool arguments avoid reparsing incomplete JSON" begin
+    @test !JuliaForever2.possible_tool_object("")
+    @test !JuliaForever2.possible_tool_object(" \t")
+    @test !JuliaForever2.possible_tool_object(raw"""{"text":"unfinished } brace""")
+    @test JuliaForever2.possible_tool_object("{\"ok\":true}  \t")
+    @test JuliaForever2.possible_tool_object("{\"ok\":true}\u2003")
+
+    fragments = [raw"""{"text":"inside } quoted text","nested":{"ok":""", "true", "}} \t"]
+    expected = JSON.parse(join(fragments))
+    for protocol in (:openai, :anthropic)
+        context = ExecutionContext()
+        state = JuliaForever2.ModelStreamState(
+            JuliaForever2.ModelSpec(:test, "synthetic-tool-model"), context)
+        if protocol == :anthropic
+            JuliaForever2.anthropic_block_start!(state,
+                Dict("index" => 0, "content_block" => Dict(
+                    "type" => "tool_use", "id" => "tool-1", "name" => "perform",
+                    "input" => Dict{String,Any}())))
+        end
+        for (position, fragment) in enumerate(fragments)
+            if protocol == :openai
+                JuliaForever2.openai_tool_delta!(state, Dict(
+                    "index" => 0, "id" => "tool-1",
+                    "function" => Dict("name" => "perform", "arguments" => fragment)))
+            else
+                JuliaForever2.anthropic_block_delta!(state, Dict(
+                    "index" => 0, "delta" => Dict(
+                        "type" => "input_json_delta", "partial_json" => fragment)))
+            end
+            @test state.arguments[1] == join(fragments[1:position])
+            arguments = state.message["content"][1]["arguments"]
+            if position < length(fragments)
+                @test isempty(arguments)
+            else
+                @test arguments == expected
+            end
+        end
+        JuliaForever2.finish_model_block!(state, 1)
+        @test state.message["content"][1]["arguments"] == expected
+        close(context)
+    end
 end

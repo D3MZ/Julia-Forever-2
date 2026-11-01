@@ -143,6 +143,17 @@ function repair_model_json(text::AbstractString)
     return String(take!(output))
 end
 
+"""Check whether a streamed JSON argument prefix can be a complete object."""
+function possible_tool_object(text::String)
+    index = lastindex(text)
+    while index > 0
+        character = text[index]
+        isspace(character) || return character == '}'
+        index = prevind(text, index)
+    end
+    return false
+end
+
 function parse_model_tool_arguments(text::AbstractString)
     parsed = parse_json(text)
     return isnothing(parsed) ? parse_json(repair_model_json(text)) : parsed
@@ -179,6 +190,11 @@ finish_protocol_stream!(protocol, state::ModelStreamState) = finish_model_blocks
 
 function finish_model_stream!(state::ModelStreamState)
     state.finished && return nothing
+    for (index, buffer) in state.text_buffers
+        block = state.message["content"][index]
+        block[block["type"]] = String(take!(buffer))
+    end
+    empty!(state.text_buffers)
     state.finished = true
     state.message["durationMs"] = Int((time_ns() - state.started_at) ÷ 1_000_000)
     if cancelled(state.context)
