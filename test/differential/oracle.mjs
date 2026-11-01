@@ -80,25 +80,57 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
 })
 const settle = () => new Promise(resolve => setImmediate(resolve))
 
-/** Compare the original pinned upstream post-execute policy decision behavior. */
+/** Render a deterministic test output projection, independent of the policy implementation. */
+function completionDisplay(input, value) {
+  if (input.format === 'label') return String(input.prefix ?? '') + value.label
+  if (input.format === 'joined') return value.lines.join('|')
+  return String(value)
+}
+
+/** Exercise pinned DSH post-execute decisions with deterministic tool output fixtures. */
 async function toolCompletionCase(input) {
   const successful = (input.initial ?? 'success') === 'success'
+  const initialValue = Object.hasOwn(input, 'initial_value') ? input.initial_value : 'done'
   const result = successful
-    ? { isError: false, value: 'done', content: [{ type: 'text', text: 'done' }] }
+    ? { isError: false, value: initialValue, content: [{ type: 'text', text: completionDisplay(input, initialValue) }] }
     : { isError: true, error: { message: 'denied' }, content: [{ type: 'text', text: 'denied' }] }
   const policy = input.policy === 'block'
     ? { kind: 'block', feedback: [{ type: 'text', text: input.message }] }
     : input.policy === 'replace'
       ? { kind: 'accept', content: [{ type: 'text', text: input.message }] }
-      : { kind: 'accept' }
+      : input.policy === 'value'
+        ? { kind: 'accept', value: input.value }
+        : { kind: 'accept' }
   const reference = new PostToolReference(policy)
-  const completed = await reference.postExecute({ name: 'fixture', agent: {} }, result)
-  return {
+  let replacementRenders = 0
+  // Inject a test-only tool contract. The policy method itself comes unchanged
+  // from the pinned, hash-verified upstream source.
+  reference.resolveExecution = () => ({ output: { schema: input.schema ?? { type: 'string' } } })
+  reference.createSuccessResult = (_exec, tool, value) => {
+    const violations = validateJsonSchemaValue(tool.output.schema, value, 'value')
+    if (violations.length > 0) throw new TypeError('Invalid tool replacement')
+    replacementRenders++
+    return { isError: false, value, content: [{ type: 'text', text: completionDisplay(input, value) }] }
+  }
+  let completed
+  try {
+    completed = await reference.postExecute({ name: 'fixture', agent: {} }, result)
+  } catch (error) {
+    if (input.policy !== 'value') throw error
+    return { ok: false, text: 'completion rejected', retained: null,
+      called: input.initial !== 'guard', replacementRenders }
+  }
+  const observation = {
     ok: !completed.isError,
-    text: completed.content.map(block => block.text).join('\\n'),
+    text: completed.content.map(block => block.text).join('\n'),
     retained: completed.isError ? null : completed.value,
     called: input.initial !== 'guard',
   }
+  if (input.policy === 'value') {
+    if (completed.isError) observation.text = 'completion rejected'
+    observation.replacementRenders = replacementRenders
+  }
+  return observation
 }
 
 /** Compare the original pinned upstream approval-resolution behavior in isolation. */

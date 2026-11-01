@@ -559,22 +559,26 @@
     },
     {
       "kind": "tool_completion",
-      "case_count": 9,
+      "case_count": 18,
       "status": "required-differential-cases",
       "sources": [
         {
           "path": "packages/core/tools/src/pipeline.ts",
-          "symbols": ["ToolExecutionPipeline.postExecute"]
+          "symbols": [
+            "ToolExecutionPipeline.postExecute"
+          ]
         }
       ],
       "compares": [
         "Successful results accepted unchanged or with rewritten presentation text",
         "Post-execute blocking discards successful values",
-        "Failed guards and failed callback results stay failures unless explicitly blocked"
+        "Failed guards and failed callback results stay failures unless explicitly blocked",
+        "Post-policy replacement of typed successful values with schema admission and new model-facing presentation, while failures cannot be revived"
       ],
       "limits": [
         "The oracle invokes the original hash-pinned DSH post-execute method in isolation with fixed success and failure results, not a complete upstream agent or policy pipeline.",
-        "Deferred contexts, value replacements, rich multimodal output rendering, finalization, audit events and full cross-stage ordering remain unverified."
+        "Deferred contexts, value replacements, rich multimodal output rendering, finalization, audit events and full cross-stage ordering remain unverified.",
+        "The pinned policy method receives an injected deterministic output contract; its value-replacement branch and actual upstream JSON Schema validator are exercised, but its full private normalization pipeline is not."
       ]
     }
   ],
