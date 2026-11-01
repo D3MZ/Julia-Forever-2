@@ -7,6 +7,8 @@ on:
       - '.github/workflows/hercules-history.yml'
       - 'scripts/render_hercules_history.py'
       - 'scripts/test_render_hercules_history.py'
+      - 'scripts/update_hercules_readme.py'
+      - 'scripts/test_update_hercules_readme.py'
       - 'assets/hercules-history.png'
 
 permissions:
@@ -41,26 +43,37 @@ jobs:
           echo 'ead7afbe72deb87cfd9a5481ef43c74e17f18259c417de6fd1272ef997ad0c44  '"$RUNNER_TEMP/hercules.gz" | sha256sum -c -
           gzip -dc "$RUNNER_TEMP/hercules.gz" > "$RUNNER_TEMP/hercules"
           chmod +x "$RUNNER_TEMP/hercules"
-      - name: Test the renderer
-        run: python -m unittest discover -s scripts -p 'test_render_hercules_history.py' -v
+      - name: Test the history tooling
+        run: python -m unittest discover -s scripts -p 'test_*hercules*.py' -v
       - name: Generate the hourly chart
         run: python scripts/render_hercules_history.py --repo . --hercules "$RUNNER_TEMP/hercules" --output assets/hercules-history.png
-      - name: Push the chart only if it changed
+      - name: Push the chart and versioned image link if needed
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- assets/hercules-history.png; then
-            echo 'The chart is unchanged; no commit is needed.'
-            exit 0
-          fi
           git fetch origin main
-          if [ "$(git rev-parse HEAD)" != "$(git rev-parse FETCH_HEAD)" ]; then
+          base=$(git rev-parse HEAD)
+          if [ "$base" != "$(git rev-parse FETCH_HEAD)" ]; then
             echo 'Main advanced during rendering. The next run can retry safely.' >&2
             exit 1
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add assets/hercules-history.png
-          git commit -m 'Update Hercules history chart [skip ci]'
+          if ! git diff --quiet -- assets/hercules-history.png; then
+            git add assets/hercules-history.png
+            git commit -m 'Update Hercules history chart [skip ci]'
+          else
+            echo 'The chart is unchanged.'
+          fi
+          chart_commit=$(git log -1 --format=%H -- assets/hercules-history.png)
+          python scripts/update_hercules_readme.py --readme README.md --commit "$chart_commit"
+          if ! git diff --quiet -- README.md; then
+            git add README.md
+            git commit -m 'Refresh Hercules image link [skip ci]'
+          fi
+          if [ "$(git rev-parse HEAD)" = "$base" ]; then
+            echo 'The chart and image link are unchanged; no commit is needed.'
+            exit 0
+          fi
           git push origin HEAD:main
