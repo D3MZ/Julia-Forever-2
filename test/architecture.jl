@@ -552,3 +552,19 @@ end
         end
     end
 end
+
+
+@testset "ProfileStore ignores symlinks when listing and loading saved profiles" begin
+    mktempdir() do directory
+        store = JuliaForever2.ProfileStore(joinpath(directory, "profiles"))
+        outside = JuliaForever2.ProfileStore(joinpath(directory, "outside"))
+        @test JuliaForever2.save_profile!(store, JuliaForever2.Profile(:local, [:example])).ok
+        @test JuliaForever2.save_profile!(outside, JuliaForever2.Profile(:linked, [:example])).ok
+        symlink(joinpath(outside.directory, "linked.json"),
+            joinpath(store.directory, "linked.json"))
+        @test JuliaForever2.profile_names(store) == [:local]
+        @test isnothing(JuliaForever2.load_profile(store, :linked))
+        @test JuliaForever2.load_profile(store, :local).plugins == [:example]
+        @test JuliaForever2.load_profile(outside, :linked).plugins == [:example]
+    end
+end
