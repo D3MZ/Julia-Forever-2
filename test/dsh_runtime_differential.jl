@@ -169,6 +169,20 @@ function http_observation(url; method="GET", headers=Pair{String,String}[], repl
     return (; observation, fields)
 end
 
+function browser_trust_cases(origin)
+    return (
+        ("plain", Pair{String,String}[]),
+        ("same-origin", ["origin" => origin]),
+        ("same-site", ["origin" => origin, "sec-fetch-site" => "same-site"]),
+        ("foreign-origin", ["origin" => "https://untrusted.invalid"]),
+        ("opaque-origin", ["origin" => "null"]),
+        ("wrong-port-origin", ["origin" => "http://127.0.0.1:1"]),
+        ("cross-site", ["origin" => origin, "sec-fetch-site" => "cross-site"]),
+        ("foreign-host", ["host" => "untrusted.invalid"]),
+        ("lookalike-host", ["host" => "127.0.0.1.untrusted.invalid"]),
+    )
+end
+
 function observe_web(feature, home, output_path, diagnostics_path)
     pattern = r"dsh web: (http://127\.0\.0\.1:\d+/\S*)"
     ready() = !isnothing(match(pattern, read(output_path, String))) || !process_running(feature.process)
@@ -194,9 +208,15 @@ function observe_web(feature, home, output_path, diagnostics_path)
     index = http_observation(origin * "/"; headers=["cookie" => cookie], replacements=[home => "<home>", origin => "<origin>"])
     asset = http_observation(origin * "/favicon.svg")
     cached = http_observation(origin * "/favicon.svg"; headers=["if-none-match" => asset.observation["etag"]])
+    trust = Any[]
+    for (name, extra_headers) in browser_trust_cases(origin)
+        checked = http_observation(origin * "/api/"; headers=vcat(["cookie" => cookie], extra_headers))
+        push!(trust, Dict("name" => name, "status" => checked.observation["status"]))
+    end
     return Dict("release" => DSH_REFERENCE_VERSION, "referenceCommit" => DSH_REFERENCE_COMMIT,
         "responses" => responses, "authentication" => authentication,
-        "index" => index.observation, "asset" => asset.observation, "cached" => cached.observation)
+        "index" => index.observation, "asset" => asset.observation,
+        "cached" => cached.observation, "trust" => trust)
 end
 
 function web_result(directory, home, temporary)
@@ -487,6 +507,26 @@ function native_web_launch_comparison(reference)
     return actual, expected
 end
 
+"""Compare live upstream trust decisions with the independently hosted Julia session API."""
+function native_web_trust_comparison(reference)
+    api = JuliaForever2.SessionAPI()
+    server = JuliaForever2.start_web_server(api)
+    origin = JuliaForever2.web_url(server)
+    exchange = HTTP.request("GET", JuliaForever2.web_launch_url(server);
+        redirect=false, status_exception=false)
+    cookie = first(split(HTTP.header(exchange, "Set-Cookie"), ';'))
+    actual = Dict{String,Bool}()
+    for (name, extra_headers) in browser_trust_cases(origin)
+        result = HTTP.request("GET", origin * "/api/sessions",
+            vcat(["Cookie" => cookie], extra_headers); status_exception=false)
+        actual[name] = result.status == 403
+    end
+    expected = Dict(String(entry["name"]) => entry["status"] == 403 for entry in reference["trust"])
+    close(server)
+    close(api)
+    return actual, expected
+end
+
 @testset "Pinned DSH transport differentials using test-only protocol clients" begin
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
@@ -527,6 +567,16 @@ end
             end
             @testset "Native Julia one-use browser launch and cookie authentication" begin
                 actual, expected = native_web_launch_comparison(reference)
+                @test actual == expected
+            end
+            @testset "Native Julia browser authority and Origin trust" begin
+                actual, expected = native_web_trust_comparison(reference)
+                @test expected["plain"] == false
+                @test expected["same-origin"] == false
+                @test expected["foreign-origin"] == true
+                @test expected["opaque-origin"] == true
+                @test expected["cross-site"] == true
+                @test expected["foreign-host"] == true
                 @test actual == expected
             end
         end
