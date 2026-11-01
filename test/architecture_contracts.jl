@@ -143,3 +143,15 @@ end
     @test !cost.cost_known
     @test cost.cost == 0.0
 end
+
+@testset "Typed and dictionary provider usage share validation" begin
+    for (input, output, cost) in ((-4, 3, 0.25), (2, 3, -0.5),
+            (2, 3, 0.5), (2, -3, nothing))
+        typed = Conversation()
+        raw = Conversation()
+        JuliaForever2.record_usage!(typed, JuliaForever2.UsageReport(input, output, cost))
+        JuliaForever2.record_usage!(raw, Dict("input_tokens" => input,
+            "output_tokens" => output, "cost" => cost))
+        @test JuliaForever2.usage_snapshot(typed) == JuliaForever2.usage_snapshot(raw)
+    end
+end
