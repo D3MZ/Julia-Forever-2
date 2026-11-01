@@ -921,10 +921,10 @@ end
 
 """Evaluate scoped per-step tool admission against pinned upstream registry decisions."""
 function tool_activation_result(input)
-    root = ExtensionScope()
-    scopes = Dict{String,ExtensionScope}("root" => root)
+    root = JuliaForever2.ExtensionScope()
+    scopes = Dict{String,JuliaForever2.ExtensionScope}("root" => root)
     for specification in get(input, "scopes", [])
-        scopes[specification["name"]] = ExtensionScope(scopes[get(specification, "parent", "root")])
+        scopes[specification["name"]] = JuliaForever2.ExtensionScope(scopes[get(specification, "parent", "root")])
     end
     scope_of(specification) = scopes[get(specification, "scope", get(input, "scope",
         haskey(scopes, "agent") ? "agent" : "root"))]
@@ -939,15 +939,15 @@ function tool_activation_result(input)
         predicate = isnothing(category) ? nothing : activation -> begin
             push!(conditions, specification["id"])
             category == "error" && error("fixture condition failed")
-            category == "abort" && cancel!(active_context[])
+            category == "abort" && JuliaForever2.cancel!(active_context[])
             enabled = category in ("always", "abort") ||
                 (category in ("enabled", "async-enabled") &&
                     get(activation.model_selection, "enabled", false) === true)
             return startswith(category, "async-") ? Threads.@spawn(enabled) : enabled
         end
-        tool = ToolSpec(Symbol(specification["name"]), Dict("type" => "object"),
+        tool = JuliaForever2.ToolSpec(Symbol(specification["name"]), Dict("type" => "object"),
             arguments -> get(specification, "value", nothing); when=predicate)
-        registration = register_tool!(scope_of(specification), tool)
+        registration = JuliaForever2.register_tool!(scope_of(specification), tool)
         registration.ok || error(registration.reason)
         registrations[specification["id"]] = registration.registration
     end
@@ -959,25 +959,25 @@ function tool_activation_result(input)
         kind = operation["type"]
         selected = get(admitted, get(operation, "set", ""), nothing)
         if kind == "prepare"
-            context = ExecutionContext()
-            get(operation, "cancel_before", false) && cancel!(context)
+            context = JuliaForever2.ExecutionContext()
+            get(operation, "cancel_before", false) && JuliaForever2.cancel!(context)
             active_context[] = context
             result = JuliaForever2.resolve_tool_set(scope; context,
                 model_selection=Dict("enabled" => get(operation, "enabled", false)))
             if result.ok
                 admitted[operation["id"]] = result.tool_set
-                names = [String(item.name) for item in tools_snapshot(scope; tool_set=result.tool_set)]
+                names = [String(item.name) for item in JuliaForever2.tools_snapshot(scope; tool_set=result.tool_set)]
                 push!(outcomes, Dict("ok" => true, "names" => names))
             else
                 push!(outcomes, Dict("ok" => false,
-                    "error" => cancelled(context) ? "aborted" : "activation"))
+                    "error" => JuliaForever2.cancelled(context) ? "aborted" : "activation"))
             end
             close(context)
         elseif kind == "snapshot"
             push!(outcomes, Dict("names" => [String(item.name)
-                for item in tools_snapshot(scope; tool_set=selected)]))
+                for item in JuliaForever2.tools_snapshot(scope; tool_set=selected)]))
         elseif kind == "check"
-            result = invoke_tool!(scope, Symbol(operation["name"]), Dict{String,Any}(); tool_set=selected)
+            result = JuliaForever2.invoke_tool!(scope, Symbol(operation["name"]), Dict{String,Any}(); tool_set=selected)
             push!(outcomes, Dict("allowed" => result.ok, "value" => result.ok ? result.value : nothing))
         elseif kind == "register"
             register(operation["tool"])
@@ -985,7 +985,7 @@ function tool_activation_result(input)
             JuliaForever2.release!(registrations[operation["id"]])
         elseif kind == "restrict"
             filter = operation["filter"]
-            restriction = restrict_tools!(scope; allow=get(filter, "allow", nothing),
+            restriction = JuliaForever2.restrict_tools!(scope; allow=get(filter, "allow", nothing),
                 deny=get(filter, "deny", nothing))
             restriction.ok || error(restriction.reason)
             registrations[operation["id"]] = restriction.registration
