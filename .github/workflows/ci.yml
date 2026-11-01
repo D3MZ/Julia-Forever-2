@@ -35,7 +35,7 @@ jobs:
           node-version: '24.22.1'
       - name: Install pinned Pi dependencies without lifecycle scripts
         working-directory: ${{ runner.temp }}/pi-reference
-        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --include-workspace-root --no-audit --no-fund
+        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --workspace packages/tui --include-workspace-root --no-audit --no-fund
       - name: Fetch pinned DSH differential oracle
         shell: bash
         run: |
