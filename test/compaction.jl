@@ -1,3 +1,4 @@
+using JSON
 using JuliaForever2: ModelSpec, ModelProvider, ModelRequest, ProviderFactory, ProviderDescriptor,
     ProviderRegistry, register_provider!, provider_model, model_context_window, model_output_limit,
     refresh_pi_model_catalog!, CompactionSettings, resolved_compaction, context_messages,
