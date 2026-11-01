@@ -31,27 +31,26 @@ end
 
 """Skip a terminal control sequence without rendering its hidden contents."""
 function skip_title_csi(characters, index)
-    while index <= length(characters)
-        code = Int(characters[index])
-        if 0x40 <= code <= 0x7e
-            return index + 1
-        elseif !(0x20 <= code <= 0x3f)
-            return index
-        end
+    while index <= length(characters) && 0x20 <= Int(characters[index]) <= 0x3f
         index += 1
     end
-    index
+    index <= length(characters) && 0x40 <= Int(characters[index]) <= 0x7e ?
+        index + 1 : index
 end
 
 function skip_title_osc(characters, index)
-    while index <= length(characters)
+    finished = false
+    while index <= length(characters) && !finished
         if characters[index] == '\a'
-            return index + 1
+            index += 1
+            finished = true
         elseif characters[index] == '\e' && index < length(characters) &&
                 characters[index + 1] == '\\'
-            return index + 2
+            index += 2
+            finished = true
+        else
+            index += 1
         end
-        index += 1
     end
     index
 end
@@ -89,24 +88,20 @@ function clean_session_title(input::AbstractString)
         code = Int(character)
         if code == 0x1b
             index = skip_title_escape(characters, index)
-            continue
         elseif code == 0x9b
             index = skip_title_csi(characters, index + 1)
-            continue
         elseif code == 0x9d
             index = skip_title_osc(characters, index + 1)
-            continue
-        elseif title_hidden(character)
-            index += 1
-            continue
-        elseif isspace(character)
-            pending_space = position(output) > 0
         else
-            pending_space && print(output, ' ')
-            pending_space = false
-            print(output, character)
+            if isspace(character) && !title_hidden(character)
+                pending_space = position(output) > 0
+            elseif !title_hidden(character)
+                pending_space && print(output, ' ')
+                pending_space = false
+                print(output, character)
+            end
+            index += 1
         end
-        index += 1
     end
     String(take!(output))
 end
@@ -115,13 +110,20 @@ end
 function title_prefix(input::AbstractString, max_bytes::Integer)
     remaining = title_positive("max_bytes", max_bytes)
     output = IOBuffer()
-    for character in input
+    state = iterate(input)
+    finished = false
+    while !isnothing(state) && !finished
+        character, position = state
         bytes = ncodeunits(string(character))
-        bytes > remaining && break
-        print(output, character)
-        remaining -= bytes
+        if bytes > remaining
+            finished = true
+        else
+            print(output, character)
+            remaining -= bytes
+            state = iterate(input, position)
+        end
     end
-    rstrip(String(take!(output)))
+    String(rstrip(String(take!(output))))
 end
 
 """Produce a terminal-safe, whitespace-normalized title within a UTF-8 byte bound."""
@@ -188,14 +190,15 @@ function delete_title_record!(store::SessionStore, identity::UUID)
 end
 
 function first_session_title(service::SessionTitleService, session::Session)
+    title = nothing
     for message in history_snapshot(session).messages
-        if message.role === :user && message.kind === :text
-            title = fallback_session_title(message.content;
+        if isnothing(title) && message.role === :user && message.kind === :text
+            proposed = fallback_session_title(message.content;
                 max_words=service.max_words, max_bytes=service.fallback_max_bytes)
-            !isempty(title) && return title
+            !isempty(proposed) && (title = proposed)
         end
     end
-    nothing
+    title
 end
 
 function remember_title!(service::SessionTitleService, identity::UUID,
@@ -242,16 +245,19 @@ end
 
 """Unpin a title and return to the deterministic current-session fallback."""
 function refresh_session_title!(service::SessionTitleService, session::Session)
-    isopen(session) || return nothing
-    lock(service.lock) do
-        identity = session_lineage(session).id
-        title = first_session_title(service, session)
-        if isnothing(title)
-            delete_title_record!(service.store, identity)
-            delete!(service.records, identity)
-            nothing
-        else
-            remember_title!(service, identity, SessionTitleRecord(title, :fallback))
+    if !isopen(session)
+        nothing
+    else
+        lock(service.lock) do
+            identity = session_lineage(session).id
+            title = first_session_title(service, session)
+            if isnothing(title)
+                delete_title_record!(service.store, identity)
+                delete!(service.records, identity)
+                nothing
+            else
+                remember_title!(service, identity, SessionTitleRecord(title, :fallback))
+            end
         end
     end
 end
