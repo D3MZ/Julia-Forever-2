@@ -664,7 +664,7 @@ function checked_tool_result(spec::ToolSpec, returned)
     result.ok || return result
     violations = tool_output_violations(spec.output_schema, result.value)
     isempty(violations) && return result
-    return ExecutionResult(false, "Invalid tool result: " * join(violations, "; "))
+    return ExecutionResult(false, string("Invalid tool result: ", join(violations, "; ")))
 end
 
 """Invoke a tool only after all inherited plugin-owned guards permit its call."""
