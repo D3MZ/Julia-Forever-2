@@ -715,6 +715,30 @@ end
 tool_result(value::ExecutionResult) = value
 tool_result(value) = ExecutionResult(true, value isa AbstractString ? value : repr(value), value)
 
+"""Request a fail-closed rejection of one completed tool call, withholding its value."""
+struct ToolResultBlock
+    reason::String
+end
+ToolResultBlock(reason::AbstractString) = ToolResultBlock(String(reason))
+
+"""Change the text shown for a completed call without modifying its successful value."""
+struct ToolResultText
+    text::String
+end
+ToolResultText(text::AbstractString) = ToolResultText(String(text))
+
+"""Select a post-execution policy through scoped events or independent multiple dispatch."""
+tool_completion_decision(scope::ExtensionScope, call, result::ExecutionResult) =
+    dispatch_event!(scope, :tool_completion, call, result; mode=:serial)
+
+apply_tool_completion(::Nothing, result::ExecutionResult) = result
+apply_tool_completion(decision::ToolResultBlock, result::ExecutionResult) =
+    ExecutionResult(false, decision.reason)
+apply_tool_completion(decision::ToolResultText, result::ExecutionResult) =
+    ExecutionResult(result.ok, decision.text, result.ok ? result.value : nothing)
+apply_tool_completion(decision, result::ExecutionResult) =
+    ExecutionResult(false, "Unsupported tool completion decision")
+
 """Render model-visible tool text independently of the validated canonical value."""
 tool_output_text(renderer, arguments, value) = Base.invokelatest(renderer, arguments, value)
 
@@ -740,7 +764,27 @@ function checked_tool_result(spec::ToolSpec, arguments, returned)
     return present_tool_result(spec, arguments, result)
 end
 
-"""Invoke a tool only after all inherited plugin-owned guards permit its call."""
+"""Evaluate admission and argument checks before starting the Julia-owned tool callback."""
+function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, arguments, context)
+    denial = first_tool_denial(guards, call, scope)
+    isnothing(denial) || return ExecutionResult(false, denial)
+    cancelled(context) && return ExecutionResult(false, "Tool call aborted before dispatch")
+    violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
+    isempty(violations) || return ExecutionResult(false, string(join(violations, "; ")))
+    cancelled(context) && return ExecutionResult(false, "Tool call aborted before dispatch")
+    returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
+    return checked_tool_result(invocation.listener.spec, call.arguments, returned)
+end
+
+"""Complete an admitted tool result using an independently replaceable Julia policy."""
+function complete_tool_result(scope::ExtensionScope, call, raw::ExecutionResult, context)
+    decision = Base.invokelatest(tool_completion_decision, scope, call, raw)
+    settled = Base.invokelatest(apply_tool_completion, decision, raw)
+    return cancelled(context) && settled.ok ?
+        ExecutionResult(false, "Tool call aborted") : settled
+end
+
+"""Invoke a tool only after inherited guards permit it; post-policy cannot revive a failure."""
 function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context=current_context())
     invocation = acquire_tool!(scope, name)
     isnothing(invocation) && return ExecutionResult(false, "Unknown tool: $name")
@@ -750,24 +794,8 @@ function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context
         if cancelled(context)
             ExecutionResult(false, "Tool call aborted before dispatch")
         else
-            denial = first_tool_denial(guards, call, scope)
-            if !isnothing(denial)
-                ExecutionResult(false, denial)
-            elseif cancelled(context)
-                ExecutionResult(false, "Tool call aborted before dispatch")
-            else
-                violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
-                if !isempty(violations)
-                    ExecutionResult(false, join(violations, "; "))
-                elseif cancelled(context)
-                    ExecutionResult(false, "Tool call aborted before dispatch")
-                else
-                    returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
-                    result = checked_tool_result(invocation.listener.spec, call.arguments, returned)
-                    cancelled(context) && result.ok ?
-                        ExecutionResult(false, "Tool call aborted") : result
-                end
-            end
+            raw = admitted_tool_result(invocation, guards, scope, call, arguments, context)
+            complete_tool_result(scope, call, raw, context)
         end
     end
     wait(worker; throw=false)
