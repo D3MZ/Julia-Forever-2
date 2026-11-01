@@ -65,9 +65,29 @@ function web_request(api::JuliaForever2.SessionAPI, token::AbstractString, reque
     end
 end
 
+const WEB_ASSET_DIRECTORY = normpath(joinpath(@__DIR__, "..", "assets", "web"))
+
+"""Load fixed, packaged Julia-native browser assets without any upstream runtime dependency."""
+web_asset(::Val{:index}) = read(joinpath(WEB_ASSET_DIRECTORY, "index.html"), String)
+web_asset(::Val{:script}) = read(joinpath(WEB_ASSET_DIRECTORY, "app.js"), String)
+web_asset(::Val{:style}) = read(joinpath(WEB_ASSET_DIRECTORY, "app.css"), String)
+
+function web_index()
+    page = response(200, web_asset(Val(:index)), "text/html; charset=utf-8")
+    HTTP.setheader(page, "Content-Security-Policy" =>
+        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; " *
+        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+    HTTP.setheader(page, "X-Frame-Options" => "DENY")
+    page
+end
+
 function route(api, request, target)
     if request.method == "GET" && target == "/"
-        response(200, "<!doctype html><html lang=\"en\"><head><title>JuliaForever2</title></head><body><h1>JuliaForever2</h1><p>Native session API: /api/rpc</p></body></html>", "text/html; charset=utf-8")
+        web_index()
+    elseif request.method == "GET" && target == "/app.js"
+        response(200, web_asset(Val(:script)), "text/javascript; charset=utf-8")
+    elseif request.method == "GET" && target == "/app.css"
+        response(200, web_asset(Val(:style)), "text/css; charset=utf-8")
     elseif request.method == "GET" && target == "/api/sessions"
         response(200, JSON.json(JuliaForever2.session_api_request!(api, "session/list")))
     elseif request.method == "POST" && target == "/api/rpc"
