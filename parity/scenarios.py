@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import random
 
+from wire import wire_scenarios
+
 REGISTRY_CONTRACTS = [
     'provider-registry.replacement', 'model-catalog.typed-lookup',
     'provider-dispatch.selected-backend', 'model-catalog.failure-isolation',
@@ -41,6 +43,7 @@ def build_scenarios() -> list[dict]:
         dict(operation='dispatch', provider='alpha', id='shared', prompt='before'),
         register('alpha', 'replacement'), dict(operation='providers'),
         dict(operation='dispatch', provider='alpha', id='shared', prompt='after'),
+        dict(operation='dispatch', provider='alpha', id='shared', prompt='legacy', legacy=True),
         dict(operation='models', kind='all'),
         dict(operation='lookup', provider='alpha', id='shared', kind='classifier'),
         register('broken', 'failure', broken=True), dict(operation='models', kind='all'),
@@ -97,4 +100,4 @@ def build_scenarios() -> list[dict]:
         ]
         scenarios.append(dict(id=f'model-store-isolation-{index}', family='store',
                               capabilities=STORE_CONTRACTS, steps=steps))
-    return scenarios
+    return scenarios + wire_scenarios()

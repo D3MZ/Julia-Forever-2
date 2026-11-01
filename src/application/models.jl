@@ -73,6 +73,10 @@ function respond(provider::ModelProvider, request::ModelRequest, context::Execut
     cancelled(context) && return provider_failure("Request cancelled or timed out.")
     return respond_model(provider.backend, provider.model, request, context)
 end
+function respond(provider::ModelProvider, messages, session::Session, context::ExecutionContext)
+    request = model_request(operation_protocol(session.definition, provider), messages, session)
+    return respond(provider, request, context)
+end
 (provider::ModelProvider)(messages, session) = call_provider(provider, messages, session)
 provider_id(provider::ModelProvider) = provider.model.provider
 provider_name(provider::ModelProvider) = provider.label

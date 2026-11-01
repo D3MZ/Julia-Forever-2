@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from scenarios import build_scenarios
+from wire import FixtureServer
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,6 +37,13 @@ def main() -> int:
     reference = Path(arguments.reference).resolve()
     lock = json.loads((ROOT / 'parity/pi-lock.json').read_text())
     manifest = json.loads((ROOT / 'parity/capabilities.json').read_text())
+    for extension_path in sorted((ROOT / 'parity/capabilities.d').glob('*.json')):
+        extension = json.loads(extension_path.read_text())
+        if extension['baseline_commit'] != lock['commit']:
+            raise ValueError(f'Extension manifest pin mismatch: {extension_path}')
+        manifest['capabilities'].extend(extension['capabilities'])
+        manifest['projection'].update(extension.get('projection', {}))
+        manifest['inventory_complete'] = manifest['inventory_complete'] and extension['inventory_complete']
     scenarios = build_scenarios()
     commit = execute(['git', '-C', str(reference), 'rev-parse', 'HEAD']).strip()
     tree = execute(['git', '-C', str(reference), 'rev-parse', 'HEAD^{tree}']).strip()
@@ -56,10 +64,25 @@ def main() -> int:
             path = (reference / source).resolve()
             if not path.is_relative_to(reference) or not path.is_file():
                 raise ValueError(f'Missing upstream evidence: {source}')
-    payload = json.dumps(scenarios, ensure_ascii=False)
-    oracle = json.loads(execute(['node', '--conditions=source', str(ROOT / 'parity/oracle.mjs'), str(reference)], input_text=payload))
-    candidate = json.loads(execute([os.environ.get('JULIA', 'julia'), '--startup-file=no', f'--project={ROOT}',
-                                    str(ROOT / 'parity/candidate.jl')], input_text=payload))
+    server = FixtureServer(scenarios)
+    try:
+        for scenario in scenarios:
+            if scenario['family'] == 'wire':
+                scenario['endpoint'] = f"{server.base_url}/fixture/{scenario['id']}"
+        payload = json.dumps(scenarios, ensure_ascii=False)
+        oracle = json.loads(execute(['node', '--conditions=source', str(ROOT / 'parity/oracle.mjs'), str(reference)], input_text=payload))
+        oracle_requests = server.drain()
+        candidate = json.loads(execute([os.environ.get('JULIA', 'julia'), '--startup-file=no', f'--project={ROOT}',
+                                        str(ROOT / 'parity/candidate.jl')], input_text=payload))
+        candidate_requests = server.drain()
+    finally:
+        server.close()
+    for result, requests in [(oracle, oracle_requests), (candidate, candidate_requests)]:
+        for entry, scenario in zip(result, scenarios, strict=True):
+            if scenario['family'] == 'wire':
+                entry['result']['requests'] = requests.get(entry['id'], [])
+                if not entry['result']['requests']:
+                    raise ValueError(f"No actual HTTP request for {entry['id']}")
     scenario_ids = [scenario['id'] for scenario in scenarios]
     for name, result in [('Pi', oracle), ('Julia', candidate)]:
         if [entry['id'] for entry in result] != scenario_ids:

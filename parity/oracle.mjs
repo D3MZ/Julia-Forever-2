@@ -103,9 +103,34 @@ async function storeScenario(scenario) {
     return outputs;
 }
 
+async function wireScenario(scenario) {
+    const { stream } = await load('packages/ai/src/api/openai-completions.ts');
+    const model = { ...scenario.model, baseUrl: scenario.endpoint };
+    const messages = [
+        { role: 'system', content: scenario.instructions, timestamp: 0 },
+        { role: 'user', content: scenario.prompt, timestamp: 0 },
+    ];
+    const events = [];
+    const output = stream(model, { messages }, {
+        ...scenario.options, apiKey: 'fixture-only', maxRetries: 0, cacheRetention: 'none',
+    });
+    for await (const event of output) {
+        const observed = {};
+        for (const key of ['type', 'contentIndex', 'delta', 'content', 'toolCall', 'reason']) {
+            if (event[key] !== undefined) observed[key] = structuredClone(event[key]);
+        }
+        events.push(observed);
+    }
+    const message = structuredClone(await output.result());
+    delete message.timestamp;
+    delete message.duration;
+    return { message, events };
+}
+
 const outputs = [];
 for (const scenario of scenarios) {
-    const result = scenario.family === 'registry' ? await registryScenario(scenario) : await storeScenario(scenario);
+    const result = scenario.family === 'registry' ? await registryScenario(scenario)
+        : scenario.family === 'store' ? await storeScenario(scenario) : await wireScenario(scenario);
     outputs.push({ id: scenario.id, result });
 }
 process.stdout.write(JSON.stringify(outputs));

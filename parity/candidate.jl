@@ -49,9 +49,15 @@ function registry_scenario(scenario)
             else
                 provider = JuliaForever2.provider_from_name(Symbol(step["provider"]); dir="", registry, model=step["id"])
                 request = ModelRequest([Message(:user, step["prompt"])], "", nothing, nothing, nothing)
-                response = JuliaForever2.respond(provider, request, ExecutionContext())
-                reply = JuliaForever2.response_reply(response)
-                push!(outputs, Dict("text" => reply.content, "stopReason" => reply.kind == :answer ? "stop" : "error"))
+                reply = if get(step, "legacy", false)
+                    session = Session(Kernel())
+                    result = provider(request.messages, session)
+                    close(session)
+                    result
+                else
+                    JuliaForever2.response_reply(JuliaForever2.respond(provider, request, ExecutionContext()))
+                end
+                push!(outputs, Dict("text" => reply.content, "stopReason" => (reply.kind == :answer ? "stop" : "error")))
             end
         else
             error("Unknown registry operation: $operation")
@@ -96,8 +102,28 @@ function store_scenario(scenario)
     return outputs
 end
 
+function wire_scenario(scenario)
+    metadata = scenario["model"]
+    model = fixture_model(metadata)
+    protocol = JuliaForever2.OpenAIChatProtocol(; compatibility=metadata["compat"])
+    backend = JuliaForever2.HTTPModelBackend(protocol, scenario["endpoint"];
+        credentials=Returns(["Authorization" => "Bearer fixture-only"]), options=scenario["options"])
+    request = ModelRequest([Message(:user, scenario["prompt"])], scenario["instructions"], nothing, nothing, nothing)
+    events = Any[]
+    context = ExecutionContext(; emit=event -> event.kind == :model_stream && push!(events, deepcopy(event.data)))
+    response = JuliaForever2.respond(JuliaForever2.ModelProvider(model, backend), request, context)
+    close(context)
+    return Dict("message" => response.message, "events" => events)
+end
+
 function run_scenarios(scenarios)
-    return [Dict("id" => scenario["id"], "result" =>
-        (scenario["family"] == "registry" ? registry_scenario(scenario) : store_scenario(scenario))) for scenario in scenarios]
+    outputs = Any[]
+    for scenario in scenarios
+        family = scenario["family"]
+        result = family == "registry" ? registry_scenario(scenario) :
+            family == "store" ? store_scenario(scenario) : wire_scenario(scenario)
+        push!(outputs, Dict("id" => scenario["id"], "result" => result))
+    end
+    return outputs
 end
 print(JSON.json(run_scenarios(JSON.parse(read(stdin, String)))))

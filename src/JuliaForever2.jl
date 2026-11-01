@@ -16,6 +16,7 @@ public reply_schema, reply_format, decode_reply
 public ProviderDescriptor, register_provider!, unregister_provider!, provider_descriptors, provider_descriptor
 public ProviderRegistry, builtin_provider_registry
 public ModelSpec, ProviderFactory, ModelProvider, respond_model, select_model, provider_models, provider_model
+public HTTPModelBackend, OpenAIChatProtocol, StreamedCompletion
 public MemoryModelStore, read_model_catalog, write_model_catalog!, delete_model_catalog!
 public provider_id, provider_from_name, configured_provider, provider_name, provider_detail, usage_label, main
 public component_snapshot, provider_selection_snapshot, provider_settings_snapshot, select_provider!
