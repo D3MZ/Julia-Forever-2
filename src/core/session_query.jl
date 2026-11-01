@@ -16,24 +16,65 @@ end
 
 """Enumerate saved session identifiers without restoring or executing sessions."""
 function session_names(store::SessionStore)
-    isdir(store.directory) || return String[]
-    names = String[]
-    for filename in readdir(store.directory)
-        endswith(filename, ".json") || continue
-        name = chop(filename; tail=5)
-        path = session_file(store, name)
-        (isnothing(path) || islink(path) || !isfile(path)) && continue
-        push!(names, name)
-    end
-    return sort!(names)
+    files = isdir(store.directory) ? readdir(store.directory) : String[]
+    names = String[chop(file; tail=5) for file in files if endswith(file, ".json")]
+    sort!(filter(name -> is_saved_profile_file(session_file(store, name)), names))
 end
-
 const SessionSearchHit = NamedTuple{(:session, :index, :role, :kind, :content),
     Tuple{Union{Nothing,String},Int,Symbol,Symbol,String}}
 
-function session_query_pattern(text::AbstractString)
+struct SearchWindow{F,T}
+    first::F
+    last::T
+
+    function SearchWindow(first::F, last::T) where {F,T}
+        if !(validindex(first) && validindex(last))
+            error("Session query indices must be positive integers")
+        elseif !isnothing(first) && !isnothing(last) && first > last
+            error("Session query lower index exceeds upper index")
+        else
+            new{F,T}(first, last)
+        end
+    end
+end
+
+validindex(::Nothing) = true
+validindex(value) = value isa Integer && !(value isa Bool) && value >= 1
+selected(index, window::SearchWindow) = (isnothing(window.first) || index >= window.first) && (isnothing(window.last) || index <= window.last)
+session_index_selected(index, first, last) = selected(index, SearchWindow(first, last))
+session_search_window(first, last) = (SearchWindow(first, last); nothing)
+session_name_selection(names) = isnothing(names) ? nothing : Set(String.(names))
+
+struct HistoryQuery{R,L<:Integer,S,W}
+    pattern::Regex
+    text::String
+    roles::R
+    limit::L
+    sessions::S
+    window::W
+
+    function HistoryQuery(text::String, roles::R, limit::L, sessions::S, window::W) where {R,L<:Integer,S,W<:SearchWindow}
+        validate(HistoryQuery, text, limit)
+        new{R,L,S,W}(pattern(text), text, roles, limit, sessions, window)
+    end
+end
+
+HistoryQuery(text::AbstractString; roles=nothing, limit::Integer=typemax(Int), sessions=nothing, from_index=nothing, to_index=nothing) = HistoryQuery(String(text), isnothing(roles) ? nothing : Set(Symbol.(roles)), limit, session_name_selection(sessions), SearchWindow(from_index, to_index))
+HistoryQuery(text::String, roles, limit::Integer) = HistoryQuery(text, roles, limit, nothing, SearchWindow(nothing, nothing))
+session_query_pattern(text::AbstractString) = HistoryQuery(text).pattern
+selected(name, query::HistoryQuery) = isnothing(query.sessions) || name in query.sessions
+
+function validate(::Type{HistoryQuery}, text, limit)
+    if limit < 0
+        error("Session query limit must be nonnegative")
+    elseif isempty(strip(text))
+        error("Session query must contain non-whitespace text")
+    end
+    nothing
+end
+
+function pattern(text::String)
     stripped = strip(String(text))
-    isempty(stripped) && error("Session query must contain non-whitespace text")
     pattern = IOBuffer()
     for (index, token) in enumerate(split(stripped, r"\s+"))
         index == 1 || print(pattern, "\\s+")
@@ -47,71 +88,37 @@ function session_query_pattern(text::AbstractString)
     return Regex(String(take!(pattern)), "i")
 end
 
-"""Validate inclusive, one-based message positions before selecting any history."""
-function session_search_window(from_index, to_index)
-    for index in (from_index, to_index)
-        isnothing(index) && continue
-        index isa Integer && !(index isa Bool) && index >= 1 ||
-            error("Session query indices must be positive integers")
-    end
-    if !isnothing(from_index) && !isnothing(to_index)
-        from_index <= to_index || error("Session query lower index exceeds upper index")
-    end
-    return nothing
-end
-
-session_index_selected(index, from_index, to_index) =
-    (isnothing(from_index) || index >= from_index) &&
-    (isnothing(to_index) || index <= to_index)
-
-session_name_selection(names) = isnothing(names) ? nothing : Set(String.(names))
-
-function append_session_matches!(hits::Vector{SessionSearchHit}, messages, identity,
-        pattern::Regex, allowed_roles, limit::Integer, from_index, to_index)
-    for (index, message) in enumerate(messages)
-        length(hits) >= limit && break
-        session_index_selected(index, from_index, to_index) || continue
-        if !isnothing(allowed_roles) && !(message.role in allowed_roles)
-            continue
+function append_session_matches!(hits::Vector{SessionSearchHit}, messages, identity, pattern::Regex, allowed_roles, limit::Integer, from_index=nothing, to_index=nothing)
+    window = SearchWindow(from_index, to_index)
+    candidates = Iterators.takewhile(item -> length(hits) < limit, enumerate(messages))
+    for (index, message) in candidates
+        if selected(index, window) && matches(message, pattern, allowed_roles)
+            push!(hits, SessionSearchHit((identity, index, message.role, message.kind, message.content)))
         end
-        occursin(pattern, message.content) || continue
-        push!(hits, SessionSearchHit((identity, index, message.role, message.kind, message.content)))
     end
-    return hits
+    hits
 end
 
+matches(message, pattern::Regex, roles) = (isnothing(roles) || message.role in roles) && occursin(pattern, message.content)
+matches(hit, query::HistoryQuery) = selected(hit.session, query) && selected(hit.index, query.window) && matches(hit, query.pattern, query.roles)
+appendmatches!(hits, ::Nothing, identity, query::HistoryQuery) = hits
+appendmatches!(hits, record, identity, query::HistoryQuery) = append_session_matches!(hits, record.messages, identity, query.pattern, query.roles, query.limit, query.window.first, query.window.last)
 """Search a detached snapshot of a live session without changing its conversation."""
-function search_history(session::Session, text::AbstractString; roles=nothing, limit::Integer=typemax(Int),
-        from_index=nothing, to_index=nothing)
-    limit >= 0 || error("Session query limit must be nonnegative")
-    session_search_window(from_index, to_index)
-    pattern = session_query_pattern(text)
-    allowed = isnothing(roles) ? nothing : Set(Symbol.(roles))
-    return append_session_matches!(SessionSearchHit[], history_snapshot(session).messages,
-        nothing, pattern, allowed, limit, from_index, to_index)
-end
+search_history(session::Session, text::AbstractString; roles=nothing, limit::Integer=typemax(Int), from_index=nothing, to_index=nothing) = search(session, HistoryQuery(text; roles, limit, from_index, to_index))
+search(session::Session, query::HistoryQuery) = appendmatches!(SessionSearchHit[], history_snapshot(session), nothing, query)
 
 """Search stored sessions in deterministic name/message order without activating agents."""
-function search_history(store::SessionStore, text::AbstractString; roles=nothing, limit::Integer=typemax(Int),
-        sessions=nothing, from_index=nothing, to_index=nothing)
-    limit >= 0 || error("Session query limit must be nonnegative")
-    session_search_window(from_index, to_index)
-    pattern = session_query_pattern(text)
-    allowed = isnothing(roles) ? nothing : Set(Symbol.(roles))
-    selected = session_name_selection(sessions)
+search_history(store::SessionStore, text::AbstractString; roles=nothing, limit::Integer=typemax(Int), sessions=nothing, from_index=nothing, to_index=nothing) = search(store, HistoryQuery(text; roles, limit, sessions, from_index, to_index))
+
+function search(store::SessionStore, query::HistoryQuery)
     hits = SessionSearchHit[]
-    for name in session_names(store)
-        length(hits) >= limit && break
-        !isnothing(selected) && !(name in selected) && continue
-        record = saved_session_record(store, name)
-        isnothing(record) && continue
-        append_session_matches!(hits, record.messages, name, pattern, allowed, limit, from_index, to_index)
+    for name in Iterators.takewhile(name -> length(hits) < query.limit, Iterators.filter(name -> selected(name, query), session_names(store)))
+        appendmatches!(hits, saved_session_record(store, name), name, query)
     end
-    return hits
+    hits
 end
 
-search_history(query::SessionQuery, text::AbstractString; kwargs...) =
-    search_history(query.source, text; kwargs...)
+search_history(query::SessionQuery, text::AbstractString; kwargs...) = search_history(query.source, text; kwargs...)
 
 
 """A revision-aware in-memory trigram index over durable Julia session messages."""
@@ -150,84 +157,90 @@ end
 
 """Rebuild index snapshots explicitly after changes made outside this SessionStore instance."""
 function refresh_index!(index::SessionSearchIndex)
-    return lock(index.lock) do
+    lock(index.lock) do
         lock(index.store.lock) do
             documents = SessionSearchHit[]
             postings = Dict{String,BitSet}()
-            unicode_documents = BitSet()
+            unicode = BitSet()
             for name in session_names(index.store)
-                record = saved_session_record(index.store, name)
-                isnothing(record) && continue
-                for (position, message) in enumerate(record.messages)
-                    push!(documents, SessionSearchHit((name, position, message.role, message.kind, message.content)))
-                    document_id = length(documents)
-                    if isascii(message.content)
-                        append_ascii_session_postings!(postings, message.content, document_id)
-                    else
-                        push!(unicode_documents, document_id)
-                    end
-                end
+                index!(documents, postings, unicode, saved_session_record(index.store, name), name)
             end
             index.documents = documents
             index.postings = postings
-            index.unicode_documents = unicode_documents
+            index.unicode_documents = unicode
             index.revision = index.store.revision
         end
-        return index
+        index
     end
 end
 
+index!(documents, postings, unicode, ::Nothing, name) = documents
+
+function index!(documents, postings, unicode, record, name)
+    for (position, message) in enumerate(record.messages)
+        push!(documents, SessionSearchHit((name, position, message.role, message.kind, message.content)))
+        if isascii(message.content)
+            append_ascii_session_postings!(postings, message.content, length(documents))
+        else
+            push!(unicode, length(documents))
+        end
+    end
+    documents
+end
 """Narrow candidates conservatively, then verify all text predicates using the exact matcher."""
 function indexed_session_candidates(index::SessionSearchIndex, text::AbstractString)
-    terms = split(strip(String(text)), r"\s+")
     grams = String[]
-    for term in terms
-        isascii(term) || continue
+    for term in Iterators.filter(isascii, split(strip(String(text)), r"\s+"))
         append!(grams, session_trigrams(term))
     end
     unique!(grams)
-    isempty(grams) && return 1:length(index.documents)
-    seed = get(index.postings, first(grams), nothing)
-    isnothing(seed) && return copy(index.unicode_documents)
-    smallest = length(seed)
-    for gram in Iterators.drop(grams, 1)
-        posting = get(index.postings, gram, nothing)
-        isnothing(posting) && return copy(index.unicode_documents)
-        count = length(posting)
-        if count < smallest
-            seed, smallest = posting, count
-        end
-    end
-    candidates = copy(seed)
-    for gram in grams
-        posting = index.postings[gram]
-        posting === seed || intersect!(candidates, posting)
-        isempty(candidates) && break
-    end
-    union!(candidates, index.unicode_documents)
-    return candidates
+    isempty(grams) ? (1:length(index.documents)) : candidates(index, grams, smallest(index.postings, grams))
 end
 
-"""Search a cached inverted index; SessionStore writes invalidate it automatically."""
-function search_history(index::SessionSearchIndex, text::AbstractString; roles=nothing, limit::Integer=typemax(Int),
-        sessions=nothing, from_index=nothing, to_index=nothing)
-    limit >= 0 || error("Session query limit must be nonnegative")
-    session_search_window(from_index, to_index)
-    pattern = session_query_pattern(text)
-    allowed = isnothing(roles) ? nothing : Set(Symbol.(roles))
-    selected = session_name_selection(sessions)
-    return lock(index.lock) do
-        revision = lock(() -> index.store.revision, index.store.lock)
-        revision == index.revision || refresh_index!(index)
-        hits = SessionSearchHit[]
-        for document_id in indexed_session_candidates(index, text)
-            length(hits) >= limit && break
-            hit = index.documents[document_id]
-            !isnothing(selected) && !(hit.session in selected) && continue
-            session_index_selected(hit.index, from_index, to_index) || continue
-            !isnothing(allowed) && !(hit.role in allowed) && continue
-            occursin(pattern, hit.content) && push!(hits, hit)
+function smallest(postings, grams)
+    seed = get(postings, first(grams), nothing)
+    index = 2
+    while index <= length(grams) && !isnothing(seed)
+        posting = get(postings, grams[index], nothing)
+        if isnothing(posting) || length(posting) < length(seed)
+            seed = posting
         end
-        return hits
+        index += 1
+    end
+    seed
+end
+
+candidates(index::SessionSearchIndex, grams, ::Nothing) = copy(index.unicode_documents)
+
+function candidates(index::SessionSearchIndex, grams, seed::BitSet)
+    result = copy(seed)
+    position = 1
+    while position <= length(grams) && !isempty(result)
+        posting = index.postings[grams[position]]
+        if posting !== seed
+            intersect!(result, posting)
+        end
+        position += 1
+    end
+    union!(result, index.unicode_documents)
+end
+"""Search a cached inverted index; SessionStore writes invalidate it automatically."""
+search_history(index::SessionSearchIndex, text::AbstractString; roles=nothing, limit::Integer=typemax(Int), sessions=nothing, from_index=nothing, to_index=nothing) = search(index, HistoryQuery(text; roles, limit, sessions, from_index, to_index))
+
+function search(index::SessionSearchIndex, query::HistoryQuery)
+    lock(index.lock) do
+        revision = lock(() -> index.store.revision, index.store.lock)
+        if revision != index.revision
+            refresh_index!(index)
+        end
+        hits = SessionSearchHit[]
+        candidates = Iterators.takewhile(id -> length(hits) < query.limit, indexed_session_candidates(index, query.text))
+        for id in candidates
+            hit = index.documents[id]
+            if matches(hit, query)
+                push!(hits, hit)
+            end
+        end
+        hits
     end
 end

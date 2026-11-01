@@ -5,8 +5,7 @@ struct ProviderDescriptor{F,A,S}
     auth::A
     status::S
 end
-ProviderDescriptor(id::Symbol, label::AbstractString, create; auth=nothing, status=Returns("")) =
-    ProviderDescriptor(id, String(label), create, auth, status)
+ProviderDescriptor(id::Symbol, label::AbstractString, create; auth=nothing, status=Returns("")) = ProviderDescriptor(id, String(label), create, auth, status)
 
 struct ProviderRegistry
     lock::ReentrantLock
@@ -39,8 +38,7 @@ function unregister_provider!(registry::ProviderRegistry, id::Symbol)
 end
 unregister_provider!(id::Symbol) = unregister_provider!(DEFAULT_PROVIDER_REGISTRY, id)
 
-provider_descriptors(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) =
-    lock(() -> copy(registry.descriptors), registry.lock)
+provider_descriptors(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) = lock(() -> copy(registry.descriptors), registry.lock)
 
 function provider_descriptor(registry::ProviderRegistry, id::Symbol)
     lock(registry.lock) do

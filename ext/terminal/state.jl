@@ -82,18 +82,20 @@ const APP_COMPATIBILITY_PROPERTIES = (
 function Base.getproperty(app::App, name::Symbol)
     if hasproperty(APP_COMPATIBILITY_PROPERTIES, name)
         owner, property = getproperty(APP_COMPATIBILITY_PROPERTIES, name)
-        return getfield(getfield(app, owner), property)
+        getfield(getfield(app, owner), property)
+    else
+        getfield(app, name)
     end
-    return getfield(app, name)
 end
 
 function Base.setproperty!(app::App, name::Symbol, value)
     if hasproperty(APP_COMPATIBILITY_PROPERTIES, name)
         owner, property = getproperty(APP_COMPATIBILITY_PROPERTIES, name)
         state = getfield(app, owner)
-        return setfield!(state, property, convert(fieldtype(typeof(state), property), value))
+        setfield!(state, property, convert(fieldtype(typeof(state), property), value))
+    else
+        setfield!(app, name, convert(fieldtype(typeof(app), name), value))
     end
-    return setfield!(app, name, convert(fieldtype(typeof(app), name), value))
 end
 
 Base.propertynames(app::App, private::Bool=false) = (fieldnames(typeof(app))..., keys(APP_COMPATIBILITY_PROPERTIES)...)

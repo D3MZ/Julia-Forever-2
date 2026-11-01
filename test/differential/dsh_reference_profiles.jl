@@ -34,11 +34,7 @@ end
 
 """Extract the text blocks of the final assistant message from validated DSH session events."""
 function dsh_final_response(events)
-    for event in Iterators.reverse(events)
-        if get(event, "type", nothing) == "assistant/message"
-            return join(block["text"] for block in event["data"]["message"]["content"]
-                if get(block, "type", nothing) == "text")
-        end
-    end
-    return ""
+    matching = Iterators.filter(event -> get(event, "type", nothing) == "assistant/message", Iterators.reverse(events))
+    found = iterate(matching)
+    isnothing(found) ? "" : join(block["text"] for block in first(found)["data"]["message"]["content"] if get(block, "type", nothing) == "text")
 end

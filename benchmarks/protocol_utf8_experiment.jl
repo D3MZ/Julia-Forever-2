@@ -27,13 +27,17 @@ const mixed_text = repeat("The Julia model answers: αβγ 🚀 中文 assistant
 
 function cumulative_frames(content, count)
     wire = collect(codeunits("{\"kind\":\"answer\",\"content\":" * JSON.json(content) * "}"))
-    count == 1 && return [String(wire)]
-    prefix_bytes = ncodeunits("{\"kind\":\"answer\",\"content\":\"")
-    indices = unique!(round.(Int, range(prefix_bytes + 1, length(wire); length=count)))
-    last(indices) == length(wire) || push!(indices, length(wire))
-    return [String(copy(@view wire[1:index])) for index in indices]
+    if count == 1
+        [String(wire)]
+    else
+        prefix_bytes = ncodeunits("{\"kind\":\"answer\",\"content\":\"")
+        indices = unique!(round.(Int, range(prefix_bytes + 1, length(wire); length=count)))
+        if last(indices) != length(wire)
+            push!(indices, length(wire))
+        end
+        [String(copy(@view wire[1:index])) for index in indices]
+    end
 end
-
 const fixtures = Dict(
     "integration/unicode-stream-220-updates" => cumulative_frames(unicode_text, 220),
     "integration/escaped-stream-220-updates" => cumulative_frames(escaped_text, 220),
@@ -65,14 +69,14 @@ end
 
 function workload(decoder_module, name, frames)
     if startswith(name, "integration/")
-        return integration(decoder_module, frames)
-    end
-    return () -> begin
-        preview = decoder_module.protocol_progress(policy, last(frames))
-        return isnothing(preview) ? nothing : (preview.kind, preview.text)
+        integration(decoder_module, frames)
+    else
+        () -> begin
+            preview = decoder_module.protocol_progress(policy, last(frames))
+            isnothing(preview) ? nothing : (preview.kind, preview.text)
+        end
     end
 end
-
 function trial(f)
     GC.gc()
     times = Int[]
@@ -114,8 +118,7 @@ function profile_case(f, label)
     Profile.Allocs.clear()
     Profile.Allocs.@profile sample_rate=0.05 f()
     sites = Dict{String,Tuple{Int,Int}}()
-    for allocation in Profile.Allocs.fetch().allocs
-        isempty(allocation.stacktrace) && continue
+    for allocation in Iterators.filter(allocation -> !isempty(allocation.stacktrace), Profile.Allocs.fetch().allocs)
         frame = first(allocation.stacktrace)
         for location in allocation.stacktrace
             if endswith(string(location.file), "streaming.jl")

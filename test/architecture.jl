@@ -252,8 +252,7 @@ mutable struct OrderedTeardownExecutor
     closes::Int
 end
 
-JuliaForever2.fork_executor(executor::OrderedTeardownExecutor) =
-    OrderedTeardownExecutor(true, executor.started, executor.finish, 0)
+JuliaForever2.fork_executor(executor::OrderedTeardownExecutor) = OrderedTeardownExecutor(true, executor.started, executor.finish, 0)
 
 function JuliaForever2.close_executor!(executor::OrderedTeardownExecutor)
     executor.closes += 1

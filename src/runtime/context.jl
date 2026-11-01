@@ -34,12 +34,7 @@ struct ExecutionTaskScope{R,C,O,S}
     owners::S
 end
 
-function execution_task_scope(; runtime=get(task_local_storage(), :JuliaForever2_runtime, nothing),
-        context=get(task_local_storage(), :JuliaForever2_context, nothing),
-        owner_context=get(task_local_storage(), :JuliaForever2_owner_context, nothing),
-        owners=get(task_local_storage(), :JuliaForever2_owners, ()))
-    return ExecutionTaskScope(runtime, context, owner_context, owners)
-end
+execution_task_scope(; runtime=get(task_local_storage(), :JuliaForever2_runtime, nothing), context=get(task_local_storage(), :JuliaForever2_context, nothing), owner_context=get(task_local_storage(), :JuliaForever2_owner_context, nothing), owners=get(task_local_storage(), :JuliaForever2_owners, ())) = ExecutionTaskScope(runtime, context, owner_context, owners)
 
 function in_execution_scope(f, scope::ExecutionTaskScope)
     task_local_storage(:JuliaForever2_runtime, scope.runtime) do
@@ -157,10 +152,11 @@ function release_context_resources!(context::ExecutionContext)
     failures = Task[]
     for registration in reverse(resources)
         active = lock(() -> registration.active, registration.lock)
-        active || continue
-        cleanup = spawn_cleanup(() -> release!(registration); owners=context.owners)
-        wait(cleanup; throw=false)
-        istaskfailed(cleanup) && push!(failures, cleanup)
+        if active
+            cleanup = spawn_cleanup(() -> release!(registration); owners=context.owners)
+            wait(cleanup; throw=false)
+            istaskfailed(cleanup) && push!(failures, cleanup)
+        end
     end
     return failures
 end
@@ -174,10 +170,7 @@ function spawn_cleanup(f; owners=get(task_local_storage(), :JuliaForever2_owners
     worker = spawn_scoped(f, scope)
     return spawn_scoped(scope) do
         wait(worker; throw=false)
-        failures = release_context_resources!(context)
-        istaskfailed(worker) && return fetch(worker)
-        isempty(failures) || fetch(first(failures))
-        fetch(worker)
+        resolve(worker, release_context_resources!(context))
     end
 end
 
@@ -206,4 +199,11 @@ function claim_context!(context::ExecutionContext, owners)
         end
     end
     return available ? context : claim_context!(child_context(context), owners)
+end
+
+function resolve(worker::Task, failures::Vector{Task})
+    if !istaskfailed(worker) && !isempty(failures)
+        fetch(first(failures))
+    end
+    fetch(worker)
 end
