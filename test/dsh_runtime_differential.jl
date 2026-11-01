@@ -330,7 +330,7 @@ function native_workspace_comparison(reference, directory)
         "missing" => operations["missing-directory"]["ok"],
         "retained" => operations["directory-after-failure"]["value"]["cwd"],
         "resolved" => joinpath(operations["directory-after-failure"]["value"]["cwd"], "example.txt"),
-        "include" => [joinpath(operations["directory-after-failure"]["value"]["cwd"], "nested.jl"), 71])
+        "include" => [joinpath(operations["directory-after-failure"]["value"]["cwd"], "nested", "sibling.jl"), 71])
     return actual, expected
 end
 
@@ -339,8 +339,10 @@ end
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
         directory = mkpath(joinpath(temporary, "workspace with spaces"))
         mkpath(joinpath(directory, "child"))
-        write(joinpath(directory, "child", "entry.jl"), "include(\"nested.jl\")\n")
-        write(joinpath(directory, "child", "nested.jl"), "(@__FILE__, 71)\n")
+        mkpath(joinpath(directory, "child", "nested"))
+        write(joinpath(directory, "child", "entry.jl"), "include(\"nested/entry.jl\")\n")
+        write(joinpath(directory, "child", "nested", "entry.jl"), "include(\"sibling.jl\")\n")
+        write(joinpath(directory, "child", "nested", "sibling.jl"), "(@__FILE__, 71)\n")
         @testset "SDK process: $name" for name in ("sdk", "sdk-minimal")
             reference = reference_result("sdk", directory, joinpath(temporary, "reference-$name"); profile=name)
             profile = runtime_profile(name, directory, joinpath(temporary, "native-$name"))

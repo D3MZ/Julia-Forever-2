@@ -37,13 +37,20 @@ end
 
 initialize_executor!(executor, session) = executor
 
+"""Resolve a session include from the current included file, or from the session workspace."""
+function include_in_session(session::Session, target::Module, path::AbstractString)
+    source = Base.source_path()
+    directory = isnothing(source) || !isfile(source) ? working_directory(session) : dirname(source)
+    return Base.include(target, isabspath(path) ? path : joinpath(directory, path))
+end
+
 function initialize_executor!(executor::JuliaExecutor, session::Session)
     scope, output = executor.scope, executor.output
     Core.eval(scope, :(using JuliaForever2))
     Core.eval(scope, :(const kernel = $(QuoteNode(session.kernel))))
     Core.eval(scope, :(const session = $(QuoteNode(session))))
     Core.eval(scope, :(const output = $(QuoteNode(output))))
-    Core.eval(scope, :(include(path) = Base.include(@__MODULE__, path)))
+    Core.eval(scope, :(include(path) = JuliaForever2.include_in_session(session, @__MODULE__, path)))
     Core.eval(scope, :(print(args...) = Base.print(output, args...)))
     Core.eval(scope, :(print(io::IO, args...) = Base.print(io, args...)))
     Core.eval(scope, :(println(args...) = Base.println(output, args...)))
