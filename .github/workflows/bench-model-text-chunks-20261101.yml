@@ -46,7 +46,7 @@ jobs:
           
           length(ARGS) == 2 || error("Expected baseline directory and evidence directory")
           const baseline_dir = realpath(ARGS[1])
-          const candidate_dir = realpath(joinpath(@__DIR__, ".."))
+          const candidate_dir = realpath(pwd())
           const evidence_dir = abspath(ARGS[2])
           mkpath(evidence_dir)
           
