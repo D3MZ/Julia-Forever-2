@@ -18,6 +18,31 @@
   },
   "native_comparisons": [
     {
+      "kind": "session_titles",
+      "case_count": 22,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/session/session-title/src/normalize.ts",
+          "symbols": [
+            "normalizeSessionTitle",
+            "fallbackSessionTitle",
+            "truncateTitleUtf8"
+          ]
+        }
+      ],
+      "compares": [
+        "untrusted control and terminal escape removal",
+        "single-line Unicode and whitespace normalization",
+        "UTF-8 code point boundary truncation",
+        "bounded first-prompt fallback",
+        "empty normalized results"
+      ],
+      "limits": [
+        "The original pinned title text helpers are executed directly. DSH event logs, automatic model-generated titles, session authority, title pinning and Web UI are not established by text normalization alone."
+      ]
+    },
+    {
       "kind": "patches",
       "case_count": 64,
       "status": "required-differential-cases",

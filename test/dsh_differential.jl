@@ -32,7 +32,9 @@ normalize(value) = JSON.parse(JSON.json(value))
 function reference_results(kind, cases)
     executable = get(ENV, "DSH_NODE", "node")
     command = Cmd([executable, "--disable-warning=ExperimentalWarning", joinpath(DIFFERENTIAL_DIRECTORY, "oracle.mjs")])
-    request = IOBuffer(JSON.json(Dict("kind" => kind, "cases" => cases)) * "\n")
+    payload = JSON.json(Dict("kind" => kind, "cases" => cases))
+    # Node readline treats U+2028/U+2029 as line breaks even inside JSON strings.
+    request = IOBuffer(replace(payload, "\u2028" => "\\u2028", "\u2029" => "\\u2029") * "\n")
     return JSON.parse(read(pipeline(command; stdin=request), String))
 end
 
@@ -1283,6 +1285,18 @@ function session_fork_result(input)
     return result
 end
 
+"""Compare independently implemented Julia title text and UTF-8 policy with pinned DSH functions."""
+function session_title_result(input)
+    title = input["input"]
+    max_bytes = input["max_bytes"]
+    max_words = input["max_words"]
+    normalize(Dict(
+        "normalized" => JuliaForever2.normalize_session_title(title; max_bytes),
+        "fallback" => JuliaForever2.fallback_session_title(title; max_words, max_bytes),
+        "truncated" => JuliaForever2.truncate_session_title(title, max_bytes),
+    ))
+end
+
 @testset "DSH full-product proof requires complete native differential evidence" begin
     verified = COVERAGE["verified_source_families"]
     cases = Set(area["kind"] for area in COVERAGE["native_comparisons"])
@@ -1300,7 +1314,7 @@ end
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result), ("session_markdown", session_markdown_result), ("session_control", session_control_result),
-            ("session_fork", session_fork_result),
+            ("session_fork", session_fork_result), ("session_titles", session_title_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
             ("tool_batch", tool_batch_result), ("tool_batches", DSHBatchProjections.native_result),
