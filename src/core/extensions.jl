@@ -390,6 +390,11 @@ end
 """Dispatch scoped callbacks with synchronous, bail, serial, parallel, or continuation composition."""
 function dispatch_event!(scope::ExtensionScope, name::Symbol, arguments...; mode::Symbol=:emit)
     invocations = event_invocations(scope, name)
+    # The empty dispatch is common during streaming and needs no worker or cleanup.
+    # Preserve waterfall's terminal continuation and unsupported mode errors.
+    if isempty(invocations) && mode in (:emit, :bail, :serial, :parallel)
+        return nothing
+    end
     worker = spawn_scoped(() -> dispatch_listeners(Val(mode), invocations, arguments))
     wait(worker; throw=false)
     cleanup = spawn_cleanup() do
