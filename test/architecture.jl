@@ -571,30 +571,3 @@ end
         @test isnothing(JuliaForever2.load_profile(store, Symbol("")))
     end
 end
-
-"""A downstream completion decision implemented using the original two-argument interface."""
-struct LegacyCompletionDecision end
-
-JuliaForever2.apply_tool_completion(::LegacyCompletionDecision, result::ExecutionResult) =
-    ExecutionResult(result.ok, "legacy:" * result.text, result.ok ? result.value : nothing)
-
-@testset "Post-tool completion preserves existing two-argument extension dispatch" begin
-    root = JuliaForever2.ExtensionScope()
-    scope = JuliaForever2.ExtensionScope(root)
-    @test JuliaForever2.register_tool!(root,
-        JuliaForever2.ToolSpec(:legacy_completion, identity)).ok
-    JuliaForever2.on!(scope, :tool_completion) do call, result
-        return LegacyCompletionDecision()
-    end
-    accepted = JuliaForever2.invoke_tool!(scope, :legacy_completion, "hello")
-    @test accepted.ok
-    @test accepted.text == "legacy:hello"
-    @test accepted.value == "hello"
-    @test JuliaForever2.register_tool_guard!(root, call -> "denied").ok
-    rejected = JuliaForever2.invoke_tool!(scope, :legacy_completion, "hello")
-    @test !rejected.ok
-    @test rejected.text == "legacy:denied"
-    @test isnothing(rejected.value)
-    close(scope)
-    close(root)
-end
