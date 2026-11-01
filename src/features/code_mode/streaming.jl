@@ -75,6 +75,33 @@ function protocol_utf8_size(byte::UInt8)
     return 0
 end
 
+"""Validate UTF-8 continuation bytes without allocating temporary substring views."""
+protocol_utf8_continuation(byte::UInt8) = 0x80 <= byte <= 0xbf
+
+function protocol_utf8_valid(bytes, index, size)
+    lead = bytes[index]
+    second = bytes[index + 1]
+    if size == 2
+        return protocol_utf8_continuation(second)
+    elseif size == 3
+        protocol_utf8_continuation(bytes[index + 2]) || return false
+        if lead == 0xe0
+            return 0xa0 <= second <= 0xbf
+        elseif lead == 0xed
+            return 0x80 <= second <= 0x9f
+        end
+        return protocol_utf8_continuation(second)
+    end
+    protocol_utf8_continuation(bytes[index + 2]) &&
+        protocol_utf8_continuation(bytes[index + 3]) || return false
+    if lead == 0xf0
+        return 0x90 <= second <= 0xbf
+    elseif lead == 0xf4
+        return 0x80 <= second <= 0x8f
+    end
+    return protocol_utf8_continuation(second)
+end
+
 protocol_string_buffer(::Nothing) = IOBuffer()
 protocol_string_buffer(output::IOBuffer) = output
 
@@ -137,7 +164,7 @@ function protocol_string(bytes, index)
                 return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
             elseif index + size - 1 > length(bytes)
                 return protocol_string_result(output, bytes, first:(index - 1), index, :incomplete)
-            elseif !isvalid(String, @view bytes[index:(index + size - 1)])
+            elseif !protocol_utf8_valid(bytes, index, size)
                 return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
             end
             index += size
