@@ -6073,6 +6073,204 @@
           "scope": "child"
         }
       ]
+    },
+    {
+      "name": "root safety guard denies before tool execution",
+      "operations": [
+        {
+          "type": "register",
+          "id": "read",
+          "name": "read",
+          "value": "read allowed"
+        },
+        {
+          "type": "register",
+          "id": "write",
+          "name": "write",
+          "value": "must not run"
+        },
+        {
+          "type": "guard",
+          "id": "root-policy",
+          "scope": "root",
+          "names": [
+            "write"
+          ],
+          "reason": "write denied"
+        },
+        {
+          "type": "invoke_guarded",
+          "name": "write",
+          "arguments": {
+            "path": "unsafe"
+          }
+        },
+        {
+          "type": "invoke_guarded",
+          "name": "read",
+          "arguments": {
+            "path": "safe"
+          }
+        },
+        {
+          "type": "trace"
+        }
+      ]
+    },
+    {
+      "name": "root and ancestor guards apply to descendants in order",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "id": "read",
+          "name": "read",
+          "value": "read allowed"
+        },
+        {
+          "type": "register",
+          "id": "write",
+          "name": "write",
+          "value": "write allowed"
+        },
+        {
+          "type": "guard",
+          "id": "global",
+          "scope": "root",
+          "names": [
+            "write"
+          ],
+          "reason": "global denial"
+        },
+        {
+          "type": "guard",
+          "id": "ancestor",
+          "scope": "parent",
+          "names": [
+            "read"
+          ],
+          "reason": "ancestor denial"
+        },
+        {
+          "type": "guard",
+          "id": "local",
+          "scope": "child",
+          "names": [
+            "read"
+          ],
+          "reason": "local denial"
+        },
+        {
+          "type": "invoke_guarded",
+          "scope": "child",
+          "name": "read",
+          "arguments": {}
+        },
+        {
+          "type": "invoke_guarded",
+          "scope": "child",
+          "name": "write",
+          "arguments": {}
+        },
+        {
+          "type": "invoke_guarded",
+          "scope": "sibling",
+          "name": "read",
+          "arguments": {}
+        },
+        {
+          "type": "trace"
+        }
+      ]
+    },
+    {
+      "name": "disposing a guard restores allowed tool invocation",
+      "operations": [
+        {
+          "type": "register",
+          "id": "write",
+          "name": "write",
+          "value": "executed"
+        },
+        {
+          "type": "guard",
+          "id": "temporary",
+          "scope": "root",
+          "names": [
+            "write"
+          ],
+          "reason": "temporarily denied"
+        },
+        {
+          "type": "invoke_guarded",
+          "name": "write",
+          "arguments": {}
+        },
+        {
+          "type": "dispose",
+          "id": "temporary"
+        },
+        {
+          "type": "invoke_guarded",
+          "name": "write",
+          "arguments": {}
+        },
+        {
+          "type": "trace"
+        }
+      ]
+    },
+    {
+      "name": "local tool shadowing cannot bypass an inherited denial",
+      "scopes": [
+        {
+          "name": "child"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "id": "root-write",
+          "name": "write",
+          "value": "root body"
+        },
+        {
+          "type": "register",
+          "id": "local-write",
+          "scope": "child",
+          "name": "write",
+          "value": "child body"
+        },
+        {
+          "type": "guard",
+          "id": "root-policy",
+          "scope": "root",
+          "names": [
+            "write"
+          ],
+          "reason": "write is blocked"
+        },
+        {
+          "type": "invoke_guarded",
+          "scope": "child",
+          "name": "write",
+          "arguments": {}
+        },
+        {
+          "type": "trace"
+        }
+      ]
     }
   ],
   "replacements": [

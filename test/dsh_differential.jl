@@ -509,12 +509,24 @@ function tool_result(input)
     end
     registrations = Dict{String,Any}()
     results = Any[]
+    executions = String[]
+    guard_calls = String[]
     for operation in input["operations"]
         scope = scopes[get(operation, "scope", "root")]
         if operation["type"] == "register"
             specification = JuliaForever2.ToolSpec(Symbol(operation["name"]), get(operation, "schema", Dict("type" => "object")),
-                arguments -> get(operation, "value", nothing); description=get(operation, "description", ""))
+                arguments -> begin
+                    push!(executions, operation["name"])
+                    get(operation, "value", nothing)
+                end; description=get(operation, "description", ""))
             registered = JuliaForever2.register_tool!(scope, specification)
+            registered.ok && (registrations[operation["id"]] = registered.registration)
+            push!(results, Dict("accepted" => registered.ok))
+        elseif operation["type"] == "guard"
+            registered = JuliaForever2.register_tool_guard!(scope, call -> begin
+                push!(guard_calls, operation["id"])
+                String(call.name) in operation["names"] ? operation["reason"] : nothing
+            end)
             registered.ok && (registrations[operation["id"]] = registered.registration)
             push!(results, Dict("accepted" => registered.ok))
         elseif operation["type"] == "restrict"
@@ -544,6 +556,12 @@ function tool_result(input)
                 JuliaForever2.invoke_tool!(scope, name, arguments)
             end
             push!(results, Dict("ok" => result.ok, "value" => result.value))
+        elseif operation["type"] == "invoke_guarded"
+            result = JuliaForever2.invoke_tool!(scope, Symbol(operation["name"]), get(operation, "arguments", Dict()))
+            push!(results, Dict("ok" => result.ok, "value" => result.value,
+                "reason" => result.ok ? nothing : result.text))
+        elseif operation["type"] == "trace"
+            push!(results, Dict("executions" => copy(executions), "guards" => copy(guard_calls)))
         end
     end
     close(root)
