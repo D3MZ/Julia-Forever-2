@@ -1,7 +1,9 @@
 function draw_footer!(buffer, x, y, width, app::App)
     right = provider_selection_snapshot(app.session.kernel).detail
     left = usage_label(app.session)
-    app.status == "Ready" || (left = isempty(left) ? app.status : left * " · " * app.status)
+    notice = !isnothing(app.updates.latest) && update_available(app.updates.latest) && !app.updates.installing ?
+        "Update available: /update install" : app.status
+    notice == "Ready" || (left = isempty(left) ? notice : left * " · " * notice)
     drawline!(buffer, x, y, width, left, :text_dim)
     available = max(0, width - textwidth(left) - (isempty(left) ? 0 : 1))
     clipped = Tachikoma.truncate_to_width(right, available)
