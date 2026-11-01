@@ -486,6 +486,18 @@ end
             ["child", "root"]
         @test isnothing(JuliaForever2.session_lineage(store, "missing"))
         @test isnothing(JuliaForever2.session_lineage(store, "../invalid"))
+        stored_path = joinpath(directory, "child.json")
+        intact = JSON.parsefile(stored_path)
+        expected = JuliaForever2.session_lineage(store, "child")
+        for field in ("role", "content", "kind")
+            malformed = deepcopy(intact)
+            malformed["messages"][1][field] = nothing
+            write(stored_path, JSON.json(malformed))
+            @test_throws Exception JuliaForever2.session_lineage(store, "child")
+            @test_throws Exception JuliaForever2.saved_session_record(store, "child")
+        end
+        write(stored_path, JSON.json(intact))
+        @test JuliaForever2.session_lineage(store, "child") == expected
     end
 end
 
