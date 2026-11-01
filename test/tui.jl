@@ -679,7 +679,7 @@ end
     for (content, width, expected) in (
             ("abcdefghi", 4, ["abcd", "efgh", "i"]),
             ("ab cd ef", 4, ["ab ", "cd ", "ef"]),
-            ("   abc", 2, ["  ", " a", "bc"]),
+            ("   abc", 2, ["  ", " ", "ab", "c"]),
             (repeat("x", 25), 3, [repeat("x", 3) for _ in 1:8] |> x -> vcat(x, ["x"])),
             (" ", 0, [" "]),
             ("x", -3, ["x"]),
