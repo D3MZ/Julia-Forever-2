@@ -81,7 +81,7 @@
   },
   {
     "name": "whitespace-normalization",
-    "text": "Alpha beta gamma　delta",
+    "text": "Alpha beta\ngamma　delta",
     "rename": "  full   title\t",
     "maxBytes": 120,
     "maxWords": 8,
