@@ -6,27 +6,27 @@ Set FontFamily "JetBrains Mono"
 Set FontSize 18
 Set Width 1200
 Set Height 720
-Set TypingSpeed 50 ms
+Set TypingSpeed 50ms
 Set CursorBlink false
 
 Output artifacts/vhs/jf2-terminal.ascii
 
 Type "./bin/jf2"
 Enter
-Sleep 6 s
+Sleep 6s
 Screenshot artifacts/vhs/chat.png
 
 Type "/settings"
 Enter
-Sleep 2 s
+Sleep 2s
 Screenshot artifacts/vhs/settings.png
 
 Ctrl+C
-Sleep 1 s
+Sleep 1s
 Type "./bin/jf2"
 Enter
-Sleep 5 s
+Sleep 5s
 Type "/"
-Sleep 1 s
+Sleep 1s
 Screenshot artifacts/vhs/slash-menu.png
 Ctrl+C
