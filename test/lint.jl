@@ -60,6 +60,8 @@ function inspect!(issues, node::Expr, location::Location)
     if definition(node) && length(node.args) >= 2
         inspect!(issues, first(node.args), Location(location.line))
         inspect!(issues, last(node.args), Location(location.line, true, true))
+    elseif node.head === :macrocall && name(first(node.args)) in (Symbol("@spawn"), Symbol("@async"))
+        inspect!(issues, last(node.args), Location(location.line, true, true))
     elseif node.head in (:block, :toplevel)
         body!(issues, node, location)
     else
@@ -75,18 +77,15 @@ function inspect!(issues, node::Expr, location::Location)
     issues
 end
 
-function violations(source::AbstractString; single_exit=false)
-    issues = inspect!(Tuple{Int,String}[], Meta.parseall(source), Location())
-    single_exit ? issues : filter(issue -> !(last(issue) in ("early return", "guard clause")), issues)
-end
+violations(source::AbstractString) = inspect!(Tuple{Int,String}[], Meta.parseall(source), Location())
 
-function audit(root; single_exit=false)
+function audit(root)
     issues = Tuple{String,Int,String}[]
     for (directory, directories, files) in walkdir(root)
         filter!(!=(".git"), directories)
         for file in filter(name -> endswith(name, ".jl"), files)
             path = joinpath(directory, file)
-            append!(issues, ((relpath(path, root), line, kind) for (line, kind) in violations(read(path, String); single_exit)))
+            append!(issues, ((relpath(path, root), line, kind) for (line, kind) in violations(read(path, String))))
         end
     end
     issues

@@ -9,26 +9,27 @@ end
 
 Usage() = Usage(0, 0, 0.0, false, true, false)
 
+usage_tokens(value) = nothing
+usage_tokens(::Bool) = nothing
+usage_tokens(value::Integer) = 0 <= value <= typemax(Int) ? Int(value) : nothing
+usage_cost(value) = nothing
+usage_cost(::Bool) = nothing
+usage_cost(value::Real) = usage_cost(Float64(value))
+usage_cost(value::Float64) = isfinite(value) && value >= 0 ? value : nothing
+
 struct UsageReport
     input_tokens::Union{Nothing,Int}
     output_tokens::Union{Nothing,Int}
     cost::Union{Nothing,Float64}
+
+    UsageReport(input, output, cost) = new(usage_tokens(input), usage_tokens(output), usage_cost(cost))
 end
+
 UsageReport() = UsageReport(nothing, nothing, nothing)
 UsageReport(report::UsageReport) = report
-UsageReport(data::AbstractDict) = normalize_usage(data)
-UsageReport(::Nothing) = UsageReport()
-usage_tokens(value::Integer) = value isa Bool || value < 0 || value > typemax(Int) ? nothing : Int(value)
-usage_tokens(value) = nothing
-function usage_cost(value::Real)
-    value isa Bool && return nothing
-    normalized = Float64(value)
-    return isfinite(normalized) && normalized >= 0 ? normalized : nothing
-end
-usage_cost(value) = nothing
-normalize_usage(data) = UsageReport()
-normalize_usage(data::UsageReport) = data
-normalize_usage(data::AbstractDict) = UsageReport(usage_tokens(get(data, "prompt_tokens", get(data, "input_tokens", nothing))), usage_tokens(get(data, "completion_tokens", get(data, "output_tokens", nothing))), usage_cost(get(data, "cost", nothing)))
+UsageReport(data) = UsageReport()
+UsageReport(data::AbstractDict) = UsageReport(get(data, "prompt_tokens", get(data, "input_tokens", nothing)), get(data, "completion_tokens", get(data, "output_tokens", nothing)), get(data, "cost", nothing))
+normalize_usage(data) = UsageReport(data)
 
 
 mutable struct Conversation{H}
@@ -73,45 +74,51 @@ end
 
 history_revision(conversation::Conversation) = lock(() -> conversation.revision, conversation.lock)
 
+function snapshot(conversation::Conversation, known_revision)
+    first_change = isnothing(known_revision) || known_revision > conversation.revision ? 1 : Int(known_revision) + 1
+    changed_from = first_change <= length(conversation.changes) ? minimum(@view conversation.changes[first_change:end]) : 1
+    (messages=copy(conversation.messages), revision=conversation.revision, changed_from)
+end
+
 function history_snapshot(conversation::Conversation, known_revision=nothing)
     lock(conversation.lock) do
-        known_revision == conversation.revision && return nothing
-        first_change = isnothing(known_revision) || known_revision > conversation.revision ? 1 : Int(known_revision) + 1
-        changed_from = first_change <= length(conversation.changes) ? minimum(@view conversation.changes[first_change:end]) : 1
-        return (messages=copy(conversation.messages), revision=conversation.revision, changed_from)
+        known_revision == conversation.revision ? nothing : snapshot(conversation, known_revision)
     end
 end
 
-function record_usage!(conversation::Conversation, report::UsageReport)
-    report = UsageReport(usage_tokens(report.input_tokens), usage_tokens(report.output_tokens), usage_cost(report.cost))
-    lock(conversation.lock) do
-        usage = conversation.usage
-        if !isnothing(report.input_tokens) && !isnothing(report.output_tokens)
-            input, input_overflow = Base.Checked.add_with_overflow(usage.input_tokens, report.input_tokens)
-            output, output_overflow = Base.Checked.add_with_overflow(usage.output_tokens, report.output_tokens)
-            if input_overflow || output_overflow
-                usage.partial = true
-            else
-                usage.input_tokens = input
-                usage.output_tokens = output
-                usage.reported = true
-            end
-        else
-            usage.partial = true
-        end
-        if isnothing(report.cost)
-            usage.cost_known = false
-        else
-            next_cost = usage.cost + report.cost
-            if isfinite(next_cost)
-                usage.cost = next_cost
-            else
-                usage.cost_known = false
-            end
-        end
+function accumulate!(usage::Usage, input::Int, output::Int)
+    nextinput, inputoverflow = Base.Checked.add_with_overflow(usage.input_tokens, input)
+    nextoutput, outputoverflow = Base.Checked.add_with_overflow(usage.output_tokens, output)
+    if inputoverflow || outputoverflow
+        usage.partial = true
+    else
+        usage.input_tokens = nextinput
+        usage.output_tokens = nextoutput
+        usage.reported = true
     end
-    return nothing
+    usage
 end
+
+accumulate!(usage::Usage, input, output) = (usage.partial = true; usage)
+accumulate!(usage::Usage, ::Nothing) = (usage.cost_known = false; usage)
+
+function accumulate!(usage::Usage, cost::Float64)
+    total = usage.cost + cost
+    if isfinite(total)
+        usage.cost = total
+    else
+        usage.cost_known = false
+    end
+    usage
+end
+
+function record_usage!(conversation::Conversation, report::UsageReport)
+    lock(conversation.lock) do
+        accumulate!(accumulate!(conversation.usage, report.input_tokens, report.output_tokens), report.cost)
+    end
+    nothing
+end
+
 record_usage!(conversation::Conversation, data) = record_usage!(conversation, normalize_usage(data))
 
 """Return an immutable usage view independent of later conversation updates."""

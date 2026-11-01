@@ -52,11 +52,11 @@ end
     @test JuliaForever2.AgentDecision(Reply(:unsupported, "unused")) isa Failure
 end
 
-@testset "Usage report constructors preserve raw accounting contracts" begin
+@testset "Usage report construction establishes canonical values" begin
     report = JuliaForever2.UsageReport(-2, 4, Inf)
-    @test report.input_tokens == -2
+    @test isnothing(report.input_tokens)
     @test report.output_tokens == 4
-    @test report.cost == Inf
+    @test isnothing(report.cost)
     conversation = Conversation()
     JuliaForever2.record_usage!(conversation, report)
     accounting = JuliaForever2.usage_snapshot(conversation)
@@ -84,4 +84,54 @@ end
     copied = JuliaForever2.Profile(combined)
     copied.config[:alpha]["value"] = 2
     @test combined.config[:alpha]["value"] == 1
+end
+
+
+@testset "Inner constructors reject invalid domain states" begin
+    @test_throws ErrorException JuliaForever2.ToolBatch(JuliaForever2.ToolCall[], 0)
+    @test_throws ErrorException JuliaForever2.ToolBatch(JuliaForever2.ToolCall[], -1)
+    @test JuliaForever2.ToolBatch(JuliaForever2.ToolCall[], 1).max_parallel == 1
+    invalid = Dict("type" => "unrecognized")
+    @test_throws ErrorException JuliaForever2.CheckedJSONSchema{typeof(invalid)}(invalid)
+    source = Dict("type" => "string")
+    schema = JuliaForever2.CheckedJSONSchema(source)
+    source["type"] = "invalid"
+    @test schema.definition["type"] == "string"
+    @test_throws ErrorException JuliaForever2.StringEscape(nothing, 1, :complete)
+    @test_throws ErrorException JuliaForever2.StringEscape('a', 1, :invalid)
+    @test JuliaForever2.StringEscape('a', 1, :complete).value == 'a'
+    mktempdir() do directory
+        @test JuliaForever2.Workspace(SubString(directory)).path == realpath(directory)
+        @test_throws ErrorException JuliaForever2.Workspace(joinpath(directory, "missing"))
+        session = Session(Kernel(); working_directory=directory)
+        @test JuliaForever2.working_directory(session) == realpath(directory)
+        close(session)
+    end
+end
+
+struct UnreadResponse end
+JuliaForever2.response_reply(::UnreadResponse) = error("Cancelled responses must not be decoded")
+
+@testset "Cancellation precedes response conversion" begin
+    session = Session(Kernel())
+    context = ExecutionContext()
+    cancel!(context)
+    result = JuliaForever2.consume!(session, UnreadResponse(), context)
+    @test !result.ok
+    @test isempty(session.messages)
+    close(context)
+    close(session)
+end
+
+struct CustomDecisionResponse
+    text::String
+end
+
+JuliaForever2.agent_decision(response::CustomDecisionResponse) = Answer(response.text)
+
+@testset "Decision constructors preserve external conversion methods" begin
+    response = CustomDecisionResponse("external")
+    @test JuliaForever2.AgentDecision(response) == Answer("external")
+    @test JuliaForever2.AgentDecision(Answer("identity")) == Answer("identity")
+    @test JuliaForever2.AgentDecision(RunJulia("1 + 1")).action.source == "1 + 1"
 end

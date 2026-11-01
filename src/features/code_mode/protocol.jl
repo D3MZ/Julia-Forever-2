@@ -21,18 +21,19 @@ prompt_instructions(instructions::AbstractString, session) = String(instructions
 reply_schema(policy) = Dict("type" => "object", "properties" => Dict("kind" => Dict("type" => "string", "enum" => ["code", "answer"]), "content" => Dict("type" => "string")), "required" => ["kind", "content"], "additionalProperties" => false)
 reply_format(policy) = Dict("type" => "json_object")
 
-function agent_reply(data::AbstractDict)
+function Reply(data::AbstractDict)
     kind = get(data, "kind", nothing)
     content = get(data, "content", nothing)
-    kind in ("code", "answer") && content isa AbstractString || return Reply(:error, "Provider returned an invalid agent response.")
-    return Reply(Symbol(kind), String(content))
+    kind in ("code", "answer") && content isa AbstractString ? Reply(Symbol(kind), String(content)) : Reply(:error, "Provider returned an invalid agent response.")
 end
+agent_reply(data::AbstractDict) = Reply(data)
 agent_reply(data) = Reply(:error, "Provider returned an invalid agent response.")
 decode_reply(text::AbstractString) = agent_reply(parse_json(text))
 decode_reply(value) = agent_reply(nothing)
 decode_reply(policy, text) = decode_reply(text)
 
-model_request(protocol, messages, session=nothing) = ModelRequest(messages, String(prompt_instructions(protocol, session)), reply_schema(protocol), reply_format(protocol), protocol)
+ModelRequest(protocol, messages, session=nothing) = ModelRequest(messages, String(prompt_instructions(protocol, session)), reply_schema(protocol), reply_format(protocol), protocol)
+model_request(protocol, messages, session=nothing) = ModelRequest(protocol, messages, session)
 provider_protocol(provider) = hasproperty(provider, :policy) ? getproperty(provider, :policy) : CodeModePolicy()
 
 action_content(action) = repr(action)
@@ -44,5 +45,5 @@ action_payload(action::RunJulia) = action.source
 
 Message(answer::Answer) = Message(:assistant, answer.content, :answer)
 Message(decision::ActionDecision) = Message(:assistant, action_content(decision.action), action_kind(decision.action); metadata=decision.action isa RunJulia ? nothing : decision.action)
-decision_message(answer::Answer) = Message(answer)
-decision_message(decision::ActionDecision) = Message(decision)
+
+decision_message(decision::AgentDecision) = Message(decision)

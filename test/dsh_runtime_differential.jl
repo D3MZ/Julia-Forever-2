@@ -64,11 +64,11 @@ end
 
 function notification_value(method, params)
     if method == "session.event"
-        return Dict("method" => method, "sessionId" => params["sessionId"], "type" => params["event"]["type"])
+        Dict("method" => method, "sessionId" => params["sessionId"], "type" => params["event"]["type"])
+    else
+        Dict("method" => method, "params" => params)
     end
-    return Dict("method" => method, "params" => params)
 end
-
 function observe_sdk(profile, diagnostics, backend)
     operations = Any[]
     events = Any[]
@@ -76,13 +76,14 @@ function observe_sdk(profile, diagnostics, backend)
     observer = (method, params) -> lock(() -> push!(events, notification_value(method, params)), events_lock)
     factory = (command; kwargs...) -> begin
         started = JuliaForever2.start_runtime(command; kwargs...)
-        started.ok || return started
-        backend[] = started.value
-        before = JuliaForever2.runtime_request!(started.value, "session/prompt",
-            Dict("sessionId" => "differential-idle", "contentBlocks" =>
-                [Dict("type" => "text", "text" => "must not execute")]); timeout=30)
-        record_operation!(operations, "prompt-before-initialize", before)
-        return started
+        if started.ok
+            backend[] = started.value
+            before = JuliaForever2.runtime_request!(started.value, "session/prompt",
+                Dict("sessionId" => "differential-idle", "contentBlocks" =>
+                    [Dict("type" => "text", "text" => "must not execute")]); timeout=30)
+            record_operation!(operations, "prompt-before-initialize", before)
+        end
+        started
     end
     connected = connect_dsh(profile; backend_factory=factory, on_notification=observer,
         initialize=Dict("provider" => "deepseek-official", "model" => "deepseek-flash"),

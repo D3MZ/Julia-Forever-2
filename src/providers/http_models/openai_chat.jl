@@ -78,51 +78,66 @@ function openai_tool_delta!(state::ModelStreamState, tool::AbstractDict)
 end
 
 function consume_model_event!(protocol::OpenAIChatProtocol, state::ModelStreamState, event::SSEEvent)
-    event.data == "[DONE]" && return nothing
-    chunk = parse_json(event.data)
-    if !(chunk isa AbstractDict)
-        state.error = "Invalid JSON in model event stream"
-        return nothing
+    if event.data != "[DONE]"
+        consume!(protocol, state, parse_json(event.data))
     end
+    nothing
+end
+
+consume!(::OpenAIChatProtocol, state::ModelStreamState, chunk) = (state.error = "Invalid JSON in model event stream"; nothing)
+
+function consume!(protocol::OpenAIChatProtocol, state::ModelStreamState, chunk::AbstractDict)
     start_model_stream!(state)
-    haskey(chunk, "id") && !haskey(state.message, "responseId") && (state.message["responseId"] = chunk["id"])
+    if haskey(chunk, "id") && !haskey(state.message, "responseId")
+        state.message["responseId"] = chunk["id"]
+    end
     if haskey(chunk, "model") && chunk["model"] != state.model.id && !isempty(chunk["model"])
         get!(state.message, "responseModel", chunk["model"])
     end
-    haskey(chunk, "usage") && openai_model_usage!(state, chunk["usage"])
+    if haskey(chunk, "usage")
+        openai_model_usage!(state, chunk["usage"])
+    end
     choices = get(chunk, "choices", Any[])
-    isempty(choices) && return nothing
-    choice = first(choices)
-    !haskey(chunk, "usage") && haskey(choice, "usage") && openai_model_usage!(state, choice["usage"])
+    if !isempty(choices)
+        consume!(protocol, state, chunk, first(choices))
+    end
+    nothing
+end
+
+function consume!(protocol::OpenAIChatProtocol, state::ModelStreamState, chunk, choice)
+    if !haskey(chunk, "usage") && haskey(choice, "usage")
+        openai_model_usage!(state, choice["usage"])
+    end
     reason = get(choice, "finish_reason", nothing)
     if !isnothing(reason) && reason != ""
         state.message["rawStopReason"] = reason
-        state.message["stopReason"] = get(Dict("stop" => "stop", "end" => "stop", "length" => "length",
-            "function_call" => "toolUse", "tool_calls" => "toolUse"), reason, "error")
-        state.message["stopReason"] == "error" && (state.error = "Provider finish_reason: $reason")
-    end
-    delta = get(choice, "delta", nothing)
-    delta isa AbstractDict || return nothing
-    for field in ("reasoning_content", "reasoning", "reasoning_text")
-        value = get(delta, field, nothing)
-        if value isa AbstractString && !isempty(value)
-            text_model_block!(state, "thinking", value; signature=field)
-            break
+        state.message["stopReason"] = get(Dict("stop" => "stop", "end" => "stop", "length" => "length", "function_call" => "toolUse", "tool_calls" => "toolUse"), reason, "error")
+        if state.message["stopReason"] == "error"
+            state.error = "Provider finish_reason: $reason"
         end
     end
-    text = get(delta, "content", nothing)
-    text isa AbstractString && text_model_block!(state, "text", text)
-    for tool in get(delta, "tool_calls", Any[])
-        openai_tool_delta!(state, tool)
-    end
-    return nothing
+    Base.append!(protocol, state, get(choice, "delta", nothing))
 end
 
+Base.append!(::OpenAIChatProtocol, state::ModelStreamState, delta) = nothing
+
+function Base.append!(::OpenAIChatProtocol, state::ModelStreamState, delta::AbstractDict)
+    fields = ("reasoning_content", "reasoning", "reasoning_text")
+    index = findfirst(field -> get(delta, field, nothing) isa AbstractString && !isempty(delta[field]), fields)
+    if !isnothing(index)
+        text_model_block!(state, "thinking", delta[fields[index]]; signature=fields[index])
+    end
+    text = get(delta, "content", nothing)
+    if text isa AbstractString
+        text_model_block!(state, "text", text)
+    end
+    foreach(tool -> openai_tool_delta!(state, tool), get(delta, "tool_calls", Any[]))
+    nothing
+end
 function finish_protocol_stream!(::OpenAIChatProtocol, state::ModelStreamState)
     finish_model_blocks!(state)
-    cancelled(state.context) && return nothing
-    if state.message["stopReason"] == "pending" && isempty(state.error)
+    if !cancelled(state.context) && state.message["stopReason"] == "pending" && isempty(state.error)
         state.error = "Stream ended without finish_reason"
     end
-    return nothing
+    nothing
 end

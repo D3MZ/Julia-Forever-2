@@ -1,15 +1,20 @@
 function enqueue_event!(app::App, event::TaskEvent)
     accepted = lock(app.operations.event_lock) do
-        app.operations.closing[] && return false
-        put!(app.queue.channel, event)
-        return true
+        if app.operations.closing[]
+            false
+        else
+            put!(app.queue.channel, event)
+            true
+        end
     end
-    accepted || return false
-    callback = app.queue.on_ready
-    isnothing(callback) || callback()
-    return true
+    if accepted
+        callback = app.queue.on_ready
+        if !isnothing(callback)
+            callback()
+        end
+    end
+    accepted
 end
-
 function notify_completion!(app::App, id::Symbol, task::Task, value; cleanup=Returns(nothing))
     for watcher in app.operations.watchers
         istaskdone(watcher) && fetch(watcher)
@@ -40,38 +45,39 @@ end
 function julia_command!(app::App, code::AbstractString)
     if isempty(strip(code))
         Tachikoma.set_text!(app.input, "/julia ")
-        return nothing
+        nothing
+    elseif app.busy || app.operations.closing[]
+        nothing
+    else
+        append_message!(app.session, Message(:user, "/julia " * code))
+        track_operation!(app, submit_evaluation!(app.session, code; context=ui_context(app)), :evaluation, "Running Julia…")
     end
-    (app.busy || app.operations.closing[]) && return nothing
-    append_message!(app.session, Message(:user, "/julia " * code))
-    handle = submit_evaluation!(app.session, code; context=ui_context(app))
-    return track_operation!(app, handle, :evaluation, "Running Julia…")
 end
-
 function submit!(app::App, prompt::AbstractString)
-    isempty(strip(prompt)) && return nothing
-    app.operations.closing[] && return nothing
-    app.scroll = 0
-    if startswith(prompt, "/")
-        return command!(app, SubString(prompt, nextind(prompt, firstindex(prompt))))
+    if !isempty(strip(prompt)) && !app.operations.closing[]
+        app.scroll = 0
+        dispatch!(app, prompt)
     end
-    app.busy && return nothing
-    Tachikoma.clear!(app.input)
-    handle = submit_turn!(app.session, prompt; context=ui_context(app))
-    return track_operation!(app, handle, :turn, "Thinking…")
 end
 
+function dispatch!(app::App, prompt::AbstractString)
+    if startswith(prompt, "/")
+        command!(app, SubString(prompt, nextind(prompt, firstindex(prompt))))
+    elseif !app.busy
+        Tachikoma.clear!(app.input)
+        track_operation!(app, submit_turn!(app.session, prompt; context=ui_context(app)), :turn, "Thinking…")
+    end
+end
 function operation_finished!(app::App, handle::TaskHandle)
-    app.operations.active === handle || return nothing
-    clear_preview!(app)
-    app.operations.active = nothing
-    app.busy = false
-    result = fetch(handle)
-    app.status = result.ok ? "Ready" : result.text
-    return nothing
+    if app.operations.active === handle
+        clear_preview!(app)
+        app.operations.active = nothing
+        app.busy = false
+        result = fetch(handle)
+        app.status = result.ok ? "Ready" : result.text
+    end
+    nothing
 end
-
-
 function cleanup!(app::App)
     lock(app.operations.event_lock) do
         app.operations.closing[] = true

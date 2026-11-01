@@ -6,8 +6,7 @@ struct PluginSpec{F}
 end
 
 """Declare a plugin factory and the service contracts it provides and requires."""
-PluginSpec(name, setup; provides=Symbol[], requires=Symbol[]) =
-    PluginSpec(Symbol(name), setup, collect(Symbol, provides), unique(collect(Symbol, requires)))
+PluginSpec(name, setup; provides=Symbol[], requires=Symbol[]) = PluginSpec(Symbol(name), setup, collect(Symbol, provides), unique(collect(Symbol, requires)))
 PluginSpec(setup::Function, name::Union{Symbol,AbstractString}; kwargs...) = PluginSpec(name, setup; kwargs...)
 
 mutable struct PluginRegistry
@@ -19,17 +18,19 @@ PluginRegistry() = PluginRegistry(ReentrantLock(), Dict{Symbol,PluginSpec}())
 
 """Register an independently authored plugin without activating its effects."""
 function register_plugin!(registry::PluginRegistry, spec::PluginSpec; replace=false)
-    length(unique(spec.provides)) == length(spec.provides) ||
-        return (ok=false, reason="Plugin $(spec.name) declares duplicate services")
-    return lock(registry.lock) do
-        haskey(registry.plugins, spec.name) && !replace &&
-            return (ok=false, reason="Plugin $(spec.name) is already registered")
-        registry.plugins[spec.name] = PluginSpec(spec.name, spec.setup;
-            provides=copy(spec.provides), requires=copy(spec.requires))
-        return (ok=true, reason="")
+    lock(registry.lock) do
+        if length(unique(spec.provides)) != length(spec.provides)
+            (ok=false, reason="Plugin $(spec.name) declares duplicate services")
+        elseif haskey(registry.plugins, spec.name) && !replace
+            (ok=false, reason="Plugin $(spec.name) is already registered")
+        else
+            registry.plugins[spec.name] = PluginSpec(spec)
+            (ok=true, reason="")
+        end
     end
 end
 
+PluginSpec(spec::PluginSpec) = PluginSpec(spec.name, spec.setup; provides=copy(spec.provides), requires=copy(spec.requires))
 """Remove a factory from the catalog without interrupting existing activations."""
 function unregister_plugin!(registry::PluginRegistry, name::Symbol)
     return lock(registry.lock) do
@@ -47,17 +48,13 @@ struct Profile
 end
 
 """Select ordered plugins, their configuration, and explicit service implementation choices."""
-Profile(name, plugins; config=Dict(), bindings=Dict()) = Profile(Symbol(name),
-    collect(Symbol, plugins), Dict{Symbol,Any}(Symbol(key) => value for (key, value) in pairs(config)),
-    Dict{Symbol,Symbol}(Symbol(key) => Symbol(value) for (key, value) in pairs(bindings)))
+Profile(name, plugins; config=Dict(), bindings=Dict()) = Profile(Symbol(name), collect(Symbol, plugins), Dict{Symbol,Any}(Symbol(key) => value for (key, value) in pairs(config)), Dict{Symbol,Symbol}(Symbol(key) => Symbol(value) for (key, value) in pairs(bindings)))
 
-copy_profile(profile::Profile) = Profile(profile.name, copy(profile.plugins);
-    config=deepcopy(profile.config), bindings=copy(profile.bindings))
-Profile(profile::Profile) = copy_profile(profile)
-Profile(name, first::Profile, rest::Profile...) = compose_profiles(name, first, rest...)
+Profile(profile::Profile) = Profile(profile.name, copy(profile.plugins); config=deepcopy(profile.config), bindings=copy(profile.bindings))
+copy_profile(profile::Profile) = Profile(profile)
 
 """Compose reusable plugin groups; later groups replace plugin configuration and service bindings."""
-function compose_profiles(name, profiles::Profile...)
+function Profile(name, profiles::Profile...)
     plugins = Symbol[]
     config = Dict{Symbol,Any}()
     bindings = Dict{Symbol,Symbol}()
@@ -72,6 +69,8 @@ function compose_profiles(name, profiles::Profile...)
     end
     return Profile(name, plugins; config, bindings)
 end
+
+compose_profiles(name, profiles::Profile...) = Profile(name, profiles...)
 
 mutable struct PluginContext{C}
     kernel::Kernel
@@ -104,14 +103,10 @@ end
 
 """Retain the activation generation even after a profile switch removes its original kernel names."""
 function acquire_plugin!(context::PluginContext)
-    return lock(context.kernel.lock) do
-        entry = context.entry
-        (isnothing(entry) || entry.cleaning || entry.cleaned || lock(() -> context.closed, context.lock)) && return nothing
-        entry.users += 1
-        return ComponentLease(context.kernel, entry, context, false)
+    lock(context.kernel.lock) do
+        plugin_available(context) ? retain!(context.kernel, context.entry) : nothing
     end
 end
-
 plugin_value(value) = value
 plugin_value(value::Task) = plugin_value(fetch(value))
 
@@ -138,8 +133,7 @@ function own_resource!(context::PluginContext, value; cleanup=close)
 end
 
 """Register a reversible plugin effect, disposed in reverse registration order."""
-effect!(cleanup, context::PluginContext) = own_resource!(context, nothing;
-    cleanup=value -> Base.invokelatest(cleanup))
+effect!(cleanup, context::PluginContext) = own_resource!(context, nothing; cleanup=value -> Base.invokelatest(cleanup))
 
 """Read an exact dependency generation or a service published by this activation."""
 function service(context::PluginContext, name::Symbol)
@@ -156,37 +150,50 @@ function plugin_failure!(context::PluginContext, reason)
 end
 
 """Publish a selected service; unselected implementations immediately release their value."""
-function provide!(context::PluginContext, name::Symbol, value; requires=Symbol[], cleanup=Returns(nothing))
-    dispose = value -> plugin_value(Base.invokelatest(cleanup, value))
-    disposition = lock(context.lock) do
-        context.closed && return :closed
-        name in context.declared || return :undeclared
-        name in context.selected || return :unselected
-        (haskey(context.provided, name) || name in context.pending) && return :duplicate
-        push!(context.pending, name)
-        return :selected
-    end
-    if disposition !== :selected
-        dispose(value)
-        disposition === :unselected && return (ok=true, reason="", active=false)
-        return plugin_failure!(context, "Plugin $(context.name) cannot provide $name: $disposition")
-    end
-    dependencies = unique([context.owner; collect(Symbol, requires)])
-    result = install!(context.kernel, ComponentSpec(name, value; requires=dependencies, cleanup=dispose))
-    if !result.ok
-        lock(context.lock) do
-            delete!(context.pending, name)
-        end
-        dispose(value)
-        return plugin_failure!(context, result.reason)
-    end
+function reserve!(context::PluginContext, name::Symbol)
     lock(context.lock) do
-        delete!(context.pending, name)
-        context.provided[name] = value
+        if context.closed
+            :closed
+        elseif !(name in context.declared)
+            :undeclared
+        elseif !(name in context.selected)
+            :unselected
+        elseif haskey(context.provided, name) || name in context.pending
+            :duplicate
+        else
+            push!(context.pending, name)
+            :selected
+        end
     end
-    return (ok=true, reason="", active=true)
 end
 
+function provide!(context::PluginContext, name::Symbol, value; requires=Symbol[], cleanup=Returns(nothing))
+    dispose = value -> plugin_value(Base.invokelatest(cleanup, value))
+    disposition = reserve!(context, name)
+    if disposition === :selected
+        publish!(context, name, value, requires, dispose)
+    else
+        dispose(value)
+        disposition === :unselected ? (ok=true, reason="", active=false) : plugin_failure!(context, "Plugin $(context.name) cannot provide $name: $disposition")
+    end
+end
+
+function publish!(context::PluginContext, name::Symbol, value, requires, dispose)
+    dependencies = unique([context.owner; collect(Symbol, requires)])
+    result = install!(context.kernel, ComponentSpec(name, value; requires=dependencies, cleanup=dispose))
+    lock(context.lock) do
+        delete!(context.pending, name)
+        if result.ok
+            context.provided[name] = value
+        end
+    end
+    if result.ok
+        (ok=true, reason="", active=true)
+    else
+        dispose(value)
+        plugin_failure!(context, result.reason)
+    end
+end
 """Dispose every effect even when an earlier cleanup fails."""
 function Base.close(context::PluginContext)
     resources = lock(context.lock) do
@@ -226,72 +233,103 @@ end
 PluginHost(kernel::Kernel, registry::PluginRegistry) = PluginHost(kernel; registry)
 
 function profile_specs(registry::PluginRegistry, profile::Profile)
-    length(unique(profile.plugins)) == length(profile.plugins) ||
-        return (ok=false, reason="Profile $(profile.name) selects a plugin more than once", specs=PluginSpec[])
-    return lock(registry.lock) do
-        missing = filter(name -> !haskey(registry.plugins, name), profile.plugins)
-        isempty(missing) || return (ok=false, reason="Unknown plugins: $(join(missing, ", "))", specs=PluginSpec[])
-        specs = PluginSpec[registry.plugins[name] for name in profile.plugins]
-        return (ok=true, reason="", specs)
+    lock(registry.lock) do
+        absent = filter(name -> !haskey(registry.plugins, name), profile.plugins)
+        if length(unique(profile.plugins)) != length(profile.plugins)
+            (ok=false, reason="Profile $(profile.name) selects a plugin more than once", specs=PluginSpec[])
+        elseif !isempty(absent)
+            (ok=false, reason="Unknown plugins: $(join(absent, ", "))", specs=PluginSpec[])
+        else
+            (ok=true, reason="", specs=PluginSpec[registry.plugins[name] for name in profile.plugins])
+        end
     end
 end
-
 function profile_providers(specs, profile::Profile)
     candidates = Dict{Symbol,Vector{Symbol}}()
     for spec in specs, name in spec.provides
         push!(get!(Vector{Symbol}, candidates, name), spec.name)
     end
     selected = Dict{Symbol,Symbol}()
-    for name in sort!(collect(keys(candidates)))
-        names = candidates[name]
-        chosen = get(profile.bindings, name, nothing)
-        if isnothing(chosen)
-            length(names) == 1 || return (ok=false, reason="Service $name has multiple providers; select a profile binding", selected)
-            selected[name] = only(names)
-        elseif chosen in names
-            selected[name] = chosen
-        else
-            return (ok=false, reason="Plugin $chosen does not provide service $name in this profile", selected)
-        end
+    reason = select!(selected, candidates, profile.bindings)
+    absent = filter(name -> !haskey(candidates, name), collect(keys(profile.bindings)))
+    if isempty(reason) && !isempty(absent)
+        reason = "Profile binding $(first(absent)) has no selected provider"
     end
-    for name in keys(profile.bindings)
-        haskey(candidates, name) || return (ok=false, reason="Profile binding $name has no selected provider", selected)
-    end
-    return (ok=true, reason="", selected)
+    (ok=isempty(reason), reason, selected)
 end
 
+function select!(selected::Dict{Symbol,Symbol}, candidates, bindings)
+    names = sort!(collect(keys(candidates)))
+    index = 1
+    reason = ""
+    while index <= length(names) && isempty(reason)
+        name = names[index]
+        reason = select!(selected, name, candidates[name], get(bindings, name, nothing))
+        index += 1
+    end
+    reason
+end
+
+function select!(selected::Dict{Symbol,Symbol}, name::Symbol, candidates, chosen)
+    if isnothing(chosen) && length(candidates) != 1
+        "Service $name has multiple providers; select a profile binding"
+    elseif !isnothing(chosen) && !(chosen in candidates)
+        "Plugin $chosen does not provide service $name in this profile"
+    else
+        selected[name] = isnothing(chosen) ? only(candidates) : chosen
+        ""
+    end
+end
 function profile_order(specs, selected, base::Kernel)
     available = Set(item.name for item in component_snapshot(base))
     remaining = filter(spec -> isempty(spec.provides) || any(name -> get(selected, name, nothing) === spec.name, spec.provides), specs)
-    ordered = PluginSpec[]
-    completed = Set{Symbol}()
-    for spec in remaining, name in spec.requires
-        if !haskey(selected, name) && !(name in available)
-            return (ok=false, reason="Plugin $(spec.name) requires unavailable service $name", ordered)
-        end
+    absent = [(spec.name, name) for spec in remaining for name in spec.requires if !haskey(selected, name) && !(name in available)]
+    if isempty(absent)
+        order!(remaining, selected, available)
+    else
+        plugin, service = first(absent)
+        (ok=false, reason="Plugin $plugin requires unavailable service $service", ordered=PluginSpec[])
     end
-    while !isempty(remaining)
-        index = findfirst(remaining) do spec
-            all(spec.requires) do name
-                provider = get(selected, name, nothing)
-                isnothing(provider) ? name in available : provider in completed
-            end
-        end
-        isnothing(index) && return (ok=false, reason="Cyclic plugin service dependencies", ordered)
-        spec = popat!(remaining, index)
-        push!(ordered, spec)
-        push!(completed, spec.name)
-    end
-    return (ok=true, reason="", ordered)
 end
 
+function order!(remaining, selected, available)
+    ordered = PluginSpec[]
+    completed = Set{Symbol}()
+    reason = ""
+    while !isempty(remaining) && isempty(reason)
+        index = findfirst(remaining) do spec
+            all(name -> ready(name, selected, available, completed), spec.requires)
+        end
+        if isnothing(index)
+            reason = "Cyclic plugin service dependencies"
+        else
+            spec = popat!(remaining, index)
+            push!(ordered, spec)
+            push!(completed, spec.name)
+        end
+    end
+    (ok=isempty(reason), reason, ordered)
+end
+
+function ready(name::Symbol, selected, available, completed)
+    provider = get(selected, name, nothing)
+    isnothing(provider) ? name in available : provider in completed
+end
 function plugin_setup_result(result)
-    hasproperty(result, :ok) || return (ok=true, reason="")
-    result.ok === true && return (ok=true, reason="")
-    detail = hasproperty(result, :reason) ? result.reason :
-        hasproperty(result, :text) ? result.text :
-        hasproperty(result, :error) ? sprint(show, result.error) : "Plugin setup failed"
-    return (ok=false, reason=string(detail))
+    successful = !hasproperty(result, :ok) || result.ok === true
+    (ok=successful, reason=successful ? "" : explanation(result))
+end
+
+function explanation(result)
+    if hasproperty(result, :reason)
+        string(result.reason)
+    elseif hasproperty(result, :text)
+        string(result.text)
+    elseif hasproperty(result, :error)
+        sprint(show, result.error)
+    else
+        "Plugin setup failed"
+    end
 end
 plugin_setup_result(result::Bool) = (ok=result, reason=result ? "" : "Plugin setup returned false")
 plugin_setup_result(result::Task) = plugin_setup_result(plugin_value(result))
@@ -304,30 +342,40 @@ function setup_plugin!(kernel::Kernel, spec::PluginSpec, profile::Profile, selec
     names = filter(name -> get(selected, name, nothing) === spec.name, spec.provides)
     context = PluginContext(kernel, spec, get(profile.config, spec.name, NamedTuple()), names)
     installed = install!(kernel, ComponentSpec(context.owner, context; requires=spec.requires, cleanup=close))
-    installed.ok || return installed
-    lock(kernel.lock) do
-        owner = kernel.entries[context.owner]
+    installed.ok ? initialize!(context, spec) : installed
+end
+
+function initialize!(context::PluginContext, spec::PluginSpec)
+    lock(context.kernel.lock) do
+        owner = context.kernel.entries[context.owner]
         context.entry = owner
         for entry in owner.dependencies
             context.dependencies[entry.spec.name] = entry.spec.value
         end
     end
     result = plugin_setup_result(Base.invokelatest(spec.setup, context))
-    result.ok || return result
-    isempty(context.failure) || return (ok=false, reason=context.failure)
-    missing = setdiff(context.selected, keys(context.provided))
-    isempty(missing) || return (ok=false, reason="Plugin $(spec.name) did not provide: $(join(sort!(collect(missing)), ", "))")
-    return (ok=true, reason="")
+    result.ok ? validate(context) : result
 end
 
-function setup_profile!(kernel::Kernel, ordered, profile::Profile, selected)
-    for spec in ordered
-        result = setup_plugin!(kernel, spec, profile, selected)
-        result.ok || return result
+function validate(context::PluginContext)
+    absent = setdiff(context.selected, keys(context.provided))
+    if !isempty(context.failure)
+        (ok=false, reason=context.failure)
+    elseif !isempty(absent)
+        (ok=false, reason="Plugin $(context.name) did not provide: $(join(sort!(collect(absent)), ", "))")
+    else
+        (ok=true, reason="")
     end
-    return (ok=true, reason="")
 end
-
+function setup_profile!(kernel::Kernel, ordered, profile::Profile, selected)
+    result = (ok=true, reason="")
+    index = 1
+    while index <= length(ordered) && result.ok
+        result = setup_plugin!(kernel, ordered[index], profile, selected)
+        index += 1
+    end
+    result
+end
 function close_composition!(kernel::Kernel)
     worker = spawn_cleanup(() -> close(kernel))
     wait(worker; throw=false)
@@ -342,54 +390,83 @@ end
 
 """Stage a complete profile and publish it only after all selected plugins initialize successfully."""
 function activate!(host::PluginHost, requested::Profile)
-    profile = copy_profile(requested)
+    profile = Profile(requested)
     catalog = profile_specs(host.registry, profile)
-    catalog.ok || return (ok=false, reason=catalog.reason)
-    providers = profile_providers(catalog.specs, profile)
-    providers.ok || return (ok=false, reason=providers.reason)
-    initial = lock(host.lock) do
-        (closed=host.closed, revision=host.revision, kernel=host.closed ? nothing : fork_kernel(host.base))
-    end
-    staged = initial.kernel
-    isnothing(staged) && return (ok=false, reason="Plugin host is closed")
-    order = profile_order(catalog.specs, providers.selected, staged)
-    order.ok || return discard_composition!(staged, order.reason)
-    worker = spawn_scoped(() -> setup_profile!(staged, order.ordered, profile, providers.selected))
-    wait(worker; throw=false)
-    if istaskfailed(worker)
-        return discard_composition!(staged, sprint(showerror, TaskFailedException(worker)))
-    end
-    setup = fetch(worker)
-    setup.ok || return discard_composition!(staged, setup.reason)
-    committed = lock(host.lock) do
-        if host.closed || host.revision != initial.revision
-            return (ok=false, previous=nothing)
-        end
-        previous = host.kernel
-        host.kernel = staged
-        host.profile = profile
-        host.active = [spec.name for spec in order.ordered]
-        host.revision += UInt64(1)
-        return (ok=true, previous)
-    end
-    previous = committed.previous
-    isnothing(previous) && return discard_composition!(staged, "Plugin composition changed during activation")
-    cleanup = close_composition!(previous)
-    return (ok=true, reason=isempty(cleanup) ? "" : "Previous profile cleanup failed: $cleanup")
+    catalog.ok ? prepare!(host, profile, catalog.specs) : (ok=false, reason=catalog.reason)
 end
 
+function prepare!(host::PluginHost, profile::Profile, specs)
+    providers = profile_providers(specs, profile)
+    providers.ok ? stage!(host, profile, specs, providers.selected) : (ok=false, reason=providers.reason)
+end
+
+struct Activation
+    kernel::Kernel
+    profile::Profile
+    ordered::Vector{PluginSpec}
+    selected::Dict{Symbol,Symbol}
+    revision::UInt64
+end
+
+function stage!(host::PluginHost, profile::Profile, specs, selected)
+    initial = lock(host.lock) do
+        (revision=host.revision, kernel=host.closed ? nothing : fork_kernel(host.base))
+    end
+    stage!(host, initial.kernel, initial.revision, profile, specs, selected)
+end
+
+stage!(host::PluginHost, ::Nothing, revision, profile, specs, selected) = (ok=false, reason="Plugin host is closed")
+
+function stage!(host::PluginHost, kernel::Kernel, revision, profile, specs, selected)
+    order = profile_order(specs, selected, kernel)
+    order.ok ? activate!(host, Activation(kernel, profile, order.ordered, selected, revision)) : discard_composition!(kernel, order.reason)
+end
+
+function activate!(host::PluginHost, activation::Activation)
+    worker = spawn_scoped(() -> setup_profile!(activation.kernel, activation.ordered, activation.profile, activation.selected))
+    wait(worker; throw=false)
+    if istaskfailed(worker)
+        discard_composition!(activation.kernel, sprint(showerror, TaskFailedException(worker)))
+    else
+        setup = fetch(worker)
+        setup.ok ? commit!(host, activation) : discard_composition!(activation.kernel, setup.reason)
+    end
+end
+
+function commit!(host::PluginHost, activation::Activation)
+    previous = lock(host.lock) do
+        host.closed || host.revision != activation.revision ? nothing : publish!(host, activation)
+    end
+    retire!(previous, activation)
+end
+
+function publish!(host::PluginHost, activation::Activation)
+    previous = host.kernel
+    host.kernel = activation.kernel
+    host.profile = activation.profile
+    host.active = [spec.name for spec in activation.ordered]
+    host.revision += UInt64(1)
+    previous
+end
+
+retire!(::Nothing, activation::Activation) = discard_composition!(activation.kernel, "Plugin composition changed during activation")
+
+function retire!(previous::Kernel, activation::Activation)
+    cleanup = close_composition!(previous)
+    (ok=true, reason=isempty(cleanup) ? "" : "Previous profile cleanup failed: $cleanup")
+end
 """Remove a plugin by staging the remaining profile and validating its service dependencies."""
 function deactivate!(host::PluginHost, name::Symbol)
-    profile = lock(host.lock) do
-        copy_profile(host.profile)
-    end
-    name in profile.plugins || return (ok=false, reason="Plugin $name is not selected")
+    profile = lock(() -> Profile(host.profile), host.lock)
+    name in profile.plugins ? deactivate!(host, profile, name) : (ok=false, reason="Plugin $name is not selected")
+end
+
+function deactivate!(host::PluginHost, profile::Profile, name::Symbol)
     filter!(!=(name), profile.plugins)
     delete!(profile.config, name)
     filter!(pair -> last(pair) !== name, profile.bindings)
-    return activate!(host, profile)
+    activate!(host, profile)
 end
-
 """Snapshot the current profile without exposing mutable registration state or live resources."""
 function plugin_snapshot(host::PluginHost)
     return lock(host.lock) do
@@ -407,16 +484,16 @@ Base.isopen(host::PluginHost) = lock(() -> !host.closed, host.lock)
 """Use the current service generation outside host locks and release it even when the callback fails."""
 function with_component(callback, host::PluginHost, name::Symbol; fallback=nothing)
     binding = bind_component(host, name; fallback, owner=nothing)
-    binding.available || return nothing
+    binding.available ? supervised(callback, binding) : nothing
+end
+
+function supervised(callback, binding::BoundComponent)
     worker = spawn_scoped(() -> plugin_value(Base.invokelatest(callback, binding.value)))
     wait(worker; throw=false)
     cleanup = spawn_cleanup(() -> release!(binding))
     wait(cleanup; throw=false)
-    istaskfailed(worker) && return fetch(worker)
-    fetch(cleanup)
-    return fetch(worker)
+    resolve(worker, [cleanup])
 end
-
 """Close the host while outstanding session and component leases retain their exact plugin resources."""
 function Base.close(host::PluginHost)
     compositions = lock(host.lock) do

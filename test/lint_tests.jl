@@ -26,10 +26,11 @@ end
         "f = x -> begin; x > 0 && return x; 0; end",
         "function f(xs); for x in xs; x > 0 && return x; end; 0; end",
         "map(xs) do x; x > 0 && return x; 0; end",
+        "function f(); Threads.@spawn begin; true && return 1; 2; end; end",
         "function f(xs); for x in xs; x < 0 && continue; print(x); end; nothing; end",
         "function f(xs); for x in xs; x < 0 && break; print(x); end; nothing; end",
     )
-        @test !isempty(SourceStyle.violations(source; single_exit=true))
+        @test !isempty(forbidden_syntax(source))
     end
     for source in (
         "f(x) = x + 1",
@@ -39,15 +40,18 @@ end
         "function f(x); g(y) = y + 1; g(x); end",
         "function f(xs); map(xs) do x; return x + 1; end; end",
         "valid(x) = x isa Integer && x > 0",
+        "function f(); t = Threads.@spawn begin; return 1; end; fetch(t); end",
+        "function f(); t = @async begin; return 1; end; fetch(t); end",
         "struct Span; value::Int; Span(value) = value > 0 ? new(value) : error(\"invalid\"); end",
         "text = \"condition && return value\" # return is data here",
     )
-        @test isempty(SourceStyle.violations(source; single_exit=true))
+        @test isempty(forbidden_syntax(source))
     end
-    @test any(issue -> last(issue) == "early return", SourceStyle.violations("function f(x)\n if x > 0\n return x\n end\n 0\nend"; single_exit=true))
+    @test any(issue -> last(issue) == "early return", forbidden_syntax("function f(x)\n if x > 0\n return x\n end\n 0\nend"))
 end
 
 @testset "Repository source-style contract" begin
-    @test isempty(lint_repository(dirname(@__DIR__)))
-    @test !isempty(SourceStyle.audit(dirname(@__DIR__); single_exit=true))
+    issues = lint_repository(dirname(@__DIR__))
+    foreach(issue -> println(join(issue, ":")), issues)
+    @test isempty(issues)
 end

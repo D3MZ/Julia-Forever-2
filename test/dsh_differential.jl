@@ -92,8 +92,13 @@ function outgoing_result(input)
     if ready !== :ok
         close(peer)
         wait(pending)
-        return Dict("request" => nothing, "result" => "outbound frame was not emitted")
+        Dict("request" => nothing, "result" => "outbound frame was not emitted")
+    else
+        outgoing_response(input, peer, pending, output)
     end
+end
+
+function outgoing_response(input, peer, pending, output)
     frame = lock(peer.write_lock) do
         JSON.parse(String(take!(output)))
     end
@@ -130,8 +135,13 @@ function recovery_result(input)
     if ready !== :ok
         close(peer)
         wait(pending)
-        return Dict("failed" => failed, "request" => nothing, "result" => "outbound frame was not emitted")
+        Dict("failed" => failed, "request" => nothing, "result" => "outbound frame was not emitted")
+    else
+        recovered_response(input, peer, pending, output, failed)
     end
+end
+
+function recovered_response(input, peer, pending, output, failed)
     frame = lock(peer.write_lock) do
         JSON.parse(String(take!(output.buffer)))
     end
@@ -186,8 +196,9 @@ function asynchronous_fixture(callback, arguments...)
     end
 end
 
-function lifecycle_result(input)
-    get(input, "ownership", false) && return ownership_result(input)
+lifecycle_result(input) = get(input, "ownership", false) ? ownership_result(input) : registered_lifecycle_result(input)
+
+function registered_lifecycle_result(input)
     trace = Any[]
     registry = JuliaForever2.PluginRegistry()
     for specification in input["plugins"]
@@ -226,8 +237,13 @@ end
 function ownership_fixture(mode)
     if mode == "scope"
         scope = JuliaForever2.ExtensionScope()
-        return (owner=scope, finish=() -> close(scope))
+        (owner=scope, finish=() -> close(scope))
+    else
+        plugin_ownership_fixture()
     end
+end
+
+function plugin_ownership_fixture()
     reference = Ref{Any}(nothing)
     registry = JuliaForever2.PluginRegistry()
     JuliaForever2.register_plugin!(registry, JuliaForever2.PluginSpec(:owner, context -> begin
@@ -290,8 +306,16 @@ function replacement_specification(specification, trace)
 end
 
 function replacement_result(input)
-    input["kind"] == "retained" && return retained_replacement_result(input)
-    input["kind"] == "async_binding" && return retained_async_binding_result(input)
+    if input["kind"] == "retained"
+        retained_replacement_result(input)
+    elseif input["kind"] == "async_binding"
+        retained_async_binding_result(input)
+    else
+        registered_replacement_result(input)
+    end
+end
+
+function registered_replacement_result(input)
     trace = Any[]
     registry = JuliaForever2.PluginRegistry()
     JuliaForever2.register_plugin!(registry, replacement_specification(input["initial"], trace))
@@ -304,19 +328,23 @@ function replacement_result(input)
         JuliaForever2.activate!(host, JuliaForever2.Profile(:differential, [initial_name, replacement_name];
             bindings=Dict(Symbol(input["service"]) => replacement_name)))
         services = Dict(name => component(host, Symbol(name)) for name in input["services"])
-        close(host)
-        close(kernel)
-        return normalize(Dict("services" => services, "trace" => trace))
+        result = Dict("services" => services, "trace" => trace)
+    else
+        result = replacement_profile_result(input, host, registry, initial_name, trace)
     end
+    close(host)
+    close(kernel)
+    normalize(result)
+end
+
+function replacement_profile_result(input, host, registry, initial_name, trace)
     profile = JuliaForever2.Profile(:differential, [initial_name])
     JuliaForever2.activate!(host, profile)
     before = Dict(name => component(host, Symbol(name)) for name in input["services"])
     JuliaForever2.register_plugin!(registry, replacement_specification(input["replacement"], trace); replace=true)
     accepted = JuliaForever2.activate!(host, profile).ok
     after = Dict(name => component(host, Symbol(name)) for name in input["services"])
-    close(host)
-    close(kernel)
-    return normalize(Dict("accepted" => accepted, "before" => before, "after" => after, "trace" => trace))
+    Dict("accepted" => accepted, "before" => before, "after" => after, "trace" => trace)
 end
 
 function retained_async_binding_result(input)
@@ -410,8 +438,9 @@ function retained_replacement_result(input)
         "afterRelease" => project(released_result), "trace" => trace))
 end
 
-function event_result(input)
-    get(input, "retained_waterfall", false) && return retained_waterfall_result(input)
+event_result(input) = get(input, "retained_waterfall", false) ? retained_waterfall_result(input) : registered_event_result(input)
+
+function registered_event_result(input)
     root = JuliaForever2.ExtensionScope()
     scopes = Dict("root" => root)
     for specification in get(input, "scopes", [])
@@ -426,9 +455,10 @@ function event_result(input)
             push!(trace, Dict("listener" => specification["id"], "arguments" => values))
             if get(specification, "waterfall", false) && !get(specification, "veto", false)
                 result = next()
-                return haskey(specification, "suffix") ? result * specification["suffix"] : result
+                haskey(specification, "suffix") ? result * specification["suffix"] : result
+            else
+                get(specification, "result", nothing)
             end
-            return get(specification, "result", nothing)
         end
         scope = scopes[get(specification, "scope", "root")]
         listeners[specification["id"]] = JuliaForever2.on!(callback, scope, Symbol(get(specification, "event", "fixture"));
@@ -582,10 +612,15 @@ function profile_group_result(input)
         config=get(layer, "config", Dict())) for layer in input["profiles"]]
     if !get(input, "stored", false)
         profile = JuliaForever2.compose_profiles(:composed, layers...)
-        return normalize(Dict("plugins" => String.(profile.plugins),
+        normalize(Dict("plugins" => String.(profile.plugins),
             "config" => Dict(String(plugin) => value for (plugin, value) in profile.config),
             "originalProfiles" => original))
+    else
+        stored_profile_group_result(input, original, layers)
     end
+end
+
+function stored_profile_group_result(input, original, layers)
     return mktempdir() do directory
         store = JuliaForever2.ProfileStore(directory)
         for (index, layer) in enumerate(layers)
@@ -705,12 +740,19 @@ function tool_output_projection_result(input)
     function renderer(arguments, value)
         rendered[] += 1
         format = input["format"]
-        format == "label" && return string(get(arguments, "prefix", ""), value["label"])
-        format == "joined" && return join(value["lines"], "|")
-        format == "summary" && return string(value["label"], " (", value["count"], ")")
-        format == "silent" && return ""
-        format == "scalar" && return string(value)
-        error("Unknown fixture presentation")
+        if format == "label"
+            string(get(arguments, "prefix", ""), value["label"])
+        elseif format == "joined"
+            join(value["lines"], "|")
+        elseif format == "summary"
+            string(value["label"], " (", value["count"], ")")
+        elseif format == "silent"
+            ""
+        elseif format == "scalar"
+            string(value)
+        else
+            error("Unknown fixture presentation")
+        end
     end
     specification = JuliaForever2.ToolSpec(:projection, Dict("type" => "object"),
         arguments -> begin
@@ -730,11 +772,14 @@ end
 """Produce an independently authored model-facing representation for completion fixtures."""
 function completion_display(input, value)
     format = get(input, "format", "scalar")
-    format == "label" && return string(get(input, "prefix", ""), value["label"])
-    format == "joined" && return join(value["lines"], "|")
-    return string(value)
+    if format == "label"
+        string(get(input, "prefix", ""), value["label"])
+    elseif format == "joined"
+        join(value["lines"], "|")
+    else
+        string(value)
+    end
 end
-
 """Compare post-execute decisions and replacement validation with the pinned DSH stage."""
 function tool_completion_result(input)
     root = JuliaForever2.ExtensionScope()
@@ -761,10 +806,15 @@ function tool_completion_result(input)
     end
     if policy != "none"
         JuliaForever2.on!(scope, :tool_completion) do call, result
-            policy == "block" && return JuliaForever2.ToolResultBlock(input["message"])
-            policy == "replace" && return JuliaForever2.ToolResultText(input["message"])
-            policy == "value" && return JuliaForever2.ToolResultValue(deepcopy(input["value"]))
-            return nothing
+            if policy == "block"
+                JuliaForever2.ToolResultBlock(input["message"])
+            elseif policy == "replace"
+                JuliaForever2.ToolResultText(input["message"])
+            elseif policy == "value"
+                JuliaForever2.ToolResultValue(deepcopy(input["value"]))
+            else
+                nothing
+            end
         end
     end
     result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}())
@@ -861,8 +911,7 @@ function tool_batch_result(input)
     peak = Ref(0)
     exclusive_safe = Ref(true)
     state_lock = ReentrantLock()
-    for specification in input["calls"]
-        get(specification, "registered", true) || continue
+    for specification in Iterators.filter(specification -> get(specification, "registered", true), input["calls"])
         callback = arguments -> begin
             lock(state_lock) do
                 active[] += 1

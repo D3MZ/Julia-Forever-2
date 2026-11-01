@@ -29,52 +29,59 @@ end
 
 function insert_patch_entries!(entries, index, identity, inserted, warn)
     if entry_patch_truthy(identity)
-        target = get(index, identity, nothing)
-        if isnothing(target)
-            warn("patch insert: entry %C not found", identity)
-            return nothing
-        end
-        if !entry_patch_truthy(get(target, "group", nothing))
-            warn("patch insert: entry %C is not a group", identity)
-            return nothing
-        end
-        get(target, "config", nothing) isa AbstractVector || (target["config"] = Any[])
-        append!(target["config"], inserted)
+        insert!(index, get(index, identity, nothing), identity, inserted, warn)
     else
         append!(entries, inserted)
+        index_patch_entries!(index, inserted)
     end
-    index_patch_entries!(index, inserted)
-    return nothing
+    nothing
 end
 
+insert!(index, ::Nothing, identity, inserted, warn) = (warn("patch insert: entry %C not found", identity); nothing)
+
+function insert!(index, target::AbstractDict, identity, inserted, warn)
+    if entry_patch_truthy(get(target, "group", nothing))
+        if !(get(target, "config", nothing) isa AbstractVector)
+            target["config"] = Any[]
+        end
+        append!(target["config"], inserted)
+        index_patch_entries!(index, inserted)
+    else
+        warn("patch insert: entry %C is not a group", identity)
+    end
+    nothing
+end
 function override_patch_entry!(index, patch, identity, warn)
-    if !entry_patch_truthy(identity)
+    if entry_patch_truthy(identity)
+        override!(get(index, identity, nothing), patch, identity, warn)
+    else
         warn("patch: id is required for non-insert patches")
-        return nothing
     end
-    target = get(index, identity, nothing)
-    if isnothing(target)
-        warn("patch: entry %C not found", identity)
-        return nothing
-    end
-    name = get(patch, "name", nothing)
-    expected_name = get(target, "name", missing)
-    if entry_patch_truthy(name) && !entry_patch_equal(name, expected_name)
-        warn("patch: name mismatch for %C (expected %C, got %C), skipping", identity, expected_name, name)
-        return nothing
-    end
-    for (key, value) in patch
-        key in ("id", "insert", "name") || (target[key] = value)
-    end
-    return nothing
+    nothing
 end
 
+override!(::Nothing, patch, identity, warn) = (warn("patch: entry %C not found", identity); nothing)
+
+function override!(target::AbstractDict, patch, identity, warn)
+    name = get(patch, "name", nothing)
+    expected = get(target, "name", missing)
+    if entry_patch_truthy(name) && !entry_patch_equal(name, expected)
+        warn("patch: name mismatch for %C (expected %C, got %C), skipping", identity, expected, name)
+    else
+        for (key, value) in patch
+            if !(key in ("id", "insert", "name"))
+                target[key] = value
+            end
+        end
+    end
+    nothing
+end
 """Apply ordered entry patches with explicit skipped-patch diagnostics."""
 function apply_entry_patches(entries::AbstractVector, patches; warn=Returns(nothing))
-    if isnothing(patches) || ismissing(patches) || isempty(patches)
-        return copy(entries)
-    end
-    result = entry_patch_copy(entries)
+    isnothing(patches) || ismissing(patches) || isempty(patches) ? copy(entries) : patch!(entry_patch_copy(entries), patches, warn)
+end
+
+function patch!(result::AbstractVector, patches, warn)
     index = index_patch_entries!(Dict{Any,Any}(), result)
     for patch in patches
         identity = get(patch, "id", nothing)
@@ -85,9 +92,8 @@ function apply_entry_patches(entries::AbstractVector, patches; warn=Returns(noth
             override_patch_entry!(index, patch, identity, warn)
         end
     end
-    return result
+    result
 end
-
 entry_patch_warning_value(::Missing) = "undefined"
 entry_patch_warning_value(value) = JSON.json(value)
 
