@@ -1,6 +1,7 @@
 # Task completion
 
 - After every task, commit the task's changes and push them when the relevant tests pass.
+- Merge completed task changes into the target branch once the relevant checks pass, without asking for separate merge confirmation. Do not stop at an unmerged pull request unless a required check or repository protection blocks merging.
 - After pushing, remove task-related worktrees and local and remote branches once their changes are integrated into the target branch. Preserve unrelated work, uncommitted changes, and the main branch.
 
 # Julia conventions
