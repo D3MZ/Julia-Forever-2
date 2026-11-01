@@ -276,6 +276,17 @@ async function web() {
       const { observation } = await httpObservation(origin + path, { method });
       responses.push({ method, path, ...observation });
     }
+    const trustCases = JSON.parse(readFileSync(new URL('./web-request-trust.json', import.meta.url), 'utf8'));
+    const trust = [];
+    for (const entry of trustCases) {
+      const headers = Object.fromEntries(Object.entries(entry.headers).map(([name, value]) =>
+        [name, value.replaceAll('<port>', new URL(origin).port)]));
+      const probe = await fetch(origin + '/api/', {
+        headers, redirect: 'manual', signal: AbortSignal.timeout(10000),
+      });
+      trust.push({ name: entry.name, admitted: probe.status !== 403 });
+      await probe.arrayBuffer();
+    }
     const exchange = await fetch(authenticatedUrl, { redirect: 'manual', signal: AbortSignal.timeout(10000) });
     const cookie = exchange.headers.get('set-cookie')?.split(';')[0];
     await exchange.arrayBuffer();
@@ -296,7 +307,7 @@ async function web() {
     const cached = await httpObservation(origin + '/favicon.svg', { headers: { 'if-none-match': asset.observation.etag } });
     child.kill('SIGTERM');
     const stopped = await settleChild(child, exit);
-    return { release, referenceCommit, responses, authentication,
+    return { release, referenceCommit, responses, trust, authentication,
       index: index.observation, asset: asset.observation, cached: cached.observation,
       exit: stopped.code, signal: stopped.signal };
   } finally {
