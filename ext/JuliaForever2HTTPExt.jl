@@ -77,6 +77,61 @@ function route(api, request, target)
     end
 end
 
+"""Parse a browser-facing bare authority without trusting forwarded headers."""
+function web_authority(value::AbstractString)
+    parsed = match(r"\A(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?\z"i, value)
+    if isnothing(parsed)
+        nothing
+    else
+        digits = parsed.captures[2]
+        port = isnothing(digits) ? nothing : parse(Int, digits)
+        if isnothing(port) || port <= 65535
+            (host=lowercase(String(parsed.captures[1])), port=port)
+        else
+            nothing
+        end
+    end
+end
+
+"""Recognize loopback host authorities without accepting deceptive DNS suffixes."""
+function web_loopback_host(host::AbstractString)
+    parts = split(host, '.')
+    host in ("localhost", "[::1]") || (length(parts) == 4 && parts[1] == "127" &&
+        all(part -> !isempty(part) && length(part) <= 3 &&
+            all(isdigit, part) && parse(Int, part) <= 255, parts[2:end]))
+end
+
+web_origin_port(port, scheme) = isnothing(port) ? (scheme == "https" ? 443 : 80) : port
+
+"""Require a complete HTTP(S) Origin with the same normalized Host authority."""
+function web_same_origin(authority, origin::AbstractString)
+    parsed = match(r"\A(https?)://(.+)\z"i, origin)
+    if isnothing(parsed)
+        false
+    else
+        other = web_authority(parsed.captures[2])
+        scheme = lowercase(String(parsed.captures[1]))
+        !isnothing(other) && authority.host == other.host &&
+            web_origin_port(authority.port, scheme) == web_origin_port(other.port, scheme)
+    end
+end
+
+web_has_header(request::HTTP.Request, name::AbstractString) =
+    any(field -> lowercase(first(field)) == lowercase(name), request.headers)
+
+"""Default loopback Web policy: reject DNS rebinding and cross-site browser requests."""
+function trusted_web_request(request::HTTP.Request)
+    authority = web_authority(HTTP.header(request, "Host"))
+    if isnothing(authority) || !web_loopback_host(authority.host)
+        false
+    elseif lowercase(HTTP.header(request, "Sec-Fetch-Site")) == "cross-site"
+        false
+    else
+        !web_has_header(request, "Origin") ||
+            web_same_origin(authority, HTTP.header(request, "Origin"))
+    end
+end
+
 """Redeem a browser launch credential once while retaining the existing bearer handler."""
 function redeem_web_access!(access::WebAccess, credential::AbstractString)
     lock(access.lock) do
@@ -88,7 +143,15 @@ end
 
 web_session_cookie(access::WebAccess, request::HTTP.Request) = any(part -> strip(part) == "juliaforever2_session=$(access.cookie)", split(HTTP.header(request, "Cookie"), ';'))
 
-function authorize_web_request(api, access::WebAccess, handler, request::HTTP.Request)
+function authorize_web_request(api, access::WebAccess, handler, request::HTTP.Request, request_trust)
+    if Base.invokelatest(request_trust, request)
+        authorize_trusted_web_request(api, access, handler, request)
+    else
+        response(403, JSON.json(Dict("error" => "Untrusted request authority or origin")))
+    end
+end
+
+function authorize_trusted_web_request(api, access::WebAccess, handler, request::HTTP.Request)
     uri = HTTP.URI(String(request.target))
     query = HTTP.queryparams(uri)
     if request.method == "GET" && uri.path == "/" && haskey(query, "access")
@@ -129,21 +192,22 @@ end
 
 WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(port))
 """Start a token-authenticated loopback Web server backed only by Julia-native sessions."""
-JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request) = serve(api, WebAddress(host, port), token, handler)
+JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request, request_trust=trusted_web_request) =
+    serve(api, WebAddress(host, port), token, handler, request_trust)
 
-function serve(api, address::WebAddress, token, handler)
+function serve(api, address::WebAddress, token, handler, request_trust)
     access = WebAccess(String(token))
-    server = HTTP.serve!(request -> authorize_web_request(api, access, handler, request), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
+    server = HTTP.serve!(request -> authorize_web_request(api, access, handler, request, request_trust), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
     WebServer(server, address.host, Int(HTTP.port(server)), String(token))
 end
 """An optional HTTP extension publishes an independently replaceable native Web service."""
 function JuliaForever2.web_server_plugin(; name=:web_server, service_name=:web_server,
-        api_service=:session_api, host="127.0.0.1", port=0, token=string(uuid4()), handler=web_request)
+        api_service=:session_api, host="127.0.0.1", port=0, token=string(uuid4()), handler=web_request, request_trust=trusted_web_request)
     contract = Symbol(service_name)
     dependency = Symbol(api_service)
     setup = context -> JuliaForever2.provide!(context, contract,
         JuliaForever2.start_web_server(JuliaForever2.service(context, dependency);
-            host, port, token, handler); cleanup=close)
+            host, port, token, handler, request_trust); cleanup=close)
     return JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
 end
 
