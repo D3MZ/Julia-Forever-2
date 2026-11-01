@@ -107,19 +107,25 @@ end
 function context_messages(conversation::Conversation)
     lock(conversation.lock) do
         entry = conversation.compaction
-        isnothing(entry) && return copy(conversation.messages)
-        return Message[Message(:user, entry.summary);
-            conversation.messages[entry.first_kept:end]...]
+        if isnothing(entry)
+            copy(conversation.messages)
+        else
+            vcat(Message[Message(:user, entry.summary)],
+                conversation.messages[entry.first_kept:end])
+        end
     end
 end
 
 """Install a summary only if no messages or other compaction changed during generation."""
 function commit_compaction!(conversation::Conversation, revision::UInt, entry::CompactionEntry)
     lock(conversation.lock) do
-        conversation.revision == revision || return false
-        conversation.compaction = entry
-        changed_history!(conversation, 1)
-        return true
+        if conversation.revision == revision
+            conversation.compaction = entry
+            changed_history!(conversation, 1)
+            true
+        else
+            false
+        end
     end
 end
 
