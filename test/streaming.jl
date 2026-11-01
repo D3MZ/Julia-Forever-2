@@ -99,7 +99,7 @@ end
     @test isempty(positional.line)
     @test isempty(complete.data)
 
-    write(second, "id: retained\\ndata: keyword\\n\\n")
+    write(second, "id: retained\ndata: keyword\n\n")
     @test length(events) == 1
     @test only(events).data == "keyword"
     @test only(events).id == "retained"
