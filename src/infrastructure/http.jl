@@ -30,7 +30,9 @@ function transport_request(transport, url, method, body, headers, context::Execu
     if applicable(transport, url, method, body, headers, context, sink)
         return transport(url, method, body, headers, context, sink)
     end
-    response = transport(url, method, body, headers)
+    response = applicable(transport, url, method, body, headers, context) ?
+        transport(url, method, body, headers, context) :
+        transport(url, method, body, headers)
     isnothing(sink) || write(sink, response.body)
     return response
 end
