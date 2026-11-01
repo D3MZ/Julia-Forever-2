@@ -941,6 +941,20 @@ end
     @test actual == expected
 end
 
+@testset "DSH full-product proof requires complete native differential evidence" begin
+    verified = COVERAGE["verified_source_families"]
+    cases = Set(area["kind"] for area in COVERAGE["native_comparisons"])
+    evidence = !isempty(verified) && all(verified) do family
+        get(family, "native", false) === true &&
+            !isempty(get(family, "implementation_paths", String[])) &&
+            !isempty(get(family, "differential_kinds", String[])) &&
+            all(kind -> kind in cases, family["differential_kinds"])
+    end
+    proven = COVERAGE["inventory_complete"] === true &&
+        isempty(COVERAGE["unverified_source_families"]) && evidence
+    @test COVERAGE["superset_proven"] === proven
+end
+
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
