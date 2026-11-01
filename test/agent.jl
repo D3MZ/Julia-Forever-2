@@ -506,3 +506,26 @@ end
     @test cached_report(0, typemax(Int), typemax(Int)).input_tokens == 0
     @test cached_report(1, typemax(Int), typemax(Int)).input_tokens == 0
 end
+
+@testset "Session API counts history changes without snapshotting messages" begin
+    session = Session(Kernel(); messages=[Message(:user, "first"), Message(:assistant, "second")])
+    api = JuliaForever2.SessionAPI()
+    api.sessions["counted"] = session
+    params = Dict{String,Any}("session" => "counted")
+    function verify_count(expected)
+        result = JuliaForever2.session_api_request!(api, "session/describe", params)
+        @test result == JuliaForever2.api_session_summary("counted", session)
+        @test result["messages"] == expected
+        @test length(JuliaForever2.session_api_request!(api, "session/messages", params)) == expected
+        @test JSON.parse(JSON.json(Dict("jsonrpc" => "2.0", "id" => 1,
+            "result" => result)))["result"]["messages"] == expected
+    end
+    verify_count(2)
+    append_message!(session, Message(:user, "third"))
+    verify_count(3)
+    replace_message!(session, 1, Message(:assistant, "replaced"))
+    verify_count(3)
+    clear_history!(session)
+    verify_count(0)
+    close(api)
+end
