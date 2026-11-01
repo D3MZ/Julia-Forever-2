@@ -14,6 +14,10 @@ function profile_path(store::ProfileStore, name::Symbol)
     return joinpath(store.directory, label * ".json")
 end
 
+"""Accept only saved regular files, not symlinked profile entries."""
+is_saved_profile_file(::Nothing) = false
+is_saved_profile_file(path::AbstractString) = !islink(path) && isfile(path)
+
 """Atomically save a profile's JSON-compatible configuration, not its live plugin instances."""
 function save_profile!(store::ProfileStore, profile::Profile)
     path = profile_path(store, profile.name)
@@ -41,7 +45,7 @@ end
 function load_profile(store::ProfileStore, name::Union{Symbol,AbstractString})
     identity = Symbol(name)
     path = profile_path(store, identity)
-    (isnothing(path) || islink(path) || !isfile(path)) && return nothing
+    is_saved_profile_file(path) || return nothing
     data = JSON.parsefile(path)
     data["format"] == "JuliaForever2.profile" || error("Invalid profile format: $identity")
     data["version"] == 1 || error("Unsupported profile version: $identity")
@@ -57,7 +61,7 @@ function profile_names(store::ProfileStore)
         endswith(filename, ".json") || continue
         identity = Symbol(first(filename, length(filename) - 5))
         path = profile_path(store, identity)
-        !isnothing(path) && !islink(path) && isfile(path) && push!(names, identity)
+        is_saved_profile_file(path) && push!(names, identity)
     end
     return sort!(names)
 end

@@ -566,5 +566,8 @@ end
         @test isnothing(JuliaForever2.load_profile(store, :linked))
         @test JuliaForever2.load_profile(store, :local).plugins == [:example]
         @test JuliaForever2.load_profile(outside, :linked).plugins == [:example]
+        @test isnothing(JuliaForever2.load_profile(store, "linked"))
+        @test JuliaForever2.load_profile(store, "local").plugins == [:example]
+        @test isnothing(JuliaForever2.load_profile(store, Symbol("")))
     end
 end
