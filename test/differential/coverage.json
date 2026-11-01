@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia session lineage and revision-invalidated indexed history search are implemented, with bounded DSH behavioral comparisons for text filtering. Parent/child lineage serialization and restoration are independent features without upstream child-lineage differential evidence. Native Web, SDK and broader feature parity remain unverified; no production DSH runtime dependency.",
+  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -393,7 +393,8 @@
         "literal, case-insensitive and whitespace-flexible search over conversation text",
         "literal handling of regex metacharacters and Unicode case folding",
         "role predicates, multi-session ordering, bounded search and live snapshots",
-        "revision-invalidated native trigram index returns exact case-insensitive, substring, whitespace and role-filtered results in deterministic stored-session order"
+        "revision-invalidated native trigram index returns exact case-insensitive, substring, whitespace and role-filtered results in deterministic stored-session order",
+        "indexed refresh after two successive atomic session updates compared against pinned upstream text selection"
       ],
       "limits": [
         "The reference receives simple semantic text documents; Julia searches user/assistant message text. Full DSH event extraction, index-backed ranking, lineage, other event types and complete session-query service parity are unverified.",
@@ -2377,7 +2378,7 @@
     "runner": "../dsh_runtime_differential.jl",
     "reference_commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
     "scope": "Test-only DSH protocol clients exercise the framework-neutral JSON-RPC transport and process lifecycle against a pinned upstream CLI. A separate native Julia SessionStore comparison verifies persisted session history and workspace against actual upstream restart/resume observations. DSH SDK and Web behavior is delegated inside tests only; this does not establish native SDK, Web, or application feature parity.",
-    "required_comparisons": 13,
+    "required_comparisons": 16,
     "guards": [
       "The CLI must be built at apps/cli/lib/bin.js in an unmodified tracked source checkout at the pinned revision; the same-version published npm package is not accepted.",
       "Both SDK profiles must initialize, reject an uninitialized prompt, and validate session/query input. Unknown-method failures do not count as query support.",
@@ -2433,6 +2434,21 @@
         ],
         "comparisons": 1,
         "projection": "Native Julia plugin-provided SessionStore persists user and assistant messages, then resumes in a fresh session with the original working directory and prior history; the resulting continuation-history projection is compared against the pinned upstream SDK's actual resumed provider request. Julia does not invoke DSH for production persistence."
+      },
+      {
+        "profiles": [
+          "sdk",
+          "sdk-minimal"
+        ],
+        "comparisons": 2,
+        "projection": "Native Julia SessionAPI open, workspace read/change, invalid path, empty-query rejection, missing resume, unknown method and saved identity retention are compared with pinned DSH SDK outcome categories; different Julia-native method names and envelopes are intentional."
+      },
+      {
+        "profiles": [
+          "web"
+        ],
+        "comparisons": 1,
+        "projection": "Optional native Julia HTTP server provides token-authenticated HTML and a session RPC route. Shared upstream Web authentication and HTML success properties are compared, not frontend bytes, assets, or protocol parity."
       }
     ],
     "normalization": [
@@ -2447,7 +2463,8 @@
       "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons.",
       "Native session working-directory comparisons cover directory state and path resolution, not integration into third-party tool filesystem behavior or full native SDK functionality.",
       "No native DSH SDK/application/Web implementation is supplied by the test-only DSH protocol adapters. Their successful forwarding and server startup are reference-only and do not establish product parity.",
-      "Native session snapshots persist message roles, text and kinds plus working directory, not arbitrary message metadata, token accounting, in-flight operations, tool resources, or the complete DSH on-disk session format."
+      "Native session snapshots persist message roles, text and kinds plus working directory, not arbitrary message metadata, token accounting, in-flight operations, tool resources, or the complete DSH on-disk session format.",
+      "Native SessionAPI supports independent Julia JSON-RPC sessions but has not been shown to implement every DSH SDK operation or wire shape; HTTP.jl extension serves a minimal native page and JSON-RPC endpoint rather than the full DSH Web application."
     ],
     "included_in_native_case_counts": false
   },

@@ -5,6 +5,7 @@ using JSON
 using JuliaForever2
 using Downloads
 using SHA
+using HTTP
 
 include("differential/dsh_reference_profiles.jl")
 include("differential/dsh_reference_runtime.jl")
@@ -360,6 +361,74 @@ function native_session_history(directory, temporary)
     return Dict("directory" => restored_directory, "history" => history)
 end
 
+
+"""Compare the native Julia API's session operations with pinned upstream SDK behavior."""
+function native_session_api_comparison(reference, directory, temporary)
+    operations = Dict(item["name"] => item["result"] for item in reference["operations"])
+    store = SessionStore(joinpath(temporary, "api-store"))
+    api = SessionAPI(; store)
+    open_result = session_api_request!(api, "session/open",
+        Dict("session" => "api-reference", "workingDirectory" => directory))
+    initial = session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
+    selected = session_api_request!(api, "session/workspace/set",
+        Dict("session" => "api-reference", "path" => "child"))
+    changed = session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
+    invalid = session_api_request!(api, "session/workspace/set",
+        Dict("session" => "api-reference", "path" => "does-not-exist"))
+    retained = session_api_request!(api, "session/workspace/get", Dict("session" => "api-reference"))
+    blank = session_api_request!(api, "session/search",
+        Dict("session" => "api-reference", "text" => " \n "))
+    absent = session_api_request!(api, "session/resume", Dict("session" => "never-saved"))
+    unknown = session_api_request!(api, "unrecognized/method")
+    session_api_request!(api, "session/save", Dict("session" => "api-reference"))
+    resumed_identity = open_result["id"]
+    session_api_request!(api, "session/close", Dict("session" => "api-reference"))
+    resumed = session_api_request!(api, "session/resume", Dict("session" => "api-reference"))
+    actual = Dict("initial" => initial["workingDirectory"], "set" => selected isa AbstractDict,
+        "changed" => changed["workingDirectory"], "missing" => !(invalid isa JuliaForever2.RpcError),
+        "retained" => retained["workingDirectory"], "blank" => !(blank isa JuliaForever2.RpcError),
+        "absent" => !(absent isa JuliaForever2.RpcError),
+        "unknown" => !(unknown isa JuliaForever2.RpcError),
+        "retainedIdentity" => resumed["id"] == resumed_identity)
+    expected = Dict("initial" => operations["working-directory-get"]["value"]["cwd"],
+        "set" => operations["working-directory-set"]["ok"],
+        "changed" => operations["working-directory-after-set"]["value"]["cwd"],
+        "missing" => operations["missing-directory"]["ok"],
+        "retained" => operations["directory-after-failure"]["value"]["cwd"],
+        "blank" => operations["blank-query"]["ok"],
+        "absent" => operations["missing-session-resume"]["ok"],
+        "unknown" => operations["unknown-method"]["ok"],
+        "retainedIdentity" => true)
+    close(api)
+    return actual, expected
+end
+
+"""Compare Web authentication and HTML capability, not DSH's frontend bytes or URL layout."""
+function native_web_comparison(reference, temporary)
+    api = SessionAPI()
+    server = JuliaForever2.start_web_server(api)
+    origin = JuliaForever2.web_url(server)
+    authorization = ["Authorization" => "Bearer $(server.token)"]
+    unauthorized = HTTP.request("GET", origin * "/"; status_exception=false)
+    authorized = HTTP.request("GET", origin * "/", authorization; status_exception=false)
+    rpc = HTTP.request("POST", origin * "/api/rpc", authorization,
+        JSON.json(Dict("jsonrpc" => "2.0", "id" => 1, "method" => "session/list"));
+        status_exception=false)
+    rpc_frame = JSON.parse(String(rpc.body))
+    actual = Dict("unauthenticated" => unauthorized.status != 200,
+        "authenticated" => authorized.status == 200,
+        "html" => startswith(HTTP.header(authorized, "Content-Type"), "text/html"),
+        "rpc" => rpc.status == 200 && rpc_frame["result"] == [])
+    root = only(filter(row -> row["method"] == "GET" && row["path"] == "/", reference["responses"]))
+    expected = Dict("unauthenticated" => root["status"] != 200,
+        "authenticated" => reference["index"]["status"] == 200,
+        "html" => startswith(reference["index"]["contentType"], "text/html"),
+        "rpc" => true)
+    close(server)
+    close(api)
+    return actual, expected
+end
+
 @testset "Pinned DSH transport differentials using test-only protocol clients" begin
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
@@ -374,6 +443,10 @@ end
                 actual, expected = native_workspace_comparison(reference, directory)
                 @test actual == expected
             end
+            @testset "Native session API: $name" begin
+                actual, expected = native_session_api_comparison(reference, directory, temporary)
+                @test actual == expected
+            end
         end
         reference = reference_result("configuration", directory, joinpath(temporary, "reference-configurations"))
         length(reference["profiles"]) == length(DSH_SHIPPED_PROFILES) || error("Reference omitted a shipped DSH profile")
@@ -386,6 +459,10 @@ end
             reference = reference_result("web", directory, joinpath(temporary, "reference-web"))
             candidate = web_result(directory, joinpath(temporary, "native-web"), temporary)
             @test candidate == reference
+            @testset "Native Julia Web authentication and API" begin
+                actual, expected = native_web_comparison(reference, temporary)
+                @test actual == expected
+            end
         end
         @testset "Successful local model turn and persisted continuation" begin
             compared = successful_turn_comparison(directory, temporary)
