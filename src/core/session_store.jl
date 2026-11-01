@@ -91,14 +91,15 @@ function session_lineage(record::SessionRecord)
     end
 end
 function validated_session_lineage(record::SessionRecord)
-    # Preserve session_record's field validation without retaining Message objects.
+    # JSON strings already have the required representation; validate their
+    # shape without constructing a Symbol for every persisted message.
     for entry in record.data["messages"]
-        Symbol(entry["role"])
-        String(entry["content"])
-        Symbol(entry["kind"])
+        entry["role"] isa AbstractString || error("Invalid persisted session role")
+        entry["content"] isa AbstractString || error("Invalid persisted session content")
+        entry["kind"] isa AbstractString || error("Invalid persisted session kind")
     end
     String(record.data["working_directory"])
-    return session_lineage(record)
+    session_lineage(record)
 end
 
 """Read persisted ancestry without materializing the session's message history."""
