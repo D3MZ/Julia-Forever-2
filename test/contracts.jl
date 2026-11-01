@@ -292,4 +292,23 @@ end
     @test_throws UndefKeywordError JuliaForever2.JsonRpcPeer(; input)
     @test_throws UndefKeywordError JuliaForever2.JsonRpcPeer(; output)
     @test_throws MethodError JuliaForever2.JsonRpcPeer(; input, output, unsupported=true)
+
+    supplied_lock = ReentrantLock()
+    supplied_buffer = UInt8[0x43]
+    overridden = JuliaForever2.JsonRpcPeer(; input, output,
+        lock=supplied_lock, buffer=supplied_buffer)
+    @test overridden.lock === supplied_lock
+    @test overridden.buffer === supplied_buffer
+    @test overridden.pending !== peer.pending
+    @test peer.buffer == UInt8[0x42]
+    @test isempty(legacy.buffer)
+
+    pending = Dict{Any,Channel{JuliaForever2.JSONRPCTransport.RpcResult}}()
+    handlers = Task[]
+    full = JuliaForever2.JsonRpcPeer(input, output, ReentrantLock(),
+        ReentrantLock(), UInt8[], pending, handlers, nothing, nothing,
+        nothing, nothing, nothing)
+    @test full isa JuliaForever2.JsonRpcPeer{typeof(input),typeof(output)}
+    @test full.pending === pending
+    @test full.handlers === handlers
 end
