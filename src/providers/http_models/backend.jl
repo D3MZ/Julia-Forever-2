@@ -230,8 +230,9 @@ end
 function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     message = state.message
     usage = message["usage"]
-    report = UsageReport(usage["input"] + usage["cacheRead"] + usage["cacheWrite"],
-        usage["output"], haskey(model_metadata(state.model), "cost") ? Float64(usage["cost"]["total"]) : nothing)
+    report = UsageReport(usage["input"], usage["output"],
+        haskey(model_metadata(state.model), "cost") ? Float64(usage["cost"]["total"]) : nothing,
+        usage["cacheRead"], usage["cacheWrite"])
     text = join(block["text"] for block in message["content"] if block["type"] == "text")
     reply = if message["stopReason"] in ("error", "aborted")
         Reply(:error, get(message, "errorMessage", "Model request failed."))
