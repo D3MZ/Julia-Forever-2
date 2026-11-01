@@ -5,6 +5,7 @@ import random
 
 from wire import wire_scenarios
 from anthropic_fixtures import anthropic_scenarios
+from tool_arguments import tool_argument_scenarios
 
 REGISTRY_CONTRACTS = [
     'provider-registry.replacement', 'model-catalog.typed-lookup',
@@ -101,4 +102,5 @@ def build_scenarios() -> list[dict]:
         ]
         scenarios.append(dict(id=f'model-store-isolation-{index}', family='store',
                               capabilities=STORE_CONTRACTS, steps=steps))
-    return scenarios + wire_scenarios() + anthropic_scenarios()
+    wire = wire_scenarios() + anthropic_scenarios()
+    return scenarios + wire + tool_argument_scenarios(wire)

@@ -103,6 +103,49 @@ function text_model_block!(state::ModelStreamState, kind::String, delta::Abstrac
     return nothing
 end
 
+model_json_hex_byte(value::UInt8) =
+    0x30 <= value <= 0x39 || 0x41 <= value <= 0x46 || 0x61 <= value <= 0x66
+
+"""Repair control characters and invalid escapes inside model-generated JSON strings only."""
+function repair_model_json(text::AbstractString)
+    bytes = codeunits(text)
+    output = IOBuffer(sizehint=ncodeunits(text))
+    in_string = false
+    index = 1
+    while index <= length(bytes)
+        byte = bytes[index]
+        if !in_string
+            write(output, byte)
+            in_string = byte == 0x22
+        elseif byte == 0x22
+            write(output, byte)
+            in_string = false
+        elseif byte == 0x5c
+            if index < length(bytes) && bytes[index + 1] in (0x22, 0x5c, 0x2f, 0x62, 0x66, 0x6e, 0x72, 0x74)
+                write(output, byte, bytes[index + 1])
+                index += 1
+            elseif index + 5 <= length(bytes) && bytes[index + 1] == 0x75 &&
+                    all(offset -> model_json_hex_byte(bytes[offset]), index + 2:index + 5)
+                write(output, bytes[index:index + 5])
+                index += 5
+            else
+                write(output, 0x5c, 0x5c)
+            end
+        elseif byte <= 0x1f
+            write(output, "\\u", string(byte; base=16, pad=4))
+        else
+            write(output, byte)
+        end
+        index += 1
+    end
+    return String(take!(output))
+end
+
+function parse_model_tool_arguments(text::AbstractString)
+    parsed = parse_json(text)
+    return isnothing(parsed) ? parse_json(repair_model_json(text)) : parsed
+end
+
 function finish_model_block!(state::ModelStreamState, index::Int)
     index in state.closed_blocks && return nothing
     push!(state.closed_blocks, index)
@@ -110,7 +153,7 @@ function finish_model_block!(state::ModelStreamState, index::Int)
     kind = block["type"]
     if kind == "toolCall"
         if haskey(state.arguments, index) && !isempty(state.arguments[index])
-            arguments = parse_json(state.arguments[index])
+            arguments = parse_model_tool_arguments(state.arguments[index])
             arguments isa AbstractDict && (block["arguments"] = arguments)
         end
         model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))
