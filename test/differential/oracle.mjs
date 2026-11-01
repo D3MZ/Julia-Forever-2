@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
+const { formatSessionMarkdown } = await importSource('packages/session-query/session-log-export/src/markdown.ts')
 const { filterSessionEventDocuments, filterSessionResults } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
 const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
@@ -863,6 +864,31 @@ function sessionControlCase(input) {
   })
 }
 
+/** Compare public Markdown exports using the pinned original committed-event formatter. */
+function sessionMarkdownCase(input) {
+  const events = []
+  if (input.title !== undefined) events.push({ type: 'session/title', data: { title: input.title } })
+  let active = false
+  for (const message of input.messages) {
+    if (message.role === 'user') {
+      if (active) events.push({ type: 'turn/end' })
+      events.push({ type: 'turn/start' })
+      active = true
+      events.push({ type: 'user/message', surfaceOp: 'append',
+        data: { source: { kind: 'user' }, content: [{ type: 'text', text: message.content }] } })
+    } else if (message.role === 'assistant') {
+      if (!active) {
+        events.push({ type: 'turn/start' })
+        active = true
+      }
+      events.push({ type: 'assistant/message', surfaceOp: 'append',
+        data: { message: { content: [{ type: 'text', text: message.content }] } } })
+    }
+  }
+  if (active) events.push({ type: 'turn/end' })
+  return formatSessionMarkdown(events, input.source_path)
+}
+
 async function execute(input) {
   if (input.kind === 'tool_completion') return Promise.all(input.cases.map(toolCompletionCase))
   if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
@@ -873,6 +899,7 @@ async function execute(input) {
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
   if (input.kind === 'session_query') return input.cases.map(sessionQueryCase)
+  if (input.kind === 'session_markdown') return input.cases.map(sessionMarkdownCase)
   if (input.kind === 'session_control') return input.cases.map(sessionControlCase)
   if (input.kind === 'transport') return Promise.all(input.cases.map(transportCase))
   if (input.kind === 'outgoing') return Promise.all(input.cases.map(outgoingCase))
