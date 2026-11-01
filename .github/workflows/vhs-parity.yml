@@ -1,0 +1,75 @@
+name: Scheduled VHS terminal evidence
+
+# Screenshots are reviewed by the separate scheduled parity agent.
+# They are not required PR checks or automatic proof of Pi parity.
+on:
+  schedule:
+    - cron: '43 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vhs-parity-evidence
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      JULIAFOREVER_CONFIG_DIR: ${{ runner.temp }}/jf2-vhs-config
+      JULIA_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Install and precompile the terminal app
+        run: julia --project=app -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+      - uses: charmbracelet/vhs-action@v2.1.1
+        with:
+          version: 'v0.12.0'
+      - name: Record reproducible Julia Forever 2 terminal scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/vhs "$JULIAFOREVER_CONFIG_DIR"
+          vhs vhs/jf2.tape
+      - name: Describe captured evidence and pinned source
+        if: always()
+        shell: bash
+        env:
+          CAPTURE_SHA: ${{ github.sha }}
+          CAPTURE_RUN: ${{ github.run_id }}
+        run: |
+          mkdir -p artifacts/vhs
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          from pathlib import Path
+          pin = json.loads(Path("parity/pi-lock.json").read_text())
+          manifest = {
+              "candidate_commit": os.environ["CAPTURE_SHA"],
+              "workflow_run_id": os.environ["CAPTURE_RUN"],
+              "reference_pi_commit": pin["commit"],
+              "reference_pi_tree": pin["tree"],
+              "recorded_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              "capture_tool": "VHS v0.12.0",
+              "screenshots": sorted(str(path) for path in Path("artifacts/vhs").glob("*.png")),
+              "parity_verified": False,
+              "note": "Screenshots are evidence only; the scheduled parity agent assesses them against approved reference behavior.",
+          }
+          Path("artifacts/vhs/manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+      - name: Upload screenshots and terminal trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vhs-terminal-evidence
+          path: artifacts/vhs/
+          if-no-files-found: error
+          retention-days: 21

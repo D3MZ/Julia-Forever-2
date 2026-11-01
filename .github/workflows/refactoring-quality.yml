@@ -1,0 +1,42 @@
+name: Scheduled refactoring quality
+
+# This is diagnostic evidence for the hourly refactoring agent, not a PR gate.
+on:
+  schedule:
+    - cron: '3 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-refactoring-quality
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      JULIA_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Install audit environment
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate()'
+      - name: Run source lint, Aqua and JET for the refactoring agent
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl lint aqua jet 2>&1 | tee "$RUNNER_TEMP/refactoring-quality.log"
+      - name: Retain quality diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refactoring-quality-log
+          path: ${{ runner.temp }}/refactoring-quality.log
+          if-no-files-found: warn
+          retention-days: 14
