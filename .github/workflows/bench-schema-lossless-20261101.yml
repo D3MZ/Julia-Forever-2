@@ -1,0 +1,62 @@
+name: Paired checked JSON Schema losslessness performance experiment
+on:
+  push:
+    branches:
+      - perf/schema-lossless-validation-20261101t1206
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: 'ce6a23b67430e1202ca3e024be4d95b8bc55183e'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Create exact main worktree and record runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/schema-evidence"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/schema-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/schema-baseline" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$RUNNER_TEMP/schema-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/schema-baseline" rev-parse HEAD > "$RUNNER_TEMP/schema-evidence/baseline-sha.txt"
+          git diff --stat "$BASELINE_SHA" HEAD > "$RUNNER_TEMP/schema-evidence/change-stat.txt"
+          julia --version > "$RUNNER_TEMP/schema-evidence/julia-version.txt"
+          lscpu > "$RUNNER_TEMP/schema-evidence/runner-cpu.txt"
+          uname -a > "$RUNNER_TEMP/schema-evidence/runner-os.txt"
+          env | sort | grep -E '^(CI|GITHUB_|JULIA_|OPENBLAS_|RUNNER_)' | grep -v -E '(TOKEN|SECRET|KEY)' > "$RUNNER_TEMP/schema-evidence/environment-vars.txt"
+      - name: Install shared pinned Julia test dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()' 2>&1 | tee "$RUNNER_TEMP/schema-evidence/package-status.txt"
+      - name: Seven alternating warmed-up paired trials, CPU and allocation profiles
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test benchmarks/schema_lossless_experiment.jl "$BASELINE_DIR" "$RUNNER_TEMP/schema-evidence" 2>&1 | tee "$RUNNER_TEMP/schema-evidence/benchmark.log"
+      - name: Focused agent correctness, repository lint and Aqua
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl agent lint aqua 2>&1 | tee "$RUNNER_TEMP/schema-evidence/correctness-quality.log"
+      - name: Upload raw paired timings, profiles, allocations and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-lossless-paired-evidence
+          path: ${{ runner.temp }}/schema-evidence/
+          retention-days: 30
+          if-no-files-found: warn
