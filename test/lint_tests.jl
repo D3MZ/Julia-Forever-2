@@ -29,7 +29,7 @@ end
         "function f(xs); for x in xs; x < 0 && continue; print(x); end; nothing; end",
         "function f(xs); for x in xs; x < 0 && break; print(x); end; nothing; end",
     )
-        @test !isempty(forbidden_syntax(source))
+        @test !isempty(SourceStyle.violations(source; single_exit=true))
     end
     for source in (
         "f(x) = x + 1",
@@ -42,13 +42,12 @@ end
         "struct Span; value::Int; Span(value) = value > 0 ? new(value) : error(\"invalid\"); end",
         "text = \"condition && return value\" # return is data here",
     )
-        @test isempty(forbidden_syntax(source))
+        @test isempty(SourceStyle.violations(source; single_exit=true))
     end
-    @test any(issue -> last(issue) == "early return", forbidden_syntax("function f(x)\n if x > 0\n return x\n end\n 0\nend"))
+    @test any(issue -> last(issue) == "early return", SourceStyle.violations("function f(x)\n if x > 0\n return x\n end\n 0\nend"; single_exit=true))
 end
 
 @testset "Repository source-style contract" begin
-    issues = lint_repository(dirname(@__DIR__))
-    foreach(issue -> println(join(issue, ":")), issues)
-    @test isempty(issues)
+    @test isempty(lint_repository(dirname(@__DIR__)))
+    @test !isempty(SourceStyle.audit(dirname(@__DIR__); single_exit=true))
 end

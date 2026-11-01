@@ -52,11 +52,17 @@ end
     @test JuliaForever2.AgentDecision(Reply(:unsupported, "unused")) isa Failure
 end
 
-@testset "Usage report construction establishes canonical values" begin
+@testset "Usage report constructors preserve raw accounting contracts" begin
     report = JuliaForever2.UsageReport(-2, 4, Inf)
-    @test isnothing(report.input_tokens)
+    @test report.input_tokens == -2
     @test report.output_tokens == 4
-    @test isnothing(report.cost)
+    @test report.cost == Inf
+    conversation = Conversation()
+    JuliaForever2.record_usage!(conversation, report)
+    accounting = JuliaForever2.usage_snapshot(conversation)
+    @test accounting.partial
+    @test !accounting.reported
+    @test !accounting.cost_known
     valid = JuliaForever2.UsageReport(2, 4, 0.25)
     @test JuliaForever2.UsageReport(valid) === valid
     @test JuliaForever2.UsageReport(Dict("input_tokens" => 2, "output_tokens" => 4, "cost" => 0.25)) === valid
