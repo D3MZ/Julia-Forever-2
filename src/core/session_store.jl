@@ -7,11 +7,11 @@ struct SessionStore
 end
 
 function session_file(store::SessionStore, name::Union{Symbol,AbstractString})
-    label = String(name)
+    label = String(name)::String
     if isempty(label) || label in (".", "..") || any(character -> character in ('/', '\\', '\0'), label)
         return nothing
     end
-    return joinpath(store.directory, label * ".json")
+    return joinpath(store.directory, string(label, ".json"))
 end
 
 function session_record(session::Session)
