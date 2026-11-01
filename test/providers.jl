@@ -673,6 +673,12 @@ end
     @test legacy isa typeof(first_state)
     @test legacy.message["model"] == model.id
     @test legacy.message !== message
+    another_legacy = JuliaForever2.ModelStreamState(model, context)
+    @test legacy.message !== another_legacy.message
+    @test legacy.message["usage"] !== another_legacy.message["usage"]
+    @test legacy.blocks !== another_legacy.blocks
+    @test_throws UndefKeywordError JuliaForever2.ModelStreamState(; context, message)
+    @test_throws UndefKeywordError JuliaForever2.ModelStreamState(; model, message)
     positional = JuliaForever2.ModelStreamState(model, context, deepcopy(message),
         Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(),
         false, false, false, false, "", UInt64(19))
