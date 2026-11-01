@@ -90,26 +90,35 @@ def main() -> int:
         if [entry['id'] for entry in result] != scenario_ids:
             raise ValueError(f'{name} returned missing, duplicate, or reordered scenarios')
     failures = []
+    failure_details = {}
     for expected, actual in zip(oracle, candidate, strict=True):
         if expected != actual:
-            failures.append(expected['id'])
+            scenario_id = expected['id']
+            failures.append(scenario_id)
             before = json.dumps(expected, ensure_ascii=False, sort_keys=True, indent=2).splitlines(True)
             after = json.dumps(actual, ensure_ascii=False, sort_keys=True, indent=2).splitlines(True)
-            sys.stderr.writelines(difflib.unified_diff(before, after, fromfile='pinned Pi', tofile='Julia Forever 2'))
-            sys.stderr.write('\n')
+            difference = ''.join(difflib.unified_diff(before, after, fromfile='pinned Pi', tofile='Julia Forever 2'))
+            failure_details[scenario_id] = {'oracle': expected, 'candidate': actual, 'diff': difference}
+            print(f'Differential mismatch: {scenario_id}; full traces retained in report', file=sys.stderr)
     gaps = sorted(name for name, entry in capabilities.items() if entry['status'] != 'differential')
     complete = not failures and not gaps and manifest['inventory_complete']
+    failed_contracts = {capability for scenario in scenarios if scenario['id'] in failures
+                        for capability in scenario['capabilities']}
     report = {
         'baseline': commit, 'oracle': 'unmodified upstream source',
         'scenario_count': len(scenarios), 'failed_scenarios': failures,
         'differential_contracts': sorted(covered), 'gaps': gaps,
+        'verified_contracts': sorted(covered - failed_contracts),
         'inventory_complete': manifest['inventory_complete'], 'full_parity_established': complete,
         'projection': manifest['projection'],
     }
     if arguments.report:
         report_path = Path(arguments.report)
         report_path.parent.mkdir(parents=True, exist_ok=True)
-        report_path.write_text(json.dumps(report, indent=2) + '\n')
+        report_path.write_text(json.dumps({**report, 'failure_details': failure_details}, indent=2) + '\n')
+    elif failure_details:
+        for detail in failure_details.values():
+            sys.stderr.write(detail['diff'] + '\n')
     print(json.dumps(report, indent=2))
     return int(bool(failures) or (arguments.require_complete and not complete))
 

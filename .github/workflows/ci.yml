@@ -63,13 +63,18 @@ jobs:
           version: '1.13'
       - uses: julia-actions/cache@v2
       - name: Run regression and real differential tests with coverage
-        run: julia --project -e 'using Pkg; Pkg.test(; coverage=true)'
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project -e 'using Pkg; Pkg.test(; coverage=true)' 2>&1 | tee "$RUNNER_TEMP/julia-tests.log"
       - name: Upload Pi differential coverage and explicit gap report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pi-parity-report
-          path: ${{ runner.temp }}/pi-parity.json
+          path: |
+            ${{ runner.temp }}/pi-parity.json
+            ${{ runner.temp }}/julia-tests.log
           if-no-files-found: warn
       - uses: julia-actions/julia-processcoverage@v1
       - name: Upload coverage report
