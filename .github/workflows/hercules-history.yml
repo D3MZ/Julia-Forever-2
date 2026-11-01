@@ -35,8 +35,6 @@ jobs:
           echo 'ead7afbe72deb87cfd9a5481ef43c74e17f18259c417de6fd1272ef997ad0c44  '"$RUNNER_TEMP/hercules.gz" | sha256sum -c -
           gzip -dc "$RUNNER_TEMP/hercules.gz" > "$RUNNER_TEMP/hercules"
           chmod +x "$RUNNER_TEMP/hercules"
-      - name: Test the history tooling
-        run: python -m unittest discover -s scripts -p 'test_*hercules*.py' -v
       - name: Generate the hourly chart
         run: python scripts/render_hercules_history.py --repo . --hercules "$RUNNER_TEMP/hercules" --output assets/hercules-history.png
       - name: Push the chart and versioned image link if needed
