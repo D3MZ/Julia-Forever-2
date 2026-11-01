@@ -174,6 +174,33 @@ end
     close(context)
 end
 
+@testset "Invalid model discovery payloads do not crash or poison the cache" begin
+    payloads = [
+        JSON.json(Dict("models" => nothing)),
+        JSON.json(Dict("models" => Any[nothing, 42,
+            Dict("visibility" => "list", "slug" => "usable-model"),
+            Dict("visibility" => "hidden", "slug" => "private-model")])),
+    ]
+    requests = Ref(0)
+    transport = function (url, method, body, headers, context, sink)
+        requests[] += 1
+        return (status=200, body=payloads[requests[]])
+    end
+    provider = JuliaForever2.OpenAIProvider("unused", transport)
+    context = ExecutionContext()
+
+    invalid = JuliaForever2.available_models!(provider, [], context)
+    @test isempty(invalid.models)
+    @test invalid.reason == "ChatGPT model discovery returned invalid JSON."
+
+    recovered = JuliaForever2.available_models!(provider, [], context)
+    @test recovered.models == ["usable-model"]
+    @test recovered.reason == ""
+    @test JuliaForever2.available_models!(provider, [], context).models == ["usable-model"]
+    @test requests[] == 2
+    close(context)
+end
+
 @testset "ChatGPT streams events, reports usage, and caches models" begin
     mktempdir() do directory
         JuliaForever2.save_credentials!(directory, :chatgpt, Dict("access_token" => "synthetic", "expires_at" => time() + 3600))
