@@ -369,3 +369,29 @@ end
         close(kernel)
     end
 end
+
+@testset "Parallel extension listeners begin before earlier callbacks finish" begin
+    scope = JuliaForever2.ExtensionScope()
+    first_started = Channel{Nothing}(1)
+    second_started = Channel{Nothing}(1)
+    release_first = Base.Event()
+
+    JuliaForever2.on!(() -> begin
+        put!(first_started, nothing)
+        wait(release_first)
+        nothing
+    end, scope, :parallel_probe)
+    JuliaForever2.on!(() -> begin
+        put!(second_started, nothing)
+        nothing
+    end, scope, :parallel_probe)
+
+    dispatch = Threads.@spawn JuliaForever2.dispatch_event!(scope, :parallel_probe; mode=:parallel)
+    @test timedwait(() -> isready(first_started), 10.0; pollint=0.01) == :ok
+    overlapped = timedwait(() -> isready(second_started), 2.0; pollint=0.01) == :ok
+    notify(release_first)
+    @test overlapped
+    @test timedwait(() -> istaskdone(dispatch), 10.0; pollint=0.01) == :ok
+    istaskdone(dispatch) && @test fetch(dispatch) === nothing
+    close(scope)
+end
