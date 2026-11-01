@@ -645,18 +645,18 @@ end
 
 
 function tool_arguments_result(input)
-    schema = CheckedJSONSchema(input["schema"])
+    schema = JuliaForever2.CheckedJSONSchema(input["schema"])
     called = Ref(0)
-    scope = ExtensionScope()
-    specification = ToolSpec(:checked_arguments, schema, arguments -> begin
+    scope = JuliaForever2.ExtensionScope()
+    specification = JuliaForever2.ToolSpec(:checked_arguments, schema, arguments -> begin
         called[] += 1
         return "accepted"
     end)
-    registration = register_tool!(scope, specification)
+    registration = JuliaForever2.register_tool!(scope, specification)
     registration.ok || error(registration.reason)
-    exposed = only(tools_snapshot(scope)).schema
-    actual = invoke_tool!(scope, :checked_arguments, input["value"])
-    violations = sort!(tool_argument_violations(schema, input["value"]))
+    exposed = only(JuliaForever2.tools_snapshot(scope)).schema
+    actual = JuliaForever2.invoke_tool!(scope, :checked_arguments, input["value"])
+    violations = sort!(JuliaForever2.tool_argument_violations(schema, input["value"]))
     close(scope)
     expected_calls = isempty(violations) ? 1 : 0
     called[] == expected_calls || error("Tool callback bypassed checked argument admission")
