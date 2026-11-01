@@ -80,16 +80,43 @@ end
 
 restore(target::Union{Kernel,AgentDefinition}, ::Nothing, directory) = api_create_session(target; working_directory=directory)
 restore(target::Union{Kernel,AgentDefinition}, record, directory) = api_create_session(target; messages=record.messages, working_directory=record.directory, id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id)
+"""Close one session after committing its settled history when persistence is installed."""
 function api_close_session!(api::SessionAPI, params::AbstractDict)
     apply(api_session(api, params)) do session
         name = String(params["session"])
-        lock(api.lock) do
-            pop!(api.sessions, name, nothing)
-            pop!(api.handles, name, nothing)
+        result = lock(api.lock) do
+            if api.closed || get(api.sessions, name, nothing) !== session
+                RpcError(-32000, "Session is not available: $name")
+            else
+                saved = persist_before_close!(api.store, name, session,
+                    get(api.handles, name, nothing))
+                if !saved.ok
+                    RpcError(-32000, "Session could not be saved: $(saved.reason)")
+                else
+                    pop!(api.sessions, name)
+                    pop!(api.handles, name, nothing)
+                    Dict("closed" => true)
+                end
+            end
         end
-        close(session)
-        Dict("closed" => true)
+        result isa RpcError || close(session)
+        result
     end
+end
+
+persist_before_close!(::Nothing, name, session::Session, handle) = (ok=true, reason="")
+
+function persist_before_close!(store, name, session::Session, handle)
+    settle_for_close!(handle)
+    save_session!(store, name, session)
+end
+
+settle_for_close!(::Nothing) = nothing
+
+function settle_for_close!(handle::TaskHandle)
+    istaskdone(handle) || cancel!(handle)
+    wait(handle; throw=false)
+    nothing
 end
 api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(params["session"], session), api_session(api, params))
 api_session_messages(api::SessionAPI, params::AbstractDict) = apply(session -> api_message.(history_snapshot(session).messages), api_session(api, params))
