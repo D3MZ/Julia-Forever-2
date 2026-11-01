@@ -94,9 +94,12 @@ function validated_session_lineage(record::SessionRecord)
     # JSON strings already have the required representation; validate their
     # shape without constructing a Symbol for every persisted message.
     for entry in record.data["messages"]
-        entry["role"] isa AbstractString || error("Invalid persisted session role")
-        entry["content"] isa AbstractString || error("Invalid persisted session content")
-        entry["kind"] isa AbstractString || error("Invalid persisted session kind")
+        role = entry["role"]
+        role isa AbstractString || Symbol(role)
+        content = entry["content"]
+        content isa String || String(content)
+        kind = entry["kind"]
+        kind isa AbstractString || Symbol(kind)
     end
     String(record.data["working_directory"])
     session_lineage(record)

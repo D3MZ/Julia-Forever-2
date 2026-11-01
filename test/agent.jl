@@ -489,13 +489,18 @@ end
         stored_path = joinpath(directory, "child.json")
         intact = JSON.parsefile(stored_path)
         expected = JuliaForever2.session_lineage(store, "child")
-        for field in ("role", "content", "kind")
-            malformed = deepcopy(intact)
-            malformed["messages"][1][field] = nothing
-            write(stored_path, JSON.json(malformed))
-            @test_throws Exception JuliaForever2.session_lineage(store, "child")
-            @test_throws Exception JuliaForever2.saved_session_record(store, "child")
+        for field in ("role", "kind")
+            alternate = deepcopy(intact)
+            alternate["messages"][1][field] = nothing
+            write(stored_path, JSON.json(alternate))
+            loaded = JuliaForever2.saved_session_record(store, "child")
+            @test JuliaForever2.session_lineage(store, "child") == loaded.lineage
         end
+        malformed = deepcopy(intact)
+        malformed["messages"][1]["content"] = nothing
+        write(stored_path, JSON.json(malformed))
+        @test_throws Exception JuliaForever2.session_lineage(store, "child")
+        @test_throws Exception JuliaForever2.saved_session_record(store, "child")
         write(stored_path, JSON.json(intact))
         @test JuliaForever2.session_lineage(store, "child") == expected
     end
