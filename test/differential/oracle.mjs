@@ -101,6 +101,25 @@ ${source.slice(cancelStart, cancelEnd)}
 }`
 })
 
+// Exercise pinned upstream fork-prefix and unfinished-turn closure code with no tool calls.
+const { buildForkSeed } = await importSource('packages/core/session/src/fork.ts', source => {
+  const repair = referenceSource('packages/core/session/src/repair.ts')
+  const repairStart = repair.indexOf('export function openTurnClosers(')
+  const repairEnd = repair.indexOf('\n/**\n * Track unanswered assistant tool requests', repairStart)
+  const forkStart = source.indexOf('export function buildForkSeed(')
+  if ([repairStart, repairEnd, forkStart].some(index => index < 0)) {
+    throw new Error('Pinned session fork boundaries were not found')
+  }
+  // No tool calls occur in these fixtures. Recovering incomplete calls remains outside this oracle.
+  return `const SessionSeq = value => value
+class ToolCallRecovery {
+  observe(_event) {}
+  results() { return [] }
+}
+${repair.slice(repairStart, repairEnd)}
+${source.slice(forkStart)}`
+})
+
 const settle = () => new Promise(resolve => setImmediate(resolve))
 
 /** Render a deterministic test output projection, independent of the policy implementation. */
@@ -837,6 +856,33 @@ function sessionQueryCase(input) {
   })) }
 }
 
+/** Compare a fork's visible message prefix using the unchanged pinned DSH seed algorithm. */
+function sessionForkCase(input) {
+  const events = []
+  input.messages.forEach((message, index) => {
+    const seq = events.length
+    events.push({ type: 'turn/start', seq, time: 0, data: { turn: index } })
+    events.push({ type: `${message.role}/message`, seq: seq + 1, time: 0,
+      data: { message: { role: message.role, content: [{ type: 'text', text: message.content }] } } })
+    events.push({ type: 'turn/end', seq: seq + 2, time: 0,
+      data: { turn: index, reason: { kind: 'completed' } } })
+  })
+  const boundary = input.at_index === undefined ? events.length - 1 : (input.at_index - 1) * 3 + 1
+  const seed = buildForkSeed(events, boundary)
+  const marker = seed.findIndex(event => event.type === 'session/end-seed')
+  if (marker !== boundary + 1 || seed[marker].data.inherited !== true) {
+    throw new Error('Pinned DSH fork did not preserve its inherited boundary')
+  }
+  if (input.at_index !== undefined
+    && seed.at(-1)?.data?.reason?.kind !== 'forked') {
+    throw new Error('Pinned DSH fork did not terminate the cut-open turn')
+  }
+  return { ok: true, messages: seed.slice(0, marker)
+    .filter(event => event.type === 'user/message' || event.type === 'assistant/message')
+    .map(event => ({ role: event.data.message.role,
+      content: event.data.message.content[0].text })) }
+}
+
 /** Project the pinned ACP admission guard and cancel method without a DSH runtime. */
 function sessionControlCase(input) {
   const reference = new AcpSessionControlReference({ cancel: () => {} })
@@ -874,6 +920,7 @@ async function execute(input) {
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
   if (input.kind === 'session_query') return input.cases.map(sessionQueryCase)
   if (input.kind === 'session_control') return input.cases.map(sessionControlCase)
+  if (input.kind === 'session_fork') return input.cases.map(sessionForkCase)
   if (input.kind === 'transport') return Promise.all(input.cases.map(transportCase))
   if (input.kind === 'outgoing') return Promise.all(input.cases.map(outgoingCase))
   if (input.kind === 'recovery') return Promise.all(input.cases.map(recoveryCase))

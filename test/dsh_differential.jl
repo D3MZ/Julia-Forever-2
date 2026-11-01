@@ -11,6 +11,7 @@ const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), St
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["session_control"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_control.json"), String))
+CASES["session_fork"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_fork.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
 CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
@@ -1196,6 +1197,48 @@ function session_control_result(input)
     return normalize(observations)
 end
 
+"""Compare independent native session forks with the pinned upstream's visible prefix."""
+function session_fork_result(input)
+    api = SessionAPI()
+    opened = session_api_request!(api, "session/open", Dict("session" => "source"))
+    @test opened isa AbstractDict
+    source = api.sessions["source"]
+    for entry in input["messages"]
+        append_message!(source, Message(Symbol(entry["role"]), entry["content"];
+            metadata=Dict("tags" => ["source"])))
+    end
+    params = Dict{String,Any}("session" => "source", "newSession" => "branch")
+    haskey(input, "at_index") && (params["atIndex"] = input["at_index"])
+    forked = session_api_request!(api, "session/fork", params)
+    if forked isa RpcError
+        close(api)
+        return Dict("ok" => false, "messages" => Any[])
+    end
+    branch = api.sessions["branch"]
+    inherited = history_snapshot(branch).messages
+    actual = [Dict("role" => String(message.role), "content" => message.content)
+        for message in inherited]
+    @test branch !== source
+    @test branch.kernel !== source.kernel
+    @test working_directory(branch) == working_directory(source)
+    child_lineage = session_lineage(branch)
+    @test child_lineage.parent_id === nothing
+    @test child_lineage.root_id == child_lineage.id
+    @test child_lineage.id != session_lineage(source).id
+    @test length(inherited) > 0
+    push!(inherited[1].metadata["tags"], "branch")
+    @test history_snapshot(source).messages[1].metadata["tags"] == ["source"]
+    append_message!(branch, Message(:user, "branch-only"))
+    @test length(history_snapshot(source).messages) == length(input["messages"])
+    @test length(history_snapshot(branch).messages) == length(inherited) + 1
+    invalid = session_api_request!(api, "session/fork",
+        Dict("session" => "source", "newSession" => "invalid", "atIndex" => length(input["messages"]) + 1))
+    @test invalid isa RpcError
+    @test !haskey(api.sessions, "invalid")
+    close(api)
+    return normalize(Dict("ok" => true, "messages" => actual))
+end
+
 @testset "DSH full-product proof requires complete native differential evidence" begin
     verified = COVERAGE["verified_source_families"]
     cases = Set(area["kind"] for area in COVERAGE["native_comparisons"])
@@ -1213,6 +1256,7 @@ end
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result), ("session_control", session_control_result),
+            ("session_fork", session_fork_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
             ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
