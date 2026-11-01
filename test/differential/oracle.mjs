@@ -824,6 +824,81 @@ async function toolCase(input) {
 }
 
 
+/** Preserve PR #45's fixtures while replacing their delays with bounded rendezvous cohorts. */
+function toolBatchProjectionPeers(input) {
+  const safe = new Map(input.tools.map(tool => [tool.name, tool.parallel === true]))
+  const peers = input.calls.map(() => [])
+  const pending = []
+  input.calls.forEach((call, index) => {
+    if (safe.get(call.name)) pending.push(index)
+    if (!safe.get(call.name) || pending.length === input.max_parallel) {
+      for (const member of pending) peers[member] = [...pending]
+      pending.length = 0
+    }
+  })
+  for (const member of pending) peers[member] = [...pending]
+  return peers
+}
+
+/** Run the existing original pinned scheduler; callbacks model only bounded value/failure behavior. */
+async function toolBatchProjectionCase(input) {
+  const definitions = new Map(input.tools.map(tool => [tool.name, tool]))
+  const entered = input.calls.map(() => Promise.withResolvers())
+  const peers = toolBatchProjectionPeers(input)
+  let active = 0
+  let exclusive = 0
+  let peak = 0
+  let exclusiveOverlap = false
+  const pipeline = {
+    executionMode(exec) {
+      return { kind: definitions.get(exec.name)?.parallel === true ? 'parallel' : 'exclusive' }
+    },
+    async prepare(exec) {
+      if (definitions.has(exec.name)) return { kind: 'dispatch', exec }
+      return { kind: 'post-result', exec, result: {
+        content: [{ type: 'text', text: 'unknown tool' }], isError: true,
+      } }
+    },
+    async dispatch(exec) {
+      const safe = definitions.get(exec.name).parallel === true
+      if ((safe && exclusive > 0) || (!safe && active > 0)) exclusiveOverlap = true
+      active++
+      if (!safe) exclusive++
+      peak = Math.max(peak, active)
+      entered[exec.arguments.index].resolve()
+      await Promise.all(peers[exec.arguments.index].map(member => entered[member].promise))
+      active--
+      if (!safe) exclusive--
+      return { kind: 'post-result', result: {
+        content: [{ type: 'text', text: String(exec.arguments.value) }],
+        isError: exec.arguments.fail === true,
+      } }
+    },
+    async complete(_execution, slot) { return slot.result },
+  }
+  const calls = input.calls.map((call, index) => ({
+    id: String(index + 1), name: call.name,
+    arguments: JSON.stringify({ index, value: call.value, fail: call.fail === true }),
+  }))
+  let watchdog
+  // This deadline only bounds regressions; elapsed time does not determine any expected result.
+  const deadline = new Promise((_, reject) => {
+    watchdog = setTimeout(() => reject(new Error('Batch projection rendezvous timed out')), 30_000)
+  })
+  const settled = await Promise.race([
+    executeToolBatch({ calls, signal: new AbortController().signal,
+      maxParallelToolCalls: input.max_parallel }, pipeline, () => 1),
+    deadline,
+  ]).finally(() => clearTimeout(watchdog))
+  return {
+    results: settled.results.map(({ callId, result }) => ({
+      id: callId, ok: !result.isError,
+      value: result.isError ? null : result.content[0].text,
+    })),
+    peak, exclusiveOverlap,
+  }
+}
+
 function sessionQueryCase(input) {
   const sessions = input.selected_sessions === undefined ? input.sessions
     : filterSessionResults(input.sessions.map(session => ({ header: { id: session.name }, session })),
@@ -930,6 +1005,7 @@ async function execute(input) {
   if (input.kind === 'events') return Promise.all(input.cases.map(eventCase))
   if (input.kind === 'tools') return Promise.all(input.cases.map(toolCase))
   if (input.kind === 'tool_batch') return Promise.all(input.cases.map(toolBatchCase))
+  if (input.kind === 'tool_batches') return Promise.all(input.cases.map(toolBatchProjectionCase))
   if (input.kind === 'tool_cancellation') return Promise.all(input.cases.map(toolCancellationCase))
   if (input.kind === 'final_response') return input.cases.map(input => finalResponse(input.events))
   if (input.kind === 'launch') return input.cases.map(launchCase)

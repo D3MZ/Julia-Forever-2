@@ -8,6 +8,7 @@ using JuliaForever2: SessionAPI, session_api_request!, append_message!, history_
     working_directory, session_lineage, RpcError
 
 const DIFFERENTIAL_DIRECTORY = joinpath(@__DIR__, "differential")
+include(joinpath(DIFFERENTIAL_DIRECTORY, "batch_projections.jl"))
 include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
 const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), String))
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
@@ -19,6 +20,7 @@ CASES["tool_outputs"] = vcat(deepcopy(CASES["tool_arguments"]),
     JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_outputs.json"), String)))
 CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
+CASES["tool_batches"] = DSHBatchProjections.CASES
 CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
 CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
 CASES["tool_completion"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_completion.json"), String))
@@ -1269,7 +1271,8 @@ end
             ("session_fork", session_fork_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
-            ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
+            ("tool_batch", tool_batch_result), ("tool_batches", DSHBatchProjections.native_result),
+            ("tool_cancellation", tool_cancellation_result),
             ("tool_approval", tool_approval_result), ("tool_completion", tool_completion_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),

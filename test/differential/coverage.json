@@ -491,6 +491,26 @@
       ]
     },
     {
+      "kind": "tool_batches",
+      "case_count": 12,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/batch.ts",
+          "symbols": ["executeToolBatch"]
+        }
+      ],
+      "compares": [
+        "Original PR #45 fixtures project input-ordered successful values and returned failures through the existing native batch implementation",
+        "Repeated calls to one tool registration, explicit concurrency declarations, exclusive barriers and bounded dispatch",
+        "Parallel and failing Session ToolExecutor batch actions"
+      ],
+      "limits": [
+        "The unchanged pinned DSH scheduler runs through the existing source-hash-checked no-log loader with test-only callbacks. Both runners replace fixture delay_ms values with rendezvous cohorts; elapsed time never defines the expected peak. Local rendezvous/scheduler watchdogs do not provide an outer process deadline for native batch execution, cleanup or oracle subprocess reads.",
+        "This test-only group preserves main's production behavior. Returned failures are not thrown callback exceptions. Failed result values are normalized to null on both sides, so this group does not verify failure-value privacy. Dynamic replacement, approval/policy ordering, cancellation races, durable logs and complete tool-executor parity remain outside this projection."
+      ]
+    },
+    {
       "kind": "tool_batch",
       "case_count": 10,
       "status": "required-differential-cases",
