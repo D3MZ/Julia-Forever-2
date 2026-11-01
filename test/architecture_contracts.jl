@@ -107,3 +107,25 @@ end
     @test JuliaForever2.usage_snapshot(ordinary).cost == 0.75
     @test JuliaForever2.usage_snapshot(ordinary).cost_known
 end
+
+@testset "Entry patches do not mutate or retain caller-owned objects" begin
+    entries = Any[Dict{String,Any}("id" => "group", "group" => true, "config" => Any[])]
+    inserted = Dict{String,Any}("id" => "child", "config" => Dict("enabled" => true))
+    replacement = Dict{String,Any}("enabled" => false)
+    patches = Any[
+        Dict{String,Any}("id" => "group", "insert" => Any[inserted]),
+        Dict{String,Any}("id" => "child", "config" => replacement),
+    ]
+
+    result = JuliaForever2.apply_entry_patches(entries, patches)
+    child = only(result[1]["config"])
+    @test child["config"]["enabled"] === false
+    @test isempty(entries[1]["config"])
+    @test inserted["config"]["enabled"] === true
+    @test child !== inserted
+
+    replacement["enabled"] = :changed
+    @test child["config"]["enabled"] === false
+    child["config"]["enabled"] = :result_only
+    @test replacement["enabled"] === :changed
+end
