@@ -14,7 +14,7 @@ const UNIT_TEST_FILES = [
     "auth.jl",
     "smoke.jl",
 ]
-const TEST_FILES = vcat(UNIT_TEST_FILES, ["lint_tests.jl", "aqua.jl", "jet.jl"])
+const TEST_FILES = vcat(UNIT_TEST_FILES, ["pi_parity.jl", "lint_tests.jl", "aqua.jl", "jet.jl"])
 
 const TEST_GROUPS = Dict(
     "selection" => ["selection.jl"],
@@ -31,6 +31,7 @@ const TEST_GROUPS = Dict(
     "providers" => ["providers.jl", "adapters_architecture.jl"],
     "auth" => ["auth.jl"],
     "smoke" => ["smoke.jl"],
+    "parity" => ["pi_parity.jl"],
     "lint" => ["lint_tests.jl"],
     "aqua" => ["aqua.jl"],
     "jet" => ["jet.jl"],

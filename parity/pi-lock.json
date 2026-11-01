@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/earendil-works/pi",
+  "commit": "8ffea8a1bfdc32523ab056549b26141018c1e700",
+  "tree": "12049d5ecc16e96bbc1f4ef52ccf98b6b4a42ad6",
+  "ref_at_pin": "refs/heads/main",
+  "package_versions": {"ai": "1.4.0", "telemetry": "1.4.0"},
+  "update_policy": "Explicit reviewed updates only; monitoring must not advance this pin.",
+  "oracle": "Execute unmodified source; no copied expected outputs.",
+  "node": "24"
+}

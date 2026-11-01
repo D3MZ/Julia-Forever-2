@@ -11,16 +11,43 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       JULIA_NUM_THREADS: '2'
+      PI_REFERENCE: ${{ runner.temp }}/pi-reference
+      PI_PARITY_REPORT: ${{ runner.temp }}/pi-parity.json
     steps:
       - uses: actions/checkout@v4
+      - name: Read reviewed Pi pin
+        id: pi
+        run: python3 -c 'import json, os; print("commit=" + json.load(open("parity/pi-lock.json"))["commit"], file=open(os.environ["GITHUB_OUTPUT"], "a"))'
+      - uses: actions/checkout@v4
+        with:
+          repository: earendil-works/pi
+          ref: ${{ steps.pi.outputs.commit }}
+          path: .pi-reference
+          persist-credentials: false
+      - name: Keep oracle outside package and lint trees
+        run: mv .pi-reference "$PI_REFERENCE"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned oracle dependencies without lifecycle scripts
+        working-directory: ${{ runner.temp }}/pi-reference
+        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --include-workspace-root --no-audit --no-fund
       - uses: julia-actions/setup-julia@v3
         with:
           version: '1.13'
       - uses: julia-actions/cache@v2
-      - name: Run tests with coverage
+      - name: Run regression and real Pi differential tests with coverage
         run: julia --project -e 'using Pkg; Pkg.test(; coverage=true)'
+      - name: Upload differential coverage and explicit gap report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-parity-report
+          path: ${{ runner.temp }}/pi-parity.json
+          if-no-files-found: warn
       - uses: julia-actions/julia-processcoverage@v1
       - name: Upload coverage report
         uses: actions/upload-artifact@v4

@@ -50,8 +50,11 @@ function provider_descriptor(registry::ProviderRegistry, id::Symbol)
 end
 provider_descriptor(id::Symbol) = provider_descriptor(DEFAULT_PROVIDER_REGISTRY, id)
 
-function provider_from_name(id::Symbol; dir=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
+instantiate_provider(factory, directory, ::Nothing) = Base.invokelatest(factory, directory)
+instantiate_provider(factory, directory, model) = nothing
+
+function provider_from_name(id::Symbol; dir=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY, model=nothing)
     descriptor = provider_descriptor(registry, id)
-    return isnothing(descriptor) ? nothing : Base.invokelatest(descriptor.create, dir)
+    return isnothing(descriptor) ? nothing : instantiate_provider(descriptor.create, dir, model)
 end
 provider_from_name(name::AbstractString; kwargs...) = provider_from_name(Symbol(name); kwargs...)
