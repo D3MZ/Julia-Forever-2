@@ -9,7 +9,7 @@ const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(path
 const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
 const { ApprovalReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
   const start = source.indexOf('  private async serviceAsk(')
-  const end = source.indexOf('  /**\n   * Run `tools/post-execute`', start)
+  const end = source.indexOf('  /**\n   * Run the `tools/post-execute`', start)
   if (start < 0 || end < 0) throw new Error('Locked DSH approval method boundaries were not found')
   return 'export class ApprovalReference { constructor(ctx) { this.ctx = ctx }\n'
     + source.slice(start, end) + '\n}'
