@@ -146,7 +146,12 @@ end
 """Narrow candidates conservatively, then verify all text predicates using the exact matcher."""
 function indexed_session_candidates(index::SessionSearchIndex, text::AbstractString)
     terms = split(strip(String(text)), r"\s+")
-    grams = unique([gram for term in terms if isascii(term) for gram in session_trigrams(term)])
+    grams = String[]
+    for term in terms
+        isascii(term) || continue
+        append!(grams, session_trigrams(term))
+    end
+    unique!(grams)
     isempty(grams) && return 1:length(index.documents)
     candidates = copy(get(index.postings, first(grams), BitSet()))
     for gram in Iterators.drop(grams, 1)
