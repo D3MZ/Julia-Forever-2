@@ -52,11 +52,12 @@ end
     @test JuliaForever2.AgentDecision(Reply(:unsupported, "unused")) isa Failure
 end
 
-@testset "Usage report construction establishes canonical values" begin
+@testset "Usage reports preserve provider fields until accounting" begin
     report = JuliaForever2.UsageReport(-2, 4, Inf)
-    @test isnothing(report.input_tokens)
+    @test report.input_tokens == -2
     @test report.output_tokens == 4
-    @test isnothing(report.cost)
+    @test report.cost == Inf
+    @test JuliaForever2.normalize_usage(report) === report
     conversation = Conversation()
     JuliaForever2.record_usage!(conversation, report)
     accounting = JuliaForever2.usage_snapshot(conversation)
@@ -67,6 +68,13 @@ end
     @test JuliaForever2.UsageReport(valid) === valid
     @test JuliaForever2.UsageReport(Dict("input_tokens" => 2, "output_tokens" => 4, "cost" => 0.25)) === valid
     @test JuliaForever2.UsageReport(nothing) === JuliaForever2.UsageReport()
+    @test JuliaForever2.UsageReport(-4, 3, 0.25).input_tokens == -4
+    @test JuliaForever2.UsageReport(2, 3, -0.5).cost == -0.5
+    dictionary = Dict("input_tokens" => -2, "output_tokens" => 4, "cost" => Inf)
+    normalized = JuliaForever2.normalize_usage(dictionary)
+    @test isnothing(normalized.input_tokens)
+    @test normalized.output_tokens == 4
+    @test isnothing(normalized.cost)
 end
 
 @testset "Constructors compose definitions and independent profiles" begin
