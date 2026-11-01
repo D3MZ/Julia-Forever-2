@@ -93,10 +93,8 @@ end
 """Read persisted ancestry without materializing the session's message history."""
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
     path = session_file(store, name)
-    if isnothing(path) || !isfile(path)
-        return nothing
-    end
-    session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
+    isnothing(path) || !isfile(path) ? nothing :
+        session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
 end
 
 """Return stored descendants of a session identity in deterministic session-name order."""
