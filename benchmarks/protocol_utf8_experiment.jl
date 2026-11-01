@@ -27,6 +27,7 @@ const mixed_text = repeat("The Julia model answers: αβγ 🚀 中文 assistant
 
 function cumulative_frames(content, count)
     wire = collect(codeunits("{\"kind\":\"answer\",\"content\":" * JSON.json(content) * "}"))
+    count == 1 && return [String(wire)]
     prefix_bytes = ncodeunits("{\"kind\":\"answer\",\"content\":\"")
     indices = unique!(round.(Int, range(prefix_bytes + 1, length(wire); length=count)))
     last(indices) == length(wire) || push!(indices, length(wire))
