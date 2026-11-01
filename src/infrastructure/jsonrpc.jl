@@ -21,23 +21,23 @@ end
 RpcResult(value) = RpcResult(true, value, nothing)
 RpcResult(error::RpcError) = RpcResult(false, nothing, error)
 
-mutable struct JsonRpcPeer{I,O}
+Base.@kwdef mutable struct JsonRpcPeer{I,O}
     input::I
     output::O
-    lock::ReentrantLock
-    write_lock::ReentrantLock
-    buffer::Vector{UInt8}
-    pending::Dict{Any,Channel{RpcResult}}
-    handlers::Vector{Task}
-    reader::Union{Nothing,Task}
-    reader_worker::Union{Nothing,Task}
-    failure::Union{Nothing,RpcError}
-    on_request::Any
-    on_notification::Any
+    lock::ReentrantLock = ReentrantLock()
+    write_lock::ReentrantLock = ReentrantLock()
+    buffer::Vector{UInt8} = UInt8[]
+    pending::Dict{Any,Channel{RpcResult}} = Dict{Any,Channel{RpcResult}}()
+    handlers::Vector{Task} = Task[]
+    reader::Union{Nothing,Task} = nothing
+    reader_worker::Union{Nothing,Task} = nothing
+    failure::Union{Nothing,RpcError} = nothing
+    on_request::Any = nothing
+    on_notification::Any = nothing
 end
 
 """Create a line-delimited JSON-RPC peer over caller-owned streams, without starting a reader."""
-JsonRpcPeer(input, output; on_request=nothing, on_notification=nothing) = JsonRpcPeer(input, output, ReentrantLock(), ReentrantLock(), UInt8[], Dict{Any,Channel{RpcResult}}(), Task[], nothing, nothing, nothing, on_request, on_notification)
+JsonRpcPeer(input, output; on_request=nothing, on_notification=nothing) = JsonRpcPeer(; input, output, on_request, on_notification)
 
 Base.isopen(peer::JsonRpcPeer) = lock(() -> isnothing(peer.failure), peer.lock)
 
