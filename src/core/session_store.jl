@@ -87,26 +87,45 @@ function session_descendants(store::SessionStore, ancestor::UUID; include_self=f
         lineage = session_lineage(store, name)
         isnothing(lineage) || (relationships[lineage.id] = (name, lineage.parent_id))
     end
-    # Build parent-to-child links once; repeated full scans are quadratic on deep
-    # lineage chains when a child sorts before its ancestor in the hash table.
-    children = Dict{UUID,Vector{UUID}}()
-    for (id, (_, parent)) in relationships
-        if !isnothing(parent)
-            push!(get!(Vector{UUID}, children, parent), id)
+    reachable = Set{UUID}([ancestor])
+    names = String[]
+    # Shallow lineages usually close in one or two scans. Avoid constructing
+    # adjacency lists for these common cases, which need no extra indexing.
+    stalled = false
+    for _ in 1:2
+        changed = false
+        for (id, (name, parent)) in relationships
+            if !(id in reachable) && !isnothing(parent) && parent in reachable
+                push!(reachable, id)
+                push!(names, name)
+                changed = true
+            end
+        end
+        if !changed
+            stalled = true
+            break
         end
     end
-    reachable = Set{UUID}([ancestor])
-    pending = UUID[ancestor]
-    names = String[]
-    while !isempty(pending)
-        parent = pop!(pending)
-        descendants = get(children, parent, nothing)
-        isnothing(descendants) && continue
-        for id in descendants
-            id in reachable && continue
-            push!(reachable, id)
-            push!(pending, id)
-            push!(names, relationships[id][1])
+    if !stalled
+        # A deep chain may require hundreds of full scans; finish in linear
+        # time by following parent-to-child links from the visited frontier.
+        children = Dict{UUID,Vector{UUID}}()
+        for (id, (_, parent)) in relationships
+            if !isnothing(parent)
+                push!(get!(Vector{UUID}, children, parent), id)
+            end
+        end
+        pending = collect(reachable)
+        while !isempty(pending)
+            parent = pop!(pending)
+            descendants = get(children, parent, nothing)
+            isnothing(descendants) && continue
+            for id in descendants
+                id in reachable && continue
+                push!(reachable, id)
+                push!(pending, id)
+                push!(names, relationships[id][1])
+            end
         end
     end
     if include_self && haskey(relationships, ancestor)
