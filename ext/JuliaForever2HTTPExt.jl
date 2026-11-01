@@ -5,6 +5,17 @@ using JSON
 using UUIDs: uuid4
 using JuliaForever2
 
+mutable struct WebAccess
+    token::String
+    cookie::String
+    lock::ReentrantLock
+    redeemed::Bool
+
+    WebAccess(token::String) = isempty(token) ? error("Web token must not be empty") : new(token, string(uuid4(), uuid4()), ReentrantLock(), false)
+end
+
+WebAccess(token::AbstractString) = WebAccess(String(token))
+
 struct WebServer{S}
     backend::S
     host::String
@@ -14,6 +25,7 @@ end
 
 Base.close(server::WebServer) = HTTP.forceclose(server.backend)
 JuliaForever2.web_url(server::WebServer) = "http://$(server.host):$(server.port)"
+JuliaForever2.web_launch_url(server::WebServer) = JuliaForever2.web_url(server) * "/?access=" * HTTP.URIs.escapeuri(server.token)
 
 response(status::Integer, body::AbstractString, mime::AbstractString="application/json") = HTTP.Response(status; headers=["Content-Type" => mime, "Cache-Control" => "no-store", "X-Content-Type-Options" => "nosniff", "Referrer-Policy" => "no-referrer"], body)
 
@@ -65,6 +77,41 @@ function route(api, request, target)
     end
 end
 
+"""Redeem a browser launch credential once while retaining the existing bearer handler."""
+function redeem_web_access!(access::WebAccess, credential::AbstractString)
+    lock(access.lock) do
+        accepted = !access.redeemed && credential == access.token
+        access.redeemed |= accepted
+        accepted
+    end
+end
+
+web_session_cookie(access::WebAccess, request::HTTP.Request) = any(part -> strip(part) == "juliaforever2_session=$(access.cookie)", split(HTTP.header(request, "Cookie"), ';'))
+
+function authorize_web_request(api, access::WebAccess, handler, request::HTTP.Request)
+    uri = HTTP.URI(String(request.target))
+    query = HTTP.queryparams(uri)
+    if request.method == "GET" && uri.path == "/" && haskey(query, "access")
+        redeem_web_access!(access, query["access"]) ? redirect(access) : response(401, "{\"error\":\"Invalid or redeemed launch token\"}")
+    else
+        authorize(api, access, handler, request)
+    end
+end
+
+redirect(access::WebAccess) = HTTP.Response(303; headers=["Location" => "/", "Set-Cookie" => "juliaforever2_session=$(access.cookie); HttpOnly; SameSite=Strict; Path=/", "Cache-Control" => "no-store", "Referrer-Policy" => "no-referrer", "X-Content-Type-Options" => "nosniff"], body="")
+
+function authorize(api, access::WebAccess, handler, request::HTTP.Request)
+    browser = web_session_cookie(access, request) && HTTP.header(request, "Authorization") != "Bearer $(access.token)"
+    if browser && request.method in ("POST", "PUT", "PATCH", "DELETE") && HTTP.header(request, "X-JuliaForever2-Request") != "1"
+        response(403, "{\"error\":\"Browser request token required\"}")
+    else
+        if browser
+            HTTP.setheader(request, "Authorization" => "Bearer $(access.token)")
+        end
+        Base.invokelatest(handler, api, access.token, request)
+    end
+end
+
 struct WebAddress
     host::String
     port::Int
@@ -85,7 +132,8 @@ WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(p
 JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request) = serve(api, WebAddress(host, port), token, handler)
 
 function serve(api, address::WebAddress, token, handler)
-    server = HTTP.serve!(request -> Base.invokelatest(handler, api, token, request), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
+    access = WebAccess(String(token))
+    server = HTTP.serve!(request -> authorize_web_request(api, access, handler, request), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
     WebServer(server, address.host, Int(HTTP.port(server)), String(token))
 end
 """An optional HTTP extension publishes an independently replaceable native Web service."""

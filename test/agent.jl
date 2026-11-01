@@ -424,3 +424,36 @@ end
     @test scope.users == 0
     @test cleaned == [:owned]
 end
+
+@testset "Checked JSON schemas validate nested values without duplicate losslessness scans" begin
+    row_schema = Dict("type" => "object", "properties" =>
+        Dict("id" => Dict("type" => "integer"), "name" => Dict("type" => "string")),
+        "required" => ["id", "name"], "additionalProperties" => true)
+    checked = JuliaForever2.CheckedJSONSchema(Dict("type" => "object", "properties" =>
+        Dict("rows" => Dict("type" => "array", "items" => row_schema)), "required" => ["rows"]))
+    rows = [Dict{String,Any}("id" => i, "name" => "row-$i") for i in 1:40]
+    arguments = Dict{String,Any}("rows" => rows)
+    @test isempty(JuliaForever2.tool_argument_violations(checked, arguments))
+    rows[2]["id"] = "not an integer"
+    @test JuliaForever2.tool_argument_violations(checked, arguments) ==
+        ["\"arguments.rows[1].id\" must be an integer"]
+    rows[2]["id"] = 2
+    rows[2]["extra"] = Dict("lossless" => true, "invalid" => NaN)
+    @test JuliaForever2.tool_argument_violations(checked, arguments) ==
+        ["\"arguments.rows[1]\" must be a lossless JSON object"]
+    delete!(rows[2], "extra")
+    rows[2]["name"] = missing
+    @test JuliaForever2.tool_argument_violations(checked, arguments) ==
+        ["missing required property \"arguments.rows[1].name\""]
+    rows[2]["name"] = "row-2"
+    @test isempty(JuliaForever2.tool_argument_violations(checked, arguments))
+
+    untyped = JuliaForever2.CheckedJSONSchema(Dict("type" => "array"))
+    @test JuliaForever2.tool_argument_violations(untyped, Any[NaN]) ==
+        ["\"arguments\" must be a dense lossless JSON array"]
+    @test JuliaForever2.tool_argument_violations(checked,
+        Dict{Any,Any}("rows" => rows, 1 => nothing)) ==
+        ["\"arguments\" must be a lossless JSON object"]
+    @test isempty(JuliaForever2.tool_argument_violations(checked,
+        (rows=[(id=1, name="named tuple")],)))
+end

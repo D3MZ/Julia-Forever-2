@@ -396,6 +396,195 @@ end
     close(context)
 end
 
+@testset "OpenAI streamed text and thinking chunks preserve completed content" begin
+    deltas = [isodd(index) ? repeat("Julia answer λ 🚀 ", 10) :
+        repeat("model tool output: ", 11) for index in 1:120]
+    thinking = [isodd(index) ? "reasoning λ " : "reasoning 🚀 " for index in 1:120]
+    frames = ["data: " * JSON.json(Dict("choices" => [
+        Dict("delta" => Dict("content" => deltas[index],
+            "reasoning_content" => thinking[index]), "finish_reason" => nothing)])) * "\n\n"
+        for index in eachindex(deltas)]
+    push!(frames, "data: " * JSON.json(Dict("choices" =>
+        [Dict("delta" => Dict{String,Any}(), "finish_reason" => "stop")])) * "\n\n")
+    transport = (url, method, body, headers, context, decoder) -> begin
+        for frame in frames
+            write(decoder, frame)
+        end
+        (status=200, reason="OK")
+    end
+    events = HarnessEvent[]
+    context = ExecutionContext(; event_sink=event -> push!(events, event))
+    backend = JuliaForever2.HTTPModelBackend(JuliaForever2.OpenAIChatProtocol(),
+        "https://offline.invalid"; transport)
+    request = JuliaForever2.ModelRequest([Message(:user, "Generate a long answer")],
+        "", nothing, nothing, nothing)
+    completion = JuliaForever2.respond_model(backend,
+        JuliaForever2.ModelSpec(:synthetic, "test-model"), request, context)
+    content = completion.message["content"]
+    @test completion.reply == Reply(:answer, join(deltas))
+    @test length(content) == 2
+    @test content[1]["thinking"] == join(thinking)
+    @test content[2]["text"] == join(deltas)
+    @test all(block -> block["type"] in ("thinking", "text"), content)
+    @test completion.message["stopReason"] == "stop"
+    emitted = [event.data for event in events if event.kind == :model_stream]
+    @test count(event -> event["type"] == "text_delta", emitted) == length(deltas)
+    @test count(event -> event["type"] == "thinking_delta", emitted) == length(thinking)
+    @test only(filter(event -> event["type"] == "text_end", emitted))["content"] == join(deltas)
+    @test only(filter(event -> event["type"] == "thinking_end", emitted))["content"] == join(thinking)
+    @test last(emitted)["type"] == "done"
+    close(context)
+end
+
+@testset "Buffered model text survives failed and cancelled streams" begin
+    frame = "data: " * JSON.json(Dict("choices" => [Dict("delta" => Dict(
+        "content" => "partial answer λ", "reasoning_content" => "partial thought 🚀"),
+        "finish_reason" => nothing)])) * "\n\n"
+    for (status, cancel_request, stop_reason) in ((502, false, "error"),
+            (200, true, "aborted"), (0, true, "aborted"))
+        events = HarnessEvent[]
+        context = ExecutionContext(; event_sink=event -> push!(events, event))
+        transport = (url, method, body, headers, request_context, decoder) -> begin
+            write(decoder, frame)
+            cancel_request && JuliaForever2.cancel!(request_context)
+            return (status=status, reason="simulated failure")
+        end
+        backend = JuliaForever2.HTTPModelBackend(JuliaForever2.OpenAIChatProtocol(),
+            "https://offline.invalid"; transport)
+        request = JuliaForever2.ModelRequest([Message(:user, "hello")],
+            "", nothing, nothing, nothing)
+        completion = JuliaForever2.respond_model(backend,
+            JuliaForever2.ModelSpec(:synthetic, "test-model"), request, context)
+        blocks = Dict(block["type"] => block[block["type"]] for block in completion.message["content"])
+        @test blocks == Dict("thinking" => "partial thought 🚀", "text" => "partial answer λ")
+        @test completion.message["stopReason"] == stop_reason
+        @test completion.reply.kind == :error
+        emitted = [event.data["type"] for event in events if event.kind == :model_stream]
+        @test last(emitted) == "error"
+        @test ("text_end" in emitted) == (status == 200)
+        close(context)
+    end
+end
+
+@testset "OpenAI buffered block finalization is idempotent for short and Unicode deltas" begin
+    cases = (
+        String[],
+        [""],
+        ["Hi"],
+        ["a", "b", "c"],
+        ["λ", "🚀", "中文", "e\u0301"],
+        [repeat("x", 255), "λ"],
+        [repeat("x", 257)],
+    )
+    for fragments in cases
+        events = HarnessEvent[]
+        context = ExecutionContext(; event_sink=event -> push!(events, event))
+        state = JuliaForever2.ModelStreamState(
+            JuliaForever2.ModelSpec(:test, "buffer-probe"), context)
+        JuliaForever2.start_model_stream!(state)
+        for fragment in fragments
+            JuliaForever2.text_model_block!(state, "text", fragment)
+        end
+
+        expected = join(fragments)
+        if isempty(expected)
+            @test isempty(state.message["content"])
+            @test isempty(state.text_buffers)
+        else
+            @test length(state.message["content"]) == 1
+            @test state.message["content"][1]["text"] == ""
+            @test haskey(state.text_buffers, 1)
+            JuliaForever2.finish_model_block!(state, 1)
+            @test state.message["content"][1]["text"] == expected
+            @test isempty(state.text_buffers)
+            JuliaForever2.finish_model_block!(state, 1)
+        end
+        state.message["stopReason"] = "stop"
+        JuliaForever2.finish_model_stream!(state)
+        JuliaForever2.finish_model_stream!(state)
+        @test isempty(state.text_buffers)
+
+        emitted = [event.data for event in events if event.kind == :model_stream]
+        expected_types = ["start"]
+        if !isempty(expected)
+            push!(expected_types, "text_start")
+            append!(expected_types, fill("text_delta",
+                length([fragment for fragment in fragments if !isempty(fragment)])))
+            push!(expected_types, "text_end")
+            @test only([event["content"] for event in emitted
+                if event["type"] == "text_end"]) == expected
+        end
+        push!(expected_types, "done")
+        @test [event["type"] for event in emitted] == expected_types
+        @test [event["delta"] for event in emitted
+            if event["type"] == "text_delta"] ==
+            [fragment for fragment in fragments if !isempty(fragment)]
+        close(context)
+    end
+end
+
+@testset "OpenAI Unicode SSE fragmentation preserves event order and missing-stop errors" begin
+    changes = [
+        ("reasoning_content", "λ"),
+        ("content", "漢字"),
+        ("reasoning_content", "🚀"),
+        ("content", "e\u0301"),
+        ("content", repeat("x", 300)),
+        ("reasoning_content", "raison d'être"),
+    ]
+    frames = ["data: " * JSON.json(Dict("choices" => [
+        Dict("delta" => Dict(field => fragment), "finish_reason" => nothing)])) * "\n\n"
+        for (field, fragment) in changes]
+    finish_frame = "data: " * JSON.json(Dict("choices" => [
+        Dict("delta" => Dict{String,Any}(), "finish_reason" => "stop")])) * "\n\n"
+    expected_thinking = join(fragment for (field, fragment) in changes
+        if field == "reasoning_content")
+    expected_answer = join(fragment for (field, fragment) in changes
+        if field == "content")
+
+    for has_stop in (true, false)
+        wire = join(frames) * (has_stop ? finish_frame : "")
+        events = HarnessEvent[]
+        context = ExecutionContext(; event_sink=event -> push!(events, event))
+        transport = (url, method, body, headers, request_context, decoder) -> begin
+            # Fragment inside UTF-8 code points, not just between SSE messages.
+            for byte in codeunits(wire)
+                write(decoder, byte)
+            end
+            return (status=200, reason="OK")
+        end
+        backend = JuliaForever2.HTTPModelBackend(JuliaForever2.OpenAIChatProtocol(),
+            "https://offline.invalid"; transport)
+        request = JuliaForever2.ModelRequest([Message(:user, "hello")],
+            "", nothing, nothing, nothing)
+        completion = JuliaForever2.respond_model(backend,
+            JuliaForever2.ModelSpec(:test, "buffer-probe"), request, context)
+        @test [(block["type"], block[block["type"]])
+            for block in completion.message["content"]] ==
+            [("thinking", expected_thinking), ("text", expected_answer)]
+        @test completion.message["stopReason"] == (has_stop ? "stop" : "error")
+        if has_stop
+            @test completion.reply == Reply(:answer, expected_answer)
+            @test !haskey(completion.message, "errorMessage")
+        else
+            @test completion.reply.kind == :error
+            @test occursin("without finish_reason", completion.message["errorMessage"])
+        end
+
+        emitted = [event.data for event in events if event.kind == :model_stream]
+        @test [event["type"] for event in emitted] == [
+            "start", "thinking_start", "thinking_delta", "text_start", "text_delta",
+            "thinking_delta", "text_delta", "text_delta", "thinking_delta",
+            "thinking_end", "text_end", has_stop ? "done" : "error"]
+        deltas = [event for event in emitted if endswith(event["type"], "_delta")]
+        @test [event["delta"] for event in deltas] == last.(changes)
+        @test [event["contentIndex"] for event in deltas] == [0, 1, 0, 1, 1, 0]
+        @test [event["content"] for event in emitted
+            if endswith(event["type"], "_end")] == [expected_thinking, expected_answer]
+        close(context)
+    end
+end
+
 @testset "Streaming tool arguments avoid reparsing incomplete JSON" begin
     @test !JuliaForever2.possible_tool_object("")
     @test !JuliaForever2.possible_tool_object(" \t")

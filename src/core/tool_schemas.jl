@@ -173,6 +173,18 @@ end
 violations(::Nothing, node, value, path) = json_lossless(value) ? String[] : json_value_violation(path)
 violations(kind, node, value, path) = checked_json_violations(Val(Symbol(kind)), node, value, path)
 
+"""Check only values not already covered by declared property schemas."""
+function json_unchecked_properties_lossless(value, properties)
+    all(pairs(value)) do (key, item)
+        name = propertyname(value, key)
+        !isnothing(name) && !ismissing(item) && (haskey(properties, name) || json_lossless(item))
+    end
+end
+
+propertyname(value, key) = nothing
+propertyname(value, key::AbstractString) = key
+propertyname(value::NamedTuple, key::Symbol) = String(key)
+
 checked_json_violations(::Val{:object}, node, value, path) = [string(quoted_json_path(path), " must be an object")]
 
 function checked_json_violations(::Val{:object}, node, value::Union{AbstractDict,NamedTuple}, path)
@@ -199,7 +211,7 @@ function checked_json_violations(::Val{:object}, node, value::Union{AbstractDict
             end
         end
     end
-    if isempty(violations) && !json_lossless(value)
+    if isempty(violations) && !json_unchecked_properties_lossless(value, properties)
         push!(violations, string(quoted_json_path(path), " must be a lossless JSON object"))
     end
     violations
@@ -214,7 +226,7 @@ function checked_json_violations(::Val{:array}, node, value::AbstractVector, pat
             append!(violations, checked_json_violations(node["items"], item, "$path[$(index - 1)]"))
         end
     end
-    if isempty(violations) && !json_lossless(value)
+    if isempty(violations) && !haskey(node, "items") && !json_lossless(value)
         push!(violations, string(quoted_json_path(path), " must be a dense lossless JSON array"))
     end
     violations

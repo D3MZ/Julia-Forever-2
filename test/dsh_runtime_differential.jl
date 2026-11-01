@@ -434,6 +434,60 @@ function native_web_comparison(reference, temporary)
     return actual, expected
 end
 
+"""Compare a native Julia browser bootstrap against the pinned Web launch-cookie contract."""
+function native_web_launch_comparison(reference)
+    api = JuliaForever2.SessionAPI()
+    server = JuliaForever2.start_web_server(api)
+    origin = JuliaForever2.web_url(server)
+    launch = JuliaForever2.web_launch_url(server)
+    anonymous = HTTP.request("GET", origin * "/"; status_exception=false)
+    invalid = HTTP.request("GET", launch * "invalid"; redirect=false, status_exception=false)
+    exchange = HTTP.request("GET", launch; redirect=false, status_exception=false)
+    cookie_header = HTTP.header(exchange, "Set-Cookie")
+    cookie = first(split(cookie_header, ';'))
+    session = HTTP.request("GET", origin * "/", ["Cookie" => cookie]; status_exception=false)
+    payload = JSON.json(Dict("jsonrpc" => "2.0", "id" => 1, "method" => "session/list"))
+    headers = ["Cookie" => cookie, "X-JuliaForever2-Request" => "1"]
+    rpc = HTTP.request("POST", origin * "/api/rpc", headers, payload; status_exception=false)
+    csrf = HTTP.request("POST", origin * "/api/rpc", ["Cookie" => cookie], payload; status_exception=false)
+    replay = HTTP.request("GET", launch; redirect=false, status_exception=false)
+    root = only(filter(row -> row["method"] == "GET" && row["path"] == "/", reference["responses"]))
+    actual = Dict(
+        "unauthenticated" => anonymous.status != 200,
+        "invalidDenied" => invalid.status == 401,
+        "exchangeStatus" => exchange.status,
+        "redirectClearsToken" => HTTP.header(exchange, "Location") == "/",
+        "cookieIssued" => !isempty(cookie_header),
+        "cookieProtected" => occursin("HttpOnly", cookie_header) &&
+            occursin("SameSite=Strict", cookie_header) && occursin("Path=/", cookie_header),
+        "responseNoStore" => HTTP.header(exchange, "Cache-Control") == "no-store",
+        "responseNoReferrer" => HTTP.header(exchange, "Referrer-Policy") == "no-referrer",
+        "authenticatedHTML" => session.status == 200 &&
+            startswith(HTTP.header(session, "Content-Type"), "text/html"),
+        "authenticatedRPC" => rpc.status == 200 && JSON.parse(String(rpc.body))["result"] == [],
+        "csrfDenied" => csrf.status == 403,
+        "replayDenied" => replay.status == 401,
+    )
+    expected = Dict(
+        "unauthenticated" => root["status"] != 200,
+        "invalidDenied" => true,
+        "exchangeStatus" => reference["authentication"]["status"],
+        "redirectClearsToken" => true,
+        "cookieIssued" => true,
+        "cookieProtected" => true,
+        "responseNoStore" => reference["authentication"]["cacheControl"] == "no-store",
+        "responseNoReferrer" => reference["authentication"]["referrerPolicy"] == "no-referrer",
+        "authenticatedHTML" => reference["index"]["status"] == 200 &&
+            startswith(reference["index"]["contentType"], "text/html"),
+        "authenticatedRPC" => true,
+        "csrfDenied" => true,
+        "replayDenied" => true,
+    )
+    close(server)
+    close(api)
+    return actual, expected
+end
+
 @testset "Pinned DSH transport differentials using test-only protocol clients" begin
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
@@ -470,6 +524,10 @@ end
             @test candidate == reference
             @testset "Native Julia Web authentication and API" begin
                 actual, expected = native_web_comparison(reference, temporary)
+                @test actual == expected
+            end
+            @testset "Native Julia one-use browser launch and cookie authentication" begin
+                actual, expected = native_web_launch_comparison(reference)
                 @test actual == expected
             end
         end

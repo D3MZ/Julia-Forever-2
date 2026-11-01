@@ -23,20 +23,46 @@ end
 const SessionSearchHit = NamedTuple{(:session, :index, :role, :kind, :content),
     Tuple{Union{Nothing,String},Int,Symbol,Symbol,String}}
 
-struct HistoryQuery{R,L<:Integer}
+struct SearchWindow{F,T}
+    first::F
+    last::T
+
+    function SearchWindow(first::F, last::T) where {F,T}
+        if !(validindex(first) && validindex(last))
+            error("Session query indices must be positive integers")
+        elseif !isnothing(first) && !isnothing(last) && first > last
+            error("Session query lower index exceeds upper index")
+        else
+            new{F,T}(first, last)
+        end
+    end
+end
+
+validindex(::Nothing) = true
+validindex(value) = value isa Integer && !(value isa Bool) && value >= 1
+selected(index, window::SearchWindow) = (isnothing(window.first) || index >= window.first) && (isnothing(window.last) || index <= window.last)
+session_index_selected(index, first, last) = selected(index, SearchWindow(first, last))
+session_search_window(first, last) = (SearchWindow(first, last); nothing)
+session_name_selection(names) = isnothing(names) ? nothing : Set(String.(names))
+
+struct HistoryQuery{R,L<:Integer,S,W}
     pattern::Regex
     text::String
     roles::R
     limit::L
+    sessions::S
+    window::W
 
-    function HistoryQuery(text::String, roles::R, limit::L) where {R,L<:Integer}
+    function HistoryQuery(text::String, roles::R, limit::L, sessions::S, window::W) where {R,L<:Integer,S,W<:SearchWindow}
         validate(HistoryQuery, text, limit)
-        new{R,L}(pattern(text), text, roles, limit)
+        new{R,L,S,W}(pattern(text), text, roles, limit, sessions, window)
     end
 end
 
-HistoryQuery(text::AbstractString; roles=nothing, limit::Integer=typemax(Int)) = HistoryQuery(String(text), isnothing(roles) ? nothing : Set(Symbol.(roles)), limit)
+HistoryQuery(text::AbstractString; roles=nothing, limit::Integer=typemax(Int), sessions=nothing, from_index=nothing, to_index=nothing) = HistoryQuery(String(text), isnothing(roles) ? nothing : Set(Symbol.(roles)), limit, session_name_selection(sessions), SearchWindow(from_index, to_index))
+HistoryQuery(text::String, roles, limit::Integer) = HistoryQuery(text, roles, limit, nothing, SearchWindow(nothing, nothing))
 session_query_pattern(text::AbstractString) = HistoryQuery(text).pattern
+selected(name, query::HistoryQuery) = isnothing(query.sessions) || name in query.sessions
 
 function validate(::Type{HistoryQuery}, text, limit)
     if limit < 0
@@ -62,10 +88,11 @@ function pattern(text::String)
     return Regex(String(take!(pattern)), "i")
 end
 
-function append_session_matches!(hits::Vector{SessionSearchHit}, messages, identity, pattern::Regex, allowed_roles, limit::Integer)
+function append_session_matches!(hits::Vector{SessionSearchHit}, messages, identity, pattern::Regex, allowed_roles, limit::Integer, from_index=nothing, to_index=nothing)
+    window = SearchWindow(from_index, to_index)
     candidates = Iterators.takewhile(item -> length(hits) < limit, enumerate(messages))
     for (index, message) in candidates
-        if matches(message, pattern, allowed_roles)
+        if selected(index, window) && matches(message, pattern, allowed_roles)
             push!(hits, SessionSearchHit((identity, index, message.role, message.kind, message.content)))
         end
     end
@@ -73,19 +100,19 @@ function append_session_matches!(hits::Vector{SessionSearchHit}, messages, ident
 end
 
 matches(message, pattern::Regex, roles) = (isnothing(roles) || message.role in roles) && occursin(pattern, message.content)
-matches(message, query::HistoryQuery) = matches(message, query.pattern, query.roles)
+matches(hit, query::HistoryQuery) = selected(hit.session, query) && selected(hit.index, query.window) && matches(hit, query.pattern, query.roles)
 appendmatches!(hits, ::Nothing, identity, query::HistoryQuery) = hits
-appendmatches!(hits, record, identity, query::HistoryQuery) = append_session_matches!(hits, record.messages, identity, query.pattern, query.roles, query.limit)
+appendmatches!(hits, record, identity, query::HistoryQuery) = append_session_matches!(hits, record.messages, identity, query.pattern, query.roles, query.limit, query.window.first, query.window.last)
 """Search a detached snapshot of a live session without changing its conversation."""
-search_history(session::Session, text::AbstractString; roles=nothing, limit::Integer=typemax(Int)) = search(session, HistoryQuery(text; roles, limit))
+search_history(session::Session, text::AbstractString; roles=nothing, limit::Integer=typemax(Int), from_index=nothing, to_index=nothing) = search(session, HistoryQuery(text; roles, limit, from_index, to_index))
 search(session::Session, query::HistoryQuery) = appendmatches!(SessionSearchHit[], history_snapshot(session), nothing, query)
 
 """Search stored sessions in deterministic name/message order without activating agents."""
-search_history(store::SessionStore, text::AbstractString; roles=nothing, limit::Integer=typemax(Int)) = search(store, HistoryQuery(text; roles, limit))
+search_history(store::SessionStore, text::AbstractString; roles=nothing, limit::Integer=typemax(Int), sessions=nothing, from_index=nothing, to_index=nothing) = search(store, HistoryQuery(text; roles, limit, sessions, from_index, to_index))
 
 function search(store::SessionStore, query::HistoryQuery)
     hits = SessionSearchHit[]
-    for name in Iterators.takewhile(name -> length(hits) < query.limit, session_names(store))
+    for name in Iterators.takewhile(name -> length(hits) < query.limit, Iterators.filter(name -> selected(name, query), session_names(store)))
         appendmatches!(hits, saved_session_record(store, name), name, query)
     end
     hits
@@ -198,7 +225,7 @@ function candidates(index::SessionSearchIndex, grams, seed::BitSet)
     union!(result, index.unicode_documents)
 end
 """Search a cached inverted index; SessionStore writes invalidate it automatically."""
-search_history(index::SessionSearchIndex, text::AbstractString; roles=nothing, limit::Integer=typemax(Int)) = search(index, HistoryQuery(text; roles, limit))
+search_history(index::SessionSearchIndex, text::AbstractString; roles=nothing, limit::Integer=typemax(Int), sessions=nothing, from_index=nothing, to_index=nothing) = search(index, HistoryQuery(text; roles, limit, sessions, from_index, to_index))
 
 function search(index::SessionSearchIndex, query::HistoryQuery)
     lock(index.lock) do
