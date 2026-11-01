@@ -20,26 +20,30 @@ end
 
 function url_decode(value::AbstractString)
     bytes = codeunits(value)
-    io = IOBuffer()
-    i = 1
-    while i <= length(bytes)
-        byte = bytes[i]
-        if byte == UInt8('%')
-            i + 2 <= length(bytes) || return nothing
-            hex = String(UInt8[bytes[i + 1], bytes[i + 2]])
-            parsed = tryparse(UInt8, hex; base=16)
-            isnothing(parsed) && return nothing
-            write(io, parsed)
-            i += 3
-        else
-            write(io, byte == UInt8('+') ? UInt8(' ') : byte)
-            i += 1
+    output = IOBuffer()
+    index = 1
+    valid = true
+    while valid && index <= length(bytes)
+        byte, count = decode(bytes, index)
+        valid = !isnothing(byte)
+        if valid
+            write(output, byte)
+            index += count
         end
     end
-    text = String(take!(io))
-    return isvalid(text) ? text : nothing
+    text = String(take!(output))
+    valid && isvalid(text) ? text : nothing
 end
 
+function decode(bytes, index)
+    byte = bytes[index]
+    if byte == UInt8('%')
+        parsed = index + 2 <= length(bytes) ? tryparse(UInt8, String(UInt8[bytes[index + 1], bytes[index + 2]]); base=16) : nothing
+        (parsed, 3)
+    else
+        (byte == UInt8('+') ? UInt8(' ') : byte, 1)
+    end
+end
 function query_string(params)
     io = IOBuffer()
     for (index, (key, value)) in enumerate(params)
@@ -61,41 +65,47 @@ end
 
 Base.show(io::IO, attempt::OAuthAttempt) = print(io, "OAuthAttempt(", attempt.provider, ", [redacted])")
 
-function oauth_attempt(provider::Symbol, redirect_uri::AbstractString; host_id="", client_id="")
-    return OAuthAttempt(provider, String(redirect_uri), random_secret(), random_secret(), random_secret(), String(host_id), String(client_id))
-end
-
+OAuthAttempt(provider::Symbol, redirect::AbstractString; host_id="", client_id="") = OAuthAttempt(provider, String(redirect), random_secret(), random_secret(), random_secret(), String(host_id), String(client_id))
+oauth_attempt(provider::Symbol, redirect::AbstractString; kwargs...) = OAuthAttempt(provider, redirect; kwargs...)
 function callback_params(target::AbstractString)
     parts = split(target, '?'; limit=2)
     values = Dict{String,String}()
     valid = length(parts) == 2
-    if valid
-        for pair in split(parts[2], '&')
-            fields = split(pair, '='; limit=2)
-            key = url_decode(fields[1])
-            value = length(fields) == 2 ? url_decode(fields[2]) : ""
-            if isnothing(key) || isnothing(value) || haskey(values, key)
-                valid = false
-                break
-            end
+    fields = valid ? split(parts[2], '&') : SubString{String}[]
+    index = 1
+    while valid && index <= length(fields)
+        pair = split(fields[index], '='; limit=2)
+        key = url_decode(pair[1])
+        value = length(pair) == 2 ? url_decode(pair[2]) : ""
+        valid = !isnothing(key) && !isnothing(value) && !haskey(values, key)
+        if valid
             values[key] = value
         end
+        index += 1
     end
-    return (path=String(parts[1]), values=values, valid=valid)
+    (path=String(parts[1]), values, valid)
 end
-
 function finish_callback(attempt::OAuthAttempt, callback)
-    bad = (ok=false, code="", client_id="", reason="Invalid authorization callback.")
-    callback.valid && callback.path == "/auth/callback" || return bad
-    get(callback.values, "state", "") == attempt.state || return bad
-    haskey(callback.values, "error") && return (ok=false, code="", client_id="", reason="Authorization was declined or cancelled.")
-    code = get(callback.values, "code", "")
-    isempty(code) && return bad
-    client = get(callback.values, "client_id", attempt.client_id)
-    valid_authorization_client(Val(attempt.provider), attempt, client) || return bad
-    return (ok=true, code=code, client_id=client, reason="")
+    if callback.valid && callback.path == "/auth/callback" && get(callback.values, "state", "") == attempt.state
+        authorize(attempt, callback.values)
+    else
+        rejectedcallback("Invalid authorization callback.")
+    end
 end
 
+rejectedcallback(reason) = (ok=false, code="", client_id="", reason)
+
+function authorize(attempt::OAuthAttempt, values::AbstractDict)
+    code = get(values, "code", "")
+    client = get(values, "client_id", attempt.client_id)
+    if haskey(values, "error")
+        rejectedcallback("Authorization was declined or cancelled.")
+    elseif !isempty(code) && valid_authorization_client(Val(attempt.provider), attempt, client)
+        (ok=true, code, client_id=client, reason="")
+    else
+        rejectedcallback("Invalid authorization callback.")
+    end
+end
 authorization_url(attempt::OAuthAttempt) = authorization_url(Val(attempt.provider), attempt)
 valid_authorization_client(provider, attempt, client) = true
 authorization_registration(provider, dir) = (host_id="", client_id="")
@@ -105,14 +115,7 @@ finish_authorization_registration!(provider, dir) = nothing
 auth_request(url::AbstractString, body::String, headers, context::ExecutionContext=ExecutionContext()) = http_request(url, "POST", body, headers, context; timeout=60.0)
 
 """Complete a provider authorization through its own exchange protocol."""
-function complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, callback;
-        transport=auth_request, identity=nothing, context=ExecutionContext(),
-        persist=(provider, data) -> (save_credentials!(dir, provider, data); true))
-    callback.ok || return (ok=false, reason=callback.reason)
-    return complete_authorization!(Val(attempt.provider), dir, attempt, callback;
-        transport, identity, context, persist)
-end
-
+complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, callback; transport=auth_request, identity=nothing, context=ExecutionContext(), persist=(provider, data) -> (save_credentials!(dir, provider, data); true)) = callback.ok ? complete_authorization!(Val(attempt.provider), dir, attempt, callback; transport, identity, context, persist) : (ok=false, reason=callback.reason)
 mutable struct AuthFlow{C}
     lock::ReentrantLock
     cancelled::Bool
@@ -141,62 +144,82 @@ end
 
 function open_auth_browser(url::AbstractString)
     command = Sys.isapple() ? "open" : Sys.iswindows() ? "rundll32" : "xdg-open"
-    executable = Sys.which(command)
-    isnothing(executable) && return false
-    cmd = Sys.iswindows() ? `$(executable) url.dll,FileProtocolHandler $url` : `$(executable) $url`
-    run(pipeline(ignorestatus(cmd), stdout=devnull, stderr=devnull); wait=false)
-    return true
+    launchbrowser(Sys.which(command), url)
 end
 
+launchbrowser(::Nothing, url) = false
+
+function launchbrowser(executable::AbstractString, url)
+    command = Sys.iswindows() ? `$executable url.dll,FileProtocolHandler $url` : `$executable $url`
+    run(pipeline(ignorestatus(command), stdout=devnull, stderr=devnull); wait=false)
+    true
+end
 function read_request_line(client)
     bytes = UInt8[]
-    while length(bytes) < 8192
+    complete = false
+    while length(bytes) < 8192 && !complete
         byte = read(client, UInt8)
-        byte == 0x0a && return strip(String(bytes))
-        push!(bytes, byte)
+        complete = byte == 0x0a
+        if !complete
+            push!(bytes, byte)
+        end
     end
-    return ""
+    complete ? strip(String(bytes)) : ""
 end
-
 function receive_callback(server::Sockets.TCPServer, flow::AuthFlow, attempt::OAuthAttempt; timeout=180.0)
     deadline = monotonic_seconds() + timeout
-    while active_auth(flow) && monotonic_seconds() < deadline
-        connection = Threads.@spawn accept(server)
-        while !istaskdone(connection) && active_auth(flow) && monotonic_seconds() < deadline
-            sleep(0.05)
+    callback = nothing
+    while isnothing(callback) && active_auth(flow) && monotonic_seconds() < deadline
+        callback = acceptcallback(server, flow, attempt, deadline)
+    end
+    isnothing(callback) ? rejectedcallback("Sign-in cancelled or timed out.") : callback
+end
+
+function acceptcallback(server, flow, attempt, deadline)
+    connection = Threads.@spawn accept(server)
+    while !istaskdone(connection) && active_auth(flow) && monotonic_seconds() < deadline
+        sleep(0.05)
+    end
+    if !istaskdone(connection)
+        close(server)
+        wait(connection; throw=false)
+        rejectedcallback("Sign-in cancelled or timed out.")
+    elseif !active_auth(flow) || monotonic_seconds() >= deadline
+        if !istaskfailed(connection)
+            close(fetch(connection))
         end
-        if !istaskdone(connection)
-            close(server)
-            wait(connection; throw=false)
-            return (ok=false, code="", client_id="", reason="Sign-in cancelled or timed out.")
-        end
-        if !active_auth(flow) || monotonic_seconds() >= deadline
-            istaskfailed(connection) || close(fetch(connection))
-            return (ok=false, code="", client_id="", reason="Sign-in cancelled or timed out.")
-        end
-        client = fetch(connection)
-        client_ownership = own_resource!(flow.context, client)
-        reader = Threads.@spawn read_request_line(client)
-        request_deadline = min(deadline, monotonic_seconds() + 5)
-        while !istaskdone(reader) && active_auth(flow) && monotonic_seconds() < request_deadline
-            sleep(0.02)
-        end
-        if !istaskdone(reader) || !active_auth(flow) || monotonic_seconds() >= request_deadline
-            release!(client_ownership)
-            wait(reader; throw=false)
-            continue
-        end
-        request = split(fetch(reader), ' ')
-        callback = length(request) == 3 && request[1] == "GET" ? finish_callback(attempt, callback_params(request[2])) : (ok=false, code="", client_id="", reason="Invalid authorization callback.")
-        if callback.reason == "Invalid authorization callback."
-            write(client, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-            release!(client_ownership)
-            continue
-        end
+        rejectedcallback("Sign-in cancelled or timed out.")
+    else
+        readcallback(fetch(connection), flow, attempt, deadline)
+    end
+end
+
+function readcallback(client, flow, attempt, deadline)
+    ownership = own_resource!(flow.context, client)
+    reader = Threads.@spawn read_request_line(client)
+    deadline = min(deadline, monotonic_seconds() + 5)
+    while !istaskdone(reader) && active_auth(flow) && monotonic_seconds() < deadline
+        sleep(0.02)
+    end
+    if !istaskdone(reader) || !active_auth(flow) || monotonic_seconds() >= deadline
+        release!(ownership)
+        wait(reader; throw=false)
+        nothing
+    else
+        callback = replycallback(client, attempt, split(fetch(reader), ' '))
+        release!(ownership)
+        callback
+    end
+end
+
+function replycallback(client, attempt, request)
+    callback = length(request) == 3 && request[1] == "GET" ? finish_callback(attempt, callback_params(request[2])) : rejectedcallback("Invalid authorization callback.")
+    if callback.reason == "Invalid authorization callback."
+        write(client, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        nothing
+    else
         message = callback.ok ? "Authorization received. You can return to Julia Forever 2." : "Authorization was not completed. You can return to Julia Forever 2."
         write(client, "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: $(ncodeunits(message))\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n$message")
-        release!(client_ownership)
-        return callback
+        callback
     end
-    return (ok=false, code="", client_id="", reason="Sign-in cancelled or timed out.")
 end

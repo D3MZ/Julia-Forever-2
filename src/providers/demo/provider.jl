@@ -11,5 +11,4 @@ respond(provider::DemoProvider, messages, session, context::ExecutionContext) = 
 provider_id(::DemoProvider) = :demo
 provider_name(::DemoProvider) = "Demo"
 provider_detail(::DemoProvider) = "(demo) offline · /settings to connect"
-demo_provider_descriptor() = ProviderDescriptor(:demo, "Demo", dir -> DemoProvider();
-    status=Returns("offline, deterministic"))
+demo_provider_descriptor() = ProviderDescriptor(:demo, "Demo", dir -> DemoProvider(); status=Returns("offline, deterministic"))

@@ -116,8 +116,7 @@ end
     @test only(snapshot) === original
 end
 
-JuliaForever2.authorization_url(::Val{:adapter_fixture}, attempt::JuliaForever2.OAuthAttempt) =
-    "https://example.invalid/authorize?state=" * attempt.state
+JuliaForever2.authorization_url(::Val{:adapter_fixture}, attempt::JuliaForever2.OAuthAttempt) = "https://example.invalid/authorize?state=" * attempt.state
 
 function JuliaForever2.complete_authorization!(::Val{:adapter_fixture}, directory, attempt, callback;
         transport, identity, context, persist)

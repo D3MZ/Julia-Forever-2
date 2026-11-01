@@ -123,8 +123,7 @@ function profile_case(f, prefix)
     Profile.Allocs.clear()
     Profile.Allocs.@profile sample_rate=0.05 f()
     sites = Dict{String,Tuple{Int,Int}}()
-    for allocation in Profile.Allocs.fetch().allocs
-        isempty(allocation.stacktrace) && continue
+    for allocation in Iterators.filter(allocation -> !isempty(allocation.stacktrace), Profile.Allocs.fetch().allocs)
         frame = first(allocation.stacktrace)
         for location in allocation.stacktrace
             if endswith(string(location.file), "extensions.jl")

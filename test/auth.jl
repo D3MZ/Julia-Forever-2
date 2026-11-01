@@ -146,11 +146,12 @@ end
         transport = (url, method, body, headers) -> begin
             push!(requests, (url, method, body, headers))
             if method == "GET"
-                return (status=200, body=JSON.json(Dict("models" => [Dict("visibility" => "list", "slug" => "test-model")])))
+                (status=200, body=JSON.json(Dict("models" => [Dict("visibility" => "list", "slug" => "test-model")])))
+            else
+                answer = JSON.json(Dict("kind" => "answer", "content" => "Hello"))
+                stream = "data: " * JSON.json(Dict("type" => "response.output_text.delta", "delta" => answer)) * "\n\ndata: {\"type\":\"response.completed\"}\n\n"
+                (status=200, body=stream)
             end
-            answer = JSON.json(Dict("kind" => "answer", "content" => "Hello"))
-            stream = "data: " * JSON.json(Dict("type" => "response.output_text.delta", "delta" => answer)) * "\n\ndata: {\"type\":\"response.completed\"}\n\n"
-            return (status=200, body=stream)
         end
         provider = OpenAIProvider(dir, transport, auth)
         result = provider([Message(:user, "Hi")], Session(Kernel()))

@@ -5,11 +5,13 @@ wire_metadata(result::ExecutionResult) = (ok=result.ok,)
 
 function wire_content(message)
     metadata = wire_metadata(message.metadata)
-    message.kind == :text && message.role != :code_result && isnothing(metadata) && return message.content
-    kind = message.role == :code_result ? :code_result : message.kind
-    return JSON.json((kind=kind, content=message.content, metadata=metadata))
+    if message.kind == :text && message.role != :code_result && isnothing(metadata)
+        message.content
+    else
+        kind = message.role == :code_result ? :code_result : message.kind
+        JSON.json((kind, content=message.content, metadata))
+    end
 end
-
 function conversation_messages(messages, instructions; system_role="system")
     result = Dict{String,Any}[Dict("role" => system_role, "content" => instructions)]
     for message in messages

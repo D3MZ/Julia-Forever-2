@@ -1,27 +1,16 @@
-function execute_session_action(executor, session, action, context)
-    return applicable(execute!, executor, action, context) ?
-        Base.invokelatest(execute!, executor, action, context) :
-        Base.invokelatest(execute!, executor, session, action, context)
-end
+execute_session_action(executor, session, action, context) =  applicable(execute!, executor, action, context) ? Base.invokelatest(execute!, executor, action, context) : Base.invokelatest(execute!, executor, session, action, context)
 
-execute_session_action(executor::JuliaExecutor, session, action, context) =
-    Base.invokelatest(execute!, executor, session, action, context)
+execute_session_action(executor::JuliaExecutor, session, action, context) = Base.invokelatest(execute!, executor, session, action, context)
 
-function default_evaluate!(session::Session, action)
-    return execute_session_action(session.runtime.executor, session, action, current_execution_context())
-end
+default_evaluate!(session::Session, action) = execute_session_action(session.runtime.executor, session, action, current_execution_context())
 
 """Preserve existing callable and four-argument providers at the compatibility boundary."""
 respond(provider, messages, session, context::ExecutionContext) = provider(messages, session)
 
-function respond_model(provider, request::ModelRequest, session::Session, context::ExecutionContext)
-    return applicable(respond, provider, request, context) ?
-        Base.invokelatest(respond, provider, request, context) :
-        Base.invokelatest(respond, provider, request.messages, session, context)
-end
+respond_model(provider, request::ModelRequest, session::Session, context::ExecutionContext) =  applicable(respond, provider, request, context) ? Base.invokelatest(respond, provider, request, context) : Base.invokelatest(respond, provider, request.messages, session, context)
 
-apply_decision!(session::Session, answer::Answer, context) = ExecutionResult(true, answer.content)
-apply_decision!(session::Session, failure::Failure, context) = ExecutionResult(false, failure.content)
+apply_decision!(session::Session, answer::Answer, context) = ExecutionResult(answer)
+apply_decision!(session::Session, failure::Failure, context) = ExecutionResult(failure)
 
 function apply_decision!(session::Session, decision::ActionDecision, context)
     result = evaluate!(session, action_payload(decision.action); context)
@@ -33,30 +22,50 @@ end
 function default_loop!(session::Session, prompt::AbstractString, max_steps::Integer)
     context = current_execution_context()
     append_message!(session, Message(:user, prompt))
-    for _ in 1:max_steps
-        cancelled(context) && return stopped_result()
-        messages = history_snapshot(session).messages
-        response = with_component(session.kernel, :provider) do provider
-            protocol = operation_protocol(session.definition, provider)
-            request = model_request(protocol, messages, session)
-            Base.invokelatest(respond_model, provider, request, session, context)
-        end
-        isnothing(response) && return ExecutionResult(false, "No provider is configured.")
-        usage = response_usage(response)
-        isnothing(usage) || record_usage!(session, usage)
-        cancelled(context) && return stopped_result()
-        reply = response_reply(response)
-        decision = Base.invokelatest(agent_decision, reply)
-        decision isa Failure && return apply_decision!(session, decision, context)
-        append_message!(session, Base.invokelatest(decision_message, decision))
-        emit!(context, HarnessEvent(:response_committed, (operation_id=operation_id(context),)))
-        emit!(context, HarnessEvent(:reply, reply))
-        outcome = Base.invokelatest(apply_decision!, session, decision, context)
-        isnothing(outcome) || return outcome
+    outcome = nothing
+    step = 0
+    while step < max_steps && isnothing(outcome)
+        outcome = advance!(session, context)
+        step += 1
     end
-    return ExecutionResult(false, "Agent reached the step limit.")
+    finish(outcome)
 end
 
+finish(::Nothing) = ExecutionResult(false, "Agent reached the step limit.")
+finish(outcome) = outcome
+advance!(session::Session, context::ExecutionContext) = cancelled(context) ? stopped_result() : consume!(session, request(session, context), context)
+
+function request(session::Session, context::ExecutionContext)
+    messages = history_snapshot(session).messages
+    with_component(session.kernel, :provider) do provider
+        protocol = operation_protocol(session.definition, provider)
+        Base.invokelatest(respond_model, provider, model_request(protocol, messages, session), session, context)
+    end
+end
+
+consume!(session::Session, ::Nothing, context::ExecutionContext) = ExecutionResult(false, "No provider is configured.")
+
+function consume!(session::Session, response, context::ExecutionContext)
+    usage = response_usage(response)
+    if !isnothing(usage)
+        record_usage!(session, usage)
+    end
+    cancelled(context) ? stopped_result() : commit!(session, response, context)
+end
+
+function commit!(session::Session, response, context::ExecutionContext)
+    reply = response_reply(response)
+    commit!(session, Base.invokelatest(agent_decision, reply), reply, context)
+end
+
+commit!(session::Session, decision::Failure, reply, context::ExecutionContext) = Base.invokelatest(apply_decision!, session, decision, context)
+
+function commit!(session::Session, decision, reply, context::ExecutionContext)
+    append_message!(session, Base.invokelatest(decision_message, decision))
+    emit!(context, HarnessEvent(:response_committed, (operation_id=operation_id(context),)))
+    emit!(context, HarnessEvent(:reply, reply))
+    Base.invokelatest(apply_decision!, session, decision, context)
+end
 function use_component(fallback, session::Session, name::Symbol, args...)
     with_component(session.kernel, name; fallback) do implementation
         Base.invokelatest(implementation, session, args...)
@@ -69,42 +78,38 @@ function run_component_inline!(session::Session, context::ExecutionContext, fall
         own_resource!(owner_context, context)
     end
     lock(session.runtime.execution_lock) do
-        (!isopen(session) || cancelled(context)) && return stopped_result()
-        task_local_storage(:JuliaForever2_context, context) do
-            return execution_result(use_component(fallback, session, name, args...))
-        end
+        isopen(session) && !cancelled(context) ? scoped(session, context, fallback, name, args...) : stopped_result()
     end
 end
 
+function scoped(session::Session, context::ExecutionContext, fallback, name::Symbol, args...)
+    task_local_storage(:JuliaForever2_context, context) do
+        execution_result(use_component(fallback, session, name, args...))
+    end
+end
 """Supervise outer operations and execute nested operations under the same serialization lock."""
 function run_component!(session::Session, context, fallback, name::Symbol, args...)
     execution = execution_context(context)
     if get(task_local_storage(), :JuliaForever2_runtime, nothing) === session.runtime
-        return run_component_inline!(session, execution, fallback, name, args...)
+        run_component_inline!(session, execution, fallback, name, args...)
+    else
+        handle = submit_managed!(session, session, execution) do owned_context
+            run_component_inline!(session, owned_context, fallback, name, args...)
+        end
+        fetch(handle)
     end
-    handle = submit_managed!(session, session, execution) do owned_context
-        run_component_inline!(session, owned_context, fallback, name, args...)
-    end
-    return fetch(handle)
 end
+evaluate!(session::Session, action; context=current_execution_context()) = run_component!(session, context, default_evaluate!, :executor, action)
 
-evaluate!(session::Session, action; context=current_execution_context()) =
-    run_component!(session, context, default_evaluate!, :executor, action)
-
-run_turn!(session::Session, prompt::AbstractString; max_steps::Integer=20, context=current_execution_context()) =
-    run_component!(session, context, default_loop!, :loop, prompt, max_steps)
+run_turn!(session::Session, prompt::AbstractString; max_steps::Integer=20, context=current_execution_context()) = run_component!(session, context, default_loop!, :loop, prompt, max_steps)
 
 function supervise_operation(worker::Task, context::ExecutionContext)
     wait(worker; throw=false)
-    cleanup_failures = release_context_resources!(context)
-    istaskfailed(worker) && return fetch(worker)
-    isempty(cleanup_failures) || fetch(first(cleanup_failures))
-    result = fetch(worker)
+    result = resolve(worker, release_context_resources!(context))
     completion = spawn_cleanup(() -> emit!(context, HarnessEvent(:completed, result)); owners=context.owners)
     fetch(completion)
-    return result
+    result
 end
-
 function submit_managed!(f, owner::Session, session::Session, context::ExecutionContext)
     owners = (get(task_local_storage(), :JuliaForever2_owners, ())..., owner.runtime, session.runtime)
     owned_context = claim_context!(context, owners)
@@ -150,19 +155,17 @@ end
 function submit_evaluation!(session::Session, action; context=ExecutionContext())
     submit_managed!(session, session, context) do owned_context
         lock(session.runtime.execution_lock) do
-            (!isopen(session) || cancelled(owned_context)) && return stopped_result()
-            result = run_component_inline!(session, owned_context, default_evaluate!, :executor, action)
-            append_message!(session, Message(:code_result, result.text; metadata=result))
-            result
+            isopen(session) && !cancelled(owned_context) ? record!(session, action, owned_context) : stopped_result()
         end
     end
 end
 
-function child_session(session::Session, definition::AgentDefinition, isolated)
-    return Session(definition; messages=empty(session.conversation.messages),
-        working_directory=working_directory(session), parent_id=session.runtime.id,
-        root_id=session.runtime.root_id)
+function record!(session::Session, action, context::ExecutionContext)
+    result = run_component_inline!(session, context, default_evaluate!, :executor, action)
+    append_message!(session, Message(:code_result, result.text; metadata=result))
+    result
 end
+child_session(session::Session, definition::AgentDefinition, isolated) = Session(definition; messages=empty(session.conversation.messages), working_directory=working_directory(session), parent_id=session.runtime.id, root_id=session.runtime.root_id)
 
 function child_session(session::Session, ::Nothing, isolated::Bool)
     kernel = isolated ? fork_kernel(session.kernel) : session.kernel
@@ -186,22 +189,23 @@ function run_child!(session::Session, prompt::AbstractString; kwargs...)
 end
 
 function context_descends_from(context, ancestor)
-    while !isnothing(context)
-        context === ancestor && return true
-        context = context.parent
+    current = context
+    while !isnothing(current) && current !== ancestor
+        current = current.parent
     end
-    return false
+    !isnothing(current)
+end
+function executing_owned_work(session::Session)
+    runtime = get(task_local_storage(), :JuliaForever2_runtime, nothing)
+    owners = get(task_local_storage(), :JuliaForever2_owners, ())
+    runtime === session.runtime || any(owner -> owner === session.runtime, owners) || owns(session, current_context())
 end
 
-function executing_owned_work(session::Session)
-    get(task_local_storage(), :JuliaForever2_runtime, nothing) === session.runtime && return true
-    any(owner -> owner === session.runtime, get(task_local_storage(), :JuliaForever2_owners, ())) && return true
-    context = current_context()
+function owns(session::Session, context)
     lock(session.conversation.lock) do
         any(handle -> handle.worker === current_task() || handle.task === current_task() || context_descends_from(context, handle.context), session.runtime.handles)
     end
 end
-
 function shutdown_session!(session::Session)
     handles, children = lock(session.conversation.lock) do
         copy(session.runtime.handles), copy(session.runtime.children)

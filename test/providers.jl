@@ -213,12 +213,13 @@ end
         transport = function (url, method, body, headers, context, sink)
             if method == "GET"
                 catalogs[] += 1
-                return (status=200, body=JSON.json(Dict("models" => [Dict("visibility" => "list", "slug" => "test-model")])))
+                (status=200, body=JSON.json(Dict("models" => [Dict("visibility" => "list", "slug" => "test-model")])))
+            else
+                write(sink, delta)
+                streamed_before_return[] = !isempty(events)
+                write(sink, completion)
+                (status=200, body="")
             end
-            write(sink, delta)
-            streamed_before_return[] = !isempty(events)
-            write(sink, completion)
-            return (status=200, body="")
         end
         provider = JuliaForever2.OpenAIProvider(directory, transport; model="test-model")
         session = Session(Kernel())

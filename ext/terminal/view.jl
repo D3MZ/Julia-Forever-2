@@ -16,11 +16,10 @@ function pi_style(style::Symbol)
 end
 
 function drawline!(buffer, x, y, width, text, style=:text)
-    y < 1 && return
-    Tachikoma.set_string!(buffer, x, y, text, pi_style(style); max_x=x + width - 1)
+    if y >= 1
+        Tachikoma.set_string!(buffer, x, y, text, pi_style(style); max_x=x + width - 1)
+    end
 end
-
-
 function draw_conversation_line!(buffer, x, y, width, line::AbstractString, style)
     if style in (:user_message, :code_result)
         color = style == :user_message ? Tachikoma.ColorRGB(33, 59, 73) : Tachikoma.ColorRGB(37, 65, 49)

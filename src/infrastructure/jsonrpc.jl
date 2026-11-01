@@ -37,10 +37,7 @@ mutable struct JsonRpcPeer{I,O}
 end
 
 """Create a line-delimited JSON-RPC peer over caller-owned streams, without starting a reader."""
-function JsonRpcPeer(input, output; on_request=nothing, on_notification=nothing)
-    return JsonRpcPeer(input, output, ReentrantLock(), ReentrantLock(), UInt8[],
-        Dict{Any,Channel{RpcResult}}(), Task[], nothing, nothing, nothing, on_request, on_notification)
-end
+JsonRpcPeer(input, output; on_request=nothing, on_notification=nothing) = JsonRpcPeer(input, output, ReentrantLock(), ReentrantLock(), UInt8[], Dict{Any,Channel{RpcResult}}(), Task[], nothing, nothing, nothing, on_request, on_notification)
 
 Base.isopen(peer::JsonRpcPeer) = lock(() -> isnothing(peer.failure), peer.lock)
 
@@ -72,13 +69,8 @@ function write_frame!(peer::JsonRpcPeer, frame; active=Returns(true))
         end
     end
     wait(worker; throw=false)
-    if istaskfailed(worker)
-        error = RpcError(nothing, task_failure_message(worker))
-        return RpcResult(error)
-    end
-    return RpcResult(nothing)
+    istaskfailed(worker) ? RpcResult(RpcError(nothing, task_failure_message(worker))) : RpcResult(nothing)
 end
-
 function error_frame(id, error::RpcError)
     detail = Dict{String,Any}("message" => error.message)
     isnothing(error.code) || (detail["code"] = error.code)
@@ -90,44 +82,37 @@ object_params(value::AbstractDict) = value
 object_params(value) = Dict{String,Any}()
 rpc_id(value) = value isa AbstractString || (value isa Real && !(value isa Bool))
 
-function resolve_handler_result(worker::Task)
+resolve_handler_result(worker::Task) = resolve(worker)
+resolve(value) = value
+
+function resolve(worker::Task)
     wait(worker; throw=false)
-    istaskfailed(worker) && return RpcError(-32603, task_failure_message(worker))
-    result = fetch(worker)
-    return result isa Task ? resolve_handler_result(result) : result
+    istaskfailed(worker) ? RpcError(-32603, task_failure_message(worker)) : resolve(fetch(worker))
 end
-
-function respond_to_request!(peer::JsonRpcPeer, id, method, worker)
-    if isnothing(worker)
-        return write_frame!(peer, error_frame(id, RpcError(-32601, "method not found: $method")))
-    end
-    result = resolve_handler_result(worker)
-    frame = result isa RpcError ? error_frame(id, result) :
-        Dict{String,Any}("jsonrpc" => "2.0", "id" => id, "result" => result)
-    return write_frame!(peer, frame)
-end
-
+respond_to_request!(peer::JsonRpcPeer, id, method, ::Nothing) = write_frame!(peer, error_frame(id, RpcError(-32601, "method not found: $method")))
+respond_to_request!(peer::JsonRpcPeer, id, method, worker::Task) = write_frame!(peer, response(id, resolve_handler_result(worker)))
+response(id, error::RpcError) = error_frame(id, error)
+response(id, value) = Dict{String,Any}("jsonrpc" => "2.0", "id" => id, "result" => value)
 function receive_response!(peer::JsonRpcPeer, id, frame)
     lock(peer.lock) do
         channel = pop!(peer.pending, id, nothing)
         if !isnothing(channel)
-            error = get(frame, "error", nothing)
-            result = if error isa AbstractDict || error isa AbstractVector
-                detail = object_params(error)
-                code = get(detail, "code", nothing)
-                message = get(detail, "message", "JSON-RPC error")
-                RpcResult(RpcError(code isa Real && !(code isa Bool) ? code : nothing,
-                    message isa AbstractString ? message : "JSON-RPC error";
-                    data=get(detail, "data", missing)))
-            else
-                RpcResult(get(frame, "result", nothing))
-            end
-            put!(channel, result)
+            put!(channel, response(frame))
         end
     end
-    return nothing
+    nothing
 end
 
+function response(frame::AbstractDict)
+    error = get(frame, "error", nothing)
+    error isa AbstractDict || error isa AbstractVector ? RpcResult(RpcError(object_params(error))) : RpcResult(get(frame, "result", nothing))
+end
+
+function RpcError(detail::AbstractDict)
+    code = get(detail, "code", nothing)
+    message = get(detail, "message", "JSON-RPC error")
+    RpcError(code isa Real && !(code isa Bool) ? code : nothing, message isa AbstractString ? message : "JSON-RPC error"; data=get(detail, "data", missing))
+end
 function track_handler!(peer::JsonRpcPeer, task::Task)
     lock(peer.lock) do
         filter!(!istaskdone, peer.handlers)
@@ -176,29 +161,33 @@ dispatch_frame!(peer::JsonRpcPeer, frame) = nothing
 """Consume complete UTF-8 lines, retaining partial frames and ignoring malformed JSON as DSH does."""
 function feed!(peer::JsonRpcPeer, bytes::AbstractVector{UInt8})
     lines = lock(peer.lock) do
-        isnothing(peer.failure) || return Vector{Vector{UInt8}}()
-        # The retained bytes have already been scanned and contain no newline.
-        # Only scan newly appended data to avoid quadratic work on fragmented frames.
-        scan_from = length(peer.buffer) + 1
-        append!(peer.buffer, bytes)
-        complete = Vector{Vector{UInt8}}()
-        start = 1
-        for index in scan_from:length(peer.buffer)
-            if peer.buffer[index] == 0x0a
-                push!(complete, peer.buffer[start:index-1])
-                start = index + 1
-            end
-        end
-        start == 1 || deleteat!(peer.buffer, 1:start-1)
-        return complete
+        isnothing(peer.failure) ? frames!(peer.buffer, bytes) : Vector{Vector{UInt8}}()
     end
     for line in lines
         text = strip(String(line))
-        isempty(text) || dispatch_frame!(peer, parse_json(text))
+        if !isempty(text)
+            dispatch_frame!(peer, parse_json(text))
+        end
     end
-    return peer
+    peer
 end
 
+function frames!(buffer::Vector{UInt8}, bytes::AbstractVector{UInt8})
+    start = 1
+    scan = length(buffer) + 1
+    append!(buffer, bytes)
+    complete = Vector{Vector{UInt8}}()
+    for index in scan:length(buffer)
+        if buffer[index] == 0x0a
+            push!(complete, buffer[start:index-1])
+            start = index + 1
+        end
+    end
+    if start != 1
+        deleteat!(buffer, 1:start-1)
+    end
+    complete
+end
 feed!(peer::JsonRpcPeer, text::AbstractString) = feed!(peer, codeunits(text))
 
 function read_frames!(peer::JsonRpcPeer)
@@ -252,35 +241,48 @@ function write_request!(peer::JsonRpcPeer, id, frame)
 end
 
 """Request any method, preserving remote errors and abandoning cancelled local waiters."""
-function request!(peer::JsonRpcPeer, method::AbstractString, params=Dict{String,Any}(); context=nothing, timeout::Real=Inf)
+struct RequestTicket{D}
+    id::String
+    channel::Channel{RpcResult}
+    deadline::D
+end
+
+function RequestTicket(timeout::Real)
     deadline = monotonic_seconds() + timeout
-    id = "req_" * replace(string(uuid4()), "-" => "")
-    channel = Channel{RpcResult}(1)
+    RequestTicket("req_" * replace(string(uuid4()), "-" => ""), Channel{RpcResult}(1), deadline)
+end
+
+function request!(peer::JsonRpcPeer, method::AbstractString, params=Dict{String,Any}(); context=nothing, timeout::Real=Inf)
+    ticket = RequestTicket(timeout)
     failure = lock(peer.lock) do
         if isnothing(peer.failure)
-            peer.pending[id] = channel
+            peer.pending[ticket.id] = ticket.channel
         end
         peer.failure
     end
-    isnothing(failure) || return RpcResult(failure)
-    if cancelled(context) || timeout <= 0
-        lock(() -> pop!(peer.pending, id, nothing), peer.lock)
-        return RpcResult(RpcError(nothing, "Request cancelled or timed out"))
-    end
-    frame = Dict("jsonrpc" => "2.0", "id" => id, "method" => String(method), "params" => params)
-    Threads.@spawn write_request!(peer, id, frame)
-    while !isready(channel) && !cancelled(context) && monotonic_seconds() < deadline
-        sleep(0.001)
-    end
-    if !isready(channel)
-        lock(peer.lock) do
-            pending = pop!(peer.pending, id, nothing)
-            isnothing(pending) || put!(channel, RpcResult(RpcError(nothing, "Request cancelled or timed out")))
-        end
-    end
-    return take!(channel)
+    isnothing(failure) ? send!(peer, ticket, method, params, context, timeout) : RpcResult(failure)
 end
 
+function send!(peer::JsonRpcPeer, ticket::RequestTicket, method, params, context, timeout)
+    if cancelled(context) || timeout <= 0
+        lock(() -> pop!(peer.pending, ticket.id, nothing), peer.lock)
+        RpcResult(RpcError(nothing, "Request cancelled or timed out"))
+    else
+        frame = Dict("jsonrpc" => "2.0", "id" => ticket.id, "method" => String(method), "params" => params)
+        Threads.@spawn write_request!(peer, ticket.id, frame)
+        await!(peer, ticket, context)
+    end
+end
+
+function await!(peer::JsonRpcPeer, ticket::RequestTicket, context)
+    while !isready(ticket.channel) && !cancelled(context) && monotonic_seconds() < ticket.deadline
+        sleep(0.001)
+    end
+    if !isready(ticket.channel)
+        fail_request!(peer, ticket.id, RpcError(nothing, "Request cancelled or timed out"))
+    end
+    take!(ticket.channel)
+end
 """Send an uncorrelated notification, omitting params when they are not provided."""
 function notify!(peer::JsonRpcPeer, method::AbstractString, params=nothing)
     frame = Dict{String,Any}("jsonrpc" => "2.0", "method" => String(method))
