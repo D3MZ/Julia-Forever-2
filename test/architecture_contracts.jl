@@ -107,3 +107,18 @@ end
     @test JuliaForever2.usage_snapshot(ordinary).cost == 0.75
     @test JuliaForever2.usage_snapshot(ordinary).cost_known
 end
+
+@testset "Accumulated token counts do not overflow" begin
+    for (initial_input, initial_output) in ((typemax(Int), 5), (5, typemax(Int)))
+        conversation = Conversation()
+        JuliaForever2.record_usage!(conversation, JuliaForever2.UsageReport(initial_input, initial_output, 0.25))
+        JuliaForever2.record_usage!(conversation, JuliaForever2.UsageReport(1, 2, 0.5))
+        totals = JuliaForever2.usage_snapshot(conversation)
+        # An unrepresentable pair must not corrupt either counter.
+        @test (totals.input_tokens, totals.output_tokens) == (initial_input, initial_output)
+        @test totals.partial
+        @test totals.reported
+        @test totals.cost == 0.75
+        @test totals.cost_known
+    end
+end
