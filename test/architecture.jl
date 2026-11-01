@@ -542,7 +542,7 @@ end
             close(session)
         end
         index = JuliaForever2.SessionSearchIndex(store)
-        @test index.postings["aba"] == BitSet([1])
+        @test index.postings["aba"] == BitSet([findfirst(hit -> hit.session == "one", index.documents)])
         @test 2 in index.unicode_documents
         for term in ("aba", "AAAA", "needle token", "café", "xyz", "zzzzz", "a", " NEEdle   token ")
             @test JuliaForever2.search_history(index, term) ==

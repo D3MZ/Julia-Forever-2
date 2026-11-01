@@ -24,15 +24,15 @@ jobs:
       - name: Prepare exact baseline worktree and record environment
         shell: bash
         run: |
-          mkdir -p .bench-evidence
+          mkdir -p benchmark-evidence
           git cat-file -e "$BASELINE_SHA^{commit}"
           git worktree add --detach "$RUNNER_TEMP/session-postings-baseline" "$BASELINE_SHA"
           echo "BASELINE_DIR=$RUNNER_TEMP/session-postings-baseline" >> "$GITHUB_ENV"
-          julia --version | tee .bench-evidence/julia-version.txt
-          git rev-parse HEAD > .bench-evidence/candidate-sha.txt
-          git -C "$RUNNER_TEMP/session-postings-baseline" rev-parse HEAD > .bench-evidence/baseline-sha.txt
-          lscpu > .bench-evidence/runner-cpu.txt
-          uname -a > .bench-evidence/runner-os.txt
+          julia --version | tee benchmark-evidence/julia-version.txt
+          git rev-parse HEAD > benchmark-evidence/candidate-sha.txt
+          git -C "$RUNNER_TEMP/session-postings-baseline" rev-parse HEAD > benchmark-evidence/baseline-sha.txt
+          lscpu > benchmark-evidence/runner-cpu.txt
+          uname -a > benchmark-evidence/runner-os.txt
       - name: Instantiate Julia 1.13.3 test dependencies
         run: julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()'
       - name: Seven warmed-up alternating pairs with profiling and conservative confidence gate
@@ -239,18 +239,18 @@ jobs:
           gate.accepted || error("Performance gate failed; do not create PR")
           
           JULIA
-          julia --project=test "$RUNNER_TEMP/session-postings-experiment.jl" "$BASELINE_DIR" ".bench-evidence" 2>&1 | tee .bench-evidence/benchmark.log
+          julia --project=test "$RUNNER_TEMP/session-postings-experiment.jl" "$BASELINE_DIR" "benchmark-evidence" 2>&1 | tee benchmark-evidence/benchmark.log
       - name: Focused core correctness, syntax lint and Aqua
         if: always()
         shell: bash
         run: |
           set -o pipefail
-          julia --project=test test/runtests.jl core lint aqua 2>&1 | tee .bench-evidence/verification.log
+          julia --project=test test/runtests.jl core lint aqua 2>&1 | tee benchmark-evidence/verification.log
       - name: Preserve raw timing, allocations, CPU profiles, versions and gate even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: session-postings-raw-pairs-profiles-and-gate
-          path: .bench-evidence/
+          path: benchmark-evidence/
           if-no-files-found: warn
           retention-days: 30
