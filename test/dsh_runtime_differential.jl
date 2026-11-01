@@ -307,6 +307,29 @@ function successful_turn_comparison(directory, temporary)
     end
 end
 
+
+function native_workspace_comparison(reference, directory)
+    operations = Dict(operation["name"] => operation["result"] for operation in reference["operations"])
+    session = Session(Kernel(); owns_kernel=true, working_directory=directory)
+    initial = JuliaForever2.working_directory(session)
+    selected = JuliaForever2.set_working_directory!(session, "child")
+    changed = JuliaForever2.working_directory(session)
+    invalid = JuliaForever2.set_working_directory!(session, "does-not-exist")
+    retained = JuliaForever2.working_directory(session)
+    resolved = JuliaForever2.workspace_path(session, "example.txt")
+    close(session)
+    actual = Dict("initial" => initial, "set" => selected.ok, "changed" => changed,
+        "missing" => invalid.ok, "retained" => retained, "resolved" => resolved)
+    expected = Dict(
+        "initial" => operations["working-directory-get"]["value"]["cwd"],
+        "set" => operations["working-directory-set"]["ok"],
+        "changed" => operations["working-directory-after-set"]["value"]["cwd"],
+        "missing" => operations["missing-directory"]["ok"],
+        "retained" => operations["directory-after-failure"]["value"]["cwd"],
+        "resolved" => joinpath(operations["directory-after-failure"]["value"]["cwd"], "example.txt"))
+    return actual, expected
+end
+
 @testset "Pinned DSH transport differentials using test-only protocol clients" begin
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
@@ -317,6 +340,10 @@ end
             profile = runtime_profile(name, directory, joinpath(temporary, "native-$name"))
             candidate = sdk_result(profile, joinpath(temporary, "$name-sdk.stderr"))
             @test candidate == reference
+            @testset "Native session working directory: $name" begin
+                actual, expected = native_workspace_comparison(reference, directory)
+                @test actual == expected
+            end
         end
         reference = reference_result("configuration", directory, joinpath(temporary, "reference-configurations"))
         length(reference["profiles"]) == length(DSH_SHIPPED_PROFILES) || error("Reference omitted a shipped DSH profile")

@@ -154,13 +154,14 @@ function submit_evaluation!(session::Session, action; context=ExecutionContext()
 end
 
 function child_session(session::Session, definition::AgentDefinition, isolated)
-    return Session(definition; messages=empty(session.conversation.messages))
+    return Session(definition; messages=empty(session.conversation.messages),
+        working_directory=working_directory(session))
 end
 
 function child_session(session::Session, ::Nothing, isolated::Bool)
     kernel = isolated ? fork_kernel(session.kernel) : session.kernel
     return Session(kernel; executor=fork_executor(session.runtime.executor), messages=empty(session.conversation.messages),
-        definition=session.definition, owns_kernel=isolated)
+        definition=session.definition, owns_kernel=isolated, working_directory=working_directory(session))
 end
 
 """Spawn a child; isolated=true snapshots composition, while an explicit definition replaces it."""

@@ -22,10 +22,11 @@ mutable struct SessionRuntime{E}
     executor_closed::Bool
     owns_kernel::Bool
     shutdown_task::Union{Nothing,Task}
+    working_directory::String
 end
 
-SessionRuntime(executor; owns_kernel=false) = SessionRuntime(executor, ReentrantLock(), ReentrantLock(),
-    TaskHandle[], AbstractSession[], false, false, owns_kernel, nothing)
+SessionRuntime(executor; owns_kernel=false, working_directory=pwd()) = SessionRuntime(executor, ReentrantLock(), ReentrantLock(),
+    TaskHandle[], AbstractSession[], false, false, owns_kernel, nothing, realpath(working_directory))
 
 mutable struct Session{C,R,D} <: AbstractSession
     kernel::Kernel
@@ -50,14 +51,16 @@ function initialize_executor!(executor::JuliaExecutor, session::Session)
     return executor
 end
 
-function Session(kernel::Kernel; executor=JuliaExecutor(), messages=Message[], definition=nothing, owns_kernel=false)
-    session = Session(kernel, Conversation(messages), SessionRuntime(executor; owns_kernel), definition)
+function Session(kernel::Kernel; executor=JuliaExecutor(), messages=Message[], definition=nothing, owns_kernel=false,
+        working_directory=pwd())
+    isdir(working_directory) || error("Session working directory is not a directory: $working_directory")
+    session = Session(kernel, Conversation(messages), SessionRuntime(executor; owns_kernel, working_directory), definition)
     initialize_executor!(executor, session)
     return session
 end
 
-Session(definition::AgentDefinition; messages=Message[]) = Session(definition_kernel(definition);
-    executor=Base.invokelatest(definition.executor_factory), messages, definition, owns_kernel=true)
+Session(definition::AgentDefinition; messages=Message[], working_directory=pwd()) = Session(definition_kernel(definition);
+    executor=Base.invokelatest(definition.executor_factory), messages, definition, owns_kernel=true, working_directory)
 
 const CONVERSATION_PROPERTIES = (:messages, :lock, :usage, :revision, :changes)
 const RUNTIME_PROPERTIES = (:executor, :execution_lock, :shutdown_lock, :handles, :children, :closed, :executor_closed)
@@ -88,3 +91,26 @@ record_usage!(session::Session, report) = record_usage!(session.conversation, re
 usage_label(session::Session) = usage_label(session.conversation)
 
 Base.isopen(session::Session) = lock(() -> !session.runtime.closed, session.conversation.lock)
+
+"""Read the session's workspace independently of the process-wide working directory."""
+working_directory(session::Session) = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
+
+"""Resolve a path against the session's workspace without changing process state."""
+function workspace_path(session::Session, path::AbstractString)
+    lock(session.runtime.execution_lock) do
+        directory = session.runtime.working_directory
+        return normpath(isabspath(path) ? path : joinpath(directory, path))
+    end
+end
+
+"""Change a session's workspace only when the destination exists as a directory."""
+function set_working_directory!(session::Session, path::AbstractString)
+    return lock(session.runtime.execution_lock) do
+        isopen(session) || return (ok=false, reason="Session is closed")
+        isempty(path) && return (ok=false, reason="Working directory cannot be empty")
+        destination = workspace_path(session, path)
+        isdir(destination) || return (ok=false, reason="Not a directory: $destination")
+        session.runtime.working_directory = realpath(destination)
+        return (ok=true, reason="")
+    end
+end

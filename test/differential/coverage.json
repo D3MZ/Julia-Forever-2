@@ -2344,7 +2344,7 @@
     "runner": "../dsh_runtime_differential.jl",
     "reference_commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
     "scope": "Test-only DSH protocol clients exercise the native framework-neutral JSON-RPC transport and process lifecycle against a pinned upstream CLI. DSH SDK and Web behavior is delegated inside tests only; it does not establish native SDK, Web, or application feature parity.",
-    "required_comparisons": 10,
+    "required_comparisons": 12,
     "guards": [
       "The CLI must be built at apps/cli/lib/bin.js in an unmodified tracked source checkout at the pinned revision; the same-version published npm package is not accepted.",
       "Both SDK profiles must initialize, reject an uninitialized prompt, and validate session/query input. Unknown-method failures do not count as query support.",
@@ -2360,6 +2360,14 @@
         ],
         "comparisons": 2,
         "projection": "Thirteen request outcomes per profile: prompt before initialization, initialization, directory get/set/get, idle wait, empty and blank query validation, missing directory and unchanged directory, absent-session resume, unknown method, and shutdown; ordered notification method/session/type trace; process exit."
+      },
+      {
+        "profiles": [
+          "sdk",
+          "sdk-minimal"
+        ],
+        "comparisons": 2,
+        "projection": "Independent native Julia Session workspace against actual pinned DSH SDK observations: initial directory, relative navigation, rejection of nonexistent directories, preserved directory after failure, and relative path resolution. No DSH runtime is used by Julia production code."
       },
       {
         "profiles": [
@@ -2397,6 +2405,7 @@
     "unverified": [
       "External model responses, generated tool execution, approval and question interaction flows, other persistence histories and recovery/migration cases, jobs, goals, schedules, MCP and third-party package replacement behavior are not exercised by these runtime scenarios.",
       "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons.",
+      "Native session working-directory comparisons cover directory state and path resolution, not integration into third-party tool filesystem behavior or full native SDK functionality.",
       "No native DSH SDK/application/Web implementation is supplied by the test-only DSH protocol adapters. Their successful forwarding and server startup are reference-only and do not establish product parity."
     ],
     "included_in_native_case_counts": false
