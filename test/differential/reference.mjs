@@ -64,7 +64,15 @@ registerHooks({
       const path = fileURLToPath(url)
       const sourcePath = relative(referenceRoot, path).split(sep).join('/')
       if (sourcePath !== '..' && !sourcePath.startsWith('../') && !isAbsolute(sourcePath)) {
-        return { format: 'module', source: stripTypeScriptTypes(referenceSource(sourcePath), { mode: 'transform' }), shortCircuit: true }
+        const original = referenceSource(sourcePath)
+        // The scheduler's optional durable-log path is not exercised by this
+        // differential. Keep its original scheduling code and imports, apart from
+        // omitting the unused model-message factory in this no-log test oracle.
+        const selected = sourcePath === 'packages/core/tools/src/batch.ts'
+          ? original.replace("import { createToolResultMessage, type ToolCallBlock } from '@deepseek-ai/dsh-llm'",
+            "import type { ToolCallBlock } from '@deepseek-ai/dsh-llm'")
+          : original
+        return { format: 'module', source: stripTypeScriptTypes(selected, { mode: 'transform' }), shortCircuit: true }
       }
     }
     return nextLoad(url, context)

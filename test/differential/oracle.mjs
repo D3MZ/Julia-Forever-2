@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
 const { filterSessionEventDocuments } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
+const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
 
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
@@ -29,6 +30,56 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
   return include.slice(patchStart, patchEnd) + '\n' + source.slice(start)
 })
 const settle = () => new Promise(resolve => setImmediate(resolve))
+
+async function toolBatchCase(input) {
+  const definitions = new Map(input.calls.filter(call => call.registered !== false).map(call => [call.id, call]))
+  const entered = new Map(input.calls.map(call => [call.id, Promise.withResolvers()]))
+  const controller = new AbortController()
+  if (input.cancel_before) controller.abort()
+  const started = []
+  let active = 0
+  let peak = 0
+  let exclusiveSafe = true
+  const outcome = await executeToolBatch({
+    calls: input.calls.map(call => ({ id: call.id, name: call.id, arguments: '{}' })),
+    signal: controller.signal,
+    maxParallelToolCalls: input.max_parallel,
+  }, {
+    executionMode(exec) {
+      return { kind: definitions.get(exec.callId)?.mode === 'parallel' ? 'parallel' : 'exclusive' }
+    },
+    async prepare(exec) {
+      const specification = definitions.get(exec.callId)
+      if (!specification || specification.deny) {
+        return { kind: 'final-result', exec, result: {
+          content: [{ type: 'text', text: 'Tool unavailable' }], isError: true,
+        } }
+      }
+      return { kind: 'dispatch', exec }
+    },
+    async dispatch(exec) {
+      const specification = definitions.get(exec.callId)
+      if (specification.mode !== 'parallel' && active !== 0) exclusiveSafe = false
+      active++
+      peak = Math.max(peak, active)
+      started.push(specification.id)
+      entered.get(specification.id).resolve()
+      if (specification.wait_for) await entered.get(specification.wait_for).promise
+      active--
+      if (specification.cancel) controller.abort()
+      return { kind: 'post-result', result: {
+        content: [{ type: 'text', text: specification.id }], isError: false,
+      } }
+    },
+    async complete(exec, completed) { return completed.result },
+  }, () => input.max_parallel)
+  return {
+    results: outcome.results.map(entry => ({ id: entry.callId, ok: !entry.result.isError })),
+    executed: started.sort(),
+    barrierSafe: exclusiveSafe,
+    overlap: input.check_overlap ? peak >= 2 : null,
+  }
+}
 
 function toolArgumentsCase(input) {
   assertSupportedJsonSchema(input.schema)
@@ -587,6 +638,7 @@ async function execute(input) {
   if (input.kind === 'replacements') return Promise.all(input.cases.map(replacementCase))
   if (input.kind === 'events') return Promise.all(input.cases.map(eventCase))
   if (input.kind === 'tools') return Promise.all(input.cases.map(toolCase))
+  if (input.kind === 'tool_batch') return Promise.all(input.cases.map(toolBatchCase))
   if (input.kind === 'final_response') return input.cases.map(input => finalResponse(input.events))
   if (input.kind === 'launch') return input.cases.map(launchCase)
   throw new Error(`Unknown oracle operation: ${input.kind}`)

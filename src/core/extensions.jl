@@ -2,23 +2,32 @@ abstract type AbstractEventListener end
 abstract type AbstractToolEntry end
 abstract type AbstractToolGuard end
 
-struct ToolSpec{S,F,O}
+struct ToolSpec{S,F,O,P}
     name::Symbol
     schema::S
     call::F
     description::String
     output_schema::O
+    concurrency_policy::P
 end
 
 """Describe a tool independently of its executor, provider schema, or presentation protocol."""
-ToolSpec(name, schema, callback; description="", output_schema=nothing) =
-    ToolSpec(Symbol(name), schema, callback, String(description), output_schema)
+ToolSpec(name, schema, callback; description="", output_schema=nothing, concurrency_safe=false) =
+    ToolSpec(Symbol(name), schema, callback, String(description), output_schema, concurrency_safe)
 ToolSpec(name::Symbol, schema, callback, description::AbstractString) =
-    ToolSpec(name, schema, callback, String(description), nothing)
-ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing) =
-    ToolSpec(name, schema, callback; description, output_schema)
+    ToolSpec(name, schema, callback, String(description), nothing, false)
+ToolSpec(name::Symbol, schema, callback, description::String, output_schema) =
+    ToolSpec(name, schema, callback, description, output_schema, false)
+ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, concurrency_safe=false) =
+    ToolSpec(name, schema, callback; description, output_schema, concurrency_safe)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}, schema; kwargs...) = ToolSpec(name, schema, callback; kwargs...)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}; kwargs...) = ToolSpec(name, callback; kwargs...)
+
+"""A tool declares parallel safety explicitly; plugins can dispatch on their policy type."""
+tool_concurrency_safe(policy::Bool, arguments) = policy
+tool_concurrency_safe(policy, arguments) = Base.invokelatest(policy, arguments)
+tool_concurrency_safe(spec::ToolSpec, arguments) =
+    tool_concurrency_safe(spec.concurrency_policy, arguments)
 
 struct ToolRestriction
     allow::Union{Nothing,Set{Symbol}}
