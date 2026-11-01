@@ -675,6 +675,7 @@ end
 
 """Invoke a retained tool only after all inherited plugin-owned guards permit its call."""
 function invoke_tool_entry!(scope::ExtensionScope, invocation::EventInvocation, arguments...)
+    name = invocation.listener.spec.name
     guards = acquire_tool_guards(scope)
     worker = spawn_scoped() do
         call = ToolCall(name, length(arguments) == 1 ? first(arguments) : arguments)
