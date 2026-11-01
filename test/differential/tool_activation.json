@@ -346,7 +346,8 @@
         "id": "root",
         "name": "available",
         "when": "enabled",
-        "value": "root"
+        "value": "root",
+        "scope": "root"
       }
     ],
     "operations": [
@@ -405,7 +406,8 @@
         "id": "inherited",
         "name": "choice",
         "when": "enabled",
-        "value": "parent"
+        "value": "parent",
+        "scope": "root"
       },
       {
         "id": "local",
@@ -554,13 +556,15 @@
       {
         "id": "global",
         "name": "global",
-        "value": "global"
+        "value": "global",
+        "scope": "root"
       },
       {
         "id": "condition",
         "name": "condition",
         "when": "always",
-        "value": "conditional"
+        "value": "conditional",
+        "scope": "root"
       }
     ],
     "operations": [
