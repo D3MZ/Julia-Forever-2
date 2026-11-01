@@ -1,0 +1,55 @@
+name: OpenAI model text streaming paired performance experiment
+on:
+  push:
+    branches:
+      - perf/model-stream-text-buffer-20261101t0313
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: 'bf53a1ccf49359b75ac40c7bc824a0943f6bb558'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Record environment and prepare baseline worktree
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/model-stream-text-evidence"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/model-stream-text-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/model-stream-text-baseline" >> "$GITHUB_ENV"
+          julia --version | tee "$RUNNER_TEMP/model-stream-text-evidence/julia-version.txt"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/model-stream-text-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/model-stream-text-baseline" rev-parse HEAD | tee "$RUNNER_TEMP/model-stream-text-evidence/baseline-sha.txt"
+          lscpu > "$RUNNER_TEMP/model-stream-text-evidence/runner-cpu.txt"
+          uname -a > "$RUNNER_TEMP/model-stream-text-evidence/runner-os.txt"
+      - name: Instantiate shared Julia test project and record package versions
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()'
+      - name: Profile and run seven alternating warmed-up paired trials
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test benchmarks/model_stream_text_experiment.jl "$BASELINE_DIR" "$RUNNER_TEMP/model-stream-text-evidence" 2>&1 | tee "$RUNNER_TEMP/model-stream-text-evidence/benchmark.log"
+      - name: Focused provider correctness, syntax lint and Aqua quality
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl providers lint aqua 2>&1 | tee "$RUNNER_TEMP/model-stream-text-evidence/verification.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: model-stream-text-paired-raw-and-profiles
+          path: ${{ runner.temp }}/model-stream-text-evidence/
+          if-no-files-found: warn
+          retention-days: 30
