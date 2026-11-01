@@ -9,6 +9,7 @@ struct OpenRouterProvider{F,P}
     policy::P
 end
 OpenRouterProvider(key::AbstractString, model::AbstractString, transport=router_request; policy=CodeModePolicy()) = OpenRouterProvider(String(key), String(model), transport, policy)
+OpenRouterProvider(provider::OpenRouterProvider, model::AbstractString) = OpenRouterProvider(provider.api_key, model, provider.transport; policy=provider.policy)
 Base.show(io::IO, provider::OpenRouterProvider) = print(io, "OpenRouterProvider(", repr(provider.model), ", [redacted])")
 (provider::OpenRouterProvider)(messages, session) = call_provider(provider, messages, session)
 
@@ -60,8 +61,7 @@ result(provider::OpenRouterProvider, request, parsed) = provider_failure("OpenRo
 result(provider::OpenRouterProvider, request, parsed::AbstractDict) = ProviderResult(choices_reply(request.protocol, get(parsed, "choices", [])), UsageReport(get(parsed, "usage", nothing)))
 respond(provider::OpenRouterProvider, messages, session, context::ExecutionContext) = legacy_provider_response(provider, messages, session, context)
 
-provider_id(::OpenRouterProvider) = :openrouter
-provider_name(::OpenRouterProvider) = "OpenRouter"
-provider_detail(provider::OpenRouterProvider) = "(openrouter) " * provider.model
+provider_identity(provider::OpenRouterProvider) = ProviderIdentity(;
+    id=:openrouter, name="OpenRouter", detail="(openrouter) " * provider.model)
 openrouter_status(dir) = !isnothing(load_credentials(dir, :openrouter)) || !isempty(get(ENV, "OPENROUTER_API_KEY", "")) ? "key configured" : "sign in or use Pi credentials"
 openrouter_provider_descriptor() = ProviderDescriptor(:openrouter, "OpenRouter", dir -> OpenRouterProvider(; dir); auth=sign_in!, status=openrouter_status)
