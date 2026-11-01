@@ -10,6 +10,7 @@ include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
 const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), String))
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
+CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -643,6 +644,26 @@ function launch_result(input)
 end
 
 
+function tool_arguments_result(input)
+    schema = CheckedJSONSchema(input["schema"])
+    called = Ref(0)
+    scope = ExtensionScope()
+    specification = ToolSpec(:checked_arguments, schema, arguments -> begin
+        called[] += 1
+        return "accepted"
+    end)
+    registration = register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    exposed = only(tools_snapshot(scope)).schema
+    actual = invoke_tool!(scope, :checked_arguments, input["value"])
+    violations = sort!(tool_argument_violations(schema, input["value"]))
+    close(scope)
+    expected_calls = isempty(violations) ? 1 : 0
+    called[] == expected_calls || error("Tool callback bypassed checked argument admission")
+    actual.ok == isempty(violations) || error("Tool result disagreed with checked argument admission")
+    return normalize(Dict("violations" => violations, "accepted" => actual.ok, "schema" => exposed))
+end
+
 function session_query_result(input)
     return mktempdir() do directory
         matches = if get(input, "source", "stored") == "live"
@@ -685,6 +706,7 @@ end
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
+            ("tool_arguments", tool_arguments_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),
