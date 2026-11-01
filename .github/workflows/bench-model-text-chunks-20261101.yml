@@ -54,14 +54,14 @@ jobs:
               using JSON
               using JuliaForever2: ModelSpec, ModelRequest, Message, Reply, UsageReport,
                   ExecutionContext, HarnessEvent, cancelled, emit!, parse_json, decode_reply,
-                  wire_content, SSEDecoder, HTTPTransport
+                  wire_content, SSEDecoder, SSEEvent, HTTPTransport
               import JuliaForever2: response_reply, response_usage
           end
           module CandidateModel
               using JSON
               using JuliaForever2: ModelSpec, ModelRequest, Message, Reply, UsageReport,
                   ExecutionContext, HarnessEvent, cancelled, emit!, parse_json, decode_reply,
-                  wire_content, SSEDecoder, HTTPTransport
+                  wire_content, SSEDecoder, SSEEvent, HTTPTransport
               import JuliaForever2: response_reply, response_usage
           end
           
