@@ -1176,7 +1176,7 @@ function session_markdown_result(input)
     return rendered
 end
 
-"""Exercise durable Julia title lifecycle while comparing text behavior to exact pinned DSH source."""
+"""Compare pinned title text semantics while exercising native Julia persistence and RPC."""
 function session_titles_result(input)
     max_bytes, max_words, fallback_bytes = input["maxBytes"], input["maxWords"], input["fallbackBytes"]
     normalized = JuliaForever2.normalize_session_title(input["text"]; max_bytes)
@@ -1186,19 +1186,36 @@ function session_titles_result(input)
         store = JuliaForever2.SessionStore(directory)
         titles = JuliaForever2.SessionTitleService(; store, max_bytes, max_words,
             fallback_max_bytes=fallback_bytes)
-        session = Session(Kernel())
+        api = SessionAPI(; store, titles)
+        opened = session_api_request!(api, "session/open", Dict("session" => "named"))
+        @test opened isa AbstractDict
+        session = api.sessions["named"]
         append_message!(session, Message(:user, input["text"]))
-        @test JuliaForever2.session_title(titles, session) ==
-            (isempty(fallback) ? nothing : fallback)
+        params = Dict("session" => "named")
+        expected_fallback = isempty(fallback) ? nothing : fallback
+        @test session_api_request!(api, "session/title/get", params) ==
+            Dict("title" => expected_fallback)
         if !isempty(renamed)
-            @test JuliaForever2.rename_session_title!(titles, session, input["rename"]) == renamed
+            @test session_api_request!(api, "session/title/rename",
+                Dict("session" => "named", "title" => input["rename"])) == Dict("title" => renamed)
+            forked = session_api_request!(api, "session/fork",
+                Dict("session" => "named", "newSession" => "copy", "atIndex" => 1))
+            @test forked isa AbstractDict
+            @test session_api_request!(api, "session/title/get", Dict("session" => "copy")) ==
+                Dict("title" => renamed)
+            @test session_api_request!(api, "session/save", params) == Dict("saved" => true)
+            @test session_api_request!(api, "session/close", params) == Dict("closed" => true)
+            @test session_api_request!(api, "session/resume", params) isa AbstractDict
             replayed = JuliaForever2.SessionTitleService(; store, max_bytes, max_words,
                 fallback_max_bytes=fallback_bytes)
-            @test JuliaForever2.session_title(replayed, session) == renamed
-            @test JuliaForever2.refresh_session_title!(replayed, session) ==
-                (isempty(fallback) ? nothing : fallback)
+            @test JuliaForever2.session_title(replayed, api.sessions["named"]) == renamed
+            @test session_api_request!(api, "session/title/refresh", params) ==
+                Dict("title" => expected_fallback)
+        else
+            @test session_api_request!(api, "session/title/rename",
+                Dict("session" => "named", "title" => input["rename"])) isa RpcError
         end
-        close(session)
+        close(api)
     end
     return normalize(Dict("normalized" => normalized, "fallback" => fallback, "renamed" => renamed))
 end
