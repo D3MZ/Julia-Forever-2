@@ -313,9 +313,10 @@ end
 end
 
 
+using UUIDs: UUID, uuid5
+using JSON
+
 @testset "Saved session descendants preserve ordering and cycle handling" begin
-    using UUIDs: UUID, uuid5
-    using JSON
     mktempdir() do directory
         store = JuliaForever2.SessionStore(directory)
         namespace = UUID("e52b186c-827a-496f-9899-3d9cae157522")
