@@ -846,3 +846,113 @@ end
         @test actual == reference_markdown_wrap(spans, width)
     end
 end
+
+
+@testset "Pi footer telemetry: provider usage and latest context" begin
+    report = JuliaForever2.normalize_usage(Dict(
+        "input" => 100, "output" => 20, "cacheRead" => 50, "cacheWrite" => 25,
+        "cost" => Dict("total" => 1.25)))
+    @test report.input_tokens == 100
+    @test report.output_tokens == 20
+    @test report.cache_read_tokens == 50
+    @test report.cache_write_tokens == 25
+    @test report.cost == 1.25
+
+    session = Session(Kernel())
+    JuliaForever2.record_usage!(session, report)
+    first = JuliaForever2.usage_snapshot(session)
+    @test first.input_tokens == 100
+    @test first.cache_read_tokens == 50
+    @test first.cache_write_tokens == 25
+    @test first.context_tokens == 175
+    @test first.cache_hit_rate ≈ 50 / 175 * 100
+    JuliaForever2.record_usage!(session, Dict(
+        "prompt_tokens" => 200, "completion_tokens" => 10,
+        "prompt_tokens_details" => Dict("cached_tokens" => 40),
+        "cost" => 0.25))
+    next = JuliaForever2.usage_snapshot(session)
+    @test next.input_tokens == 260
+    @test next.output_tokens == 30
+    @test next.cache_read_tokens == 90
+    @test next.cache_write_tokens == 25
+    @test next.cost ≈ 1.5
+    @test next.context_tokens == 200
+    @test next.cache_hit_rate ≈ 20.0
+    @test occursin("↑260 ↓30 R90 W25", JuliaForever2.usage_label(session))
+
+    clear_history!(session)
+    @test JuliaForever2.usage_snapshot(session).context_tokens === nothing
+    @test JuliaForever2.usage_snapshot(session).input_tokens == 260
+    close(session)
+end
+
+@testset "Pi footer telemetry: source-backed model, thinking, billing and limits" begin
+    custom = JuliaForever2.ModelProvider(
+        JuliaForever2.ModelSpec(:synthetic, "reference-model"; metadata=Dict(
+            "contextWindow" => 200_000, "reasoning" => true,
+            "thinkingLevel" => "high", "subscription" => true)),
+        (args...) -> nothing)
+    session = Session(default_kernel(custom))
+    JuliaForever2.record_usage!(session, Dict(
+        "input" => 100, "output" => 10, "cacheRead" => 50,
+        "cacheWrite" => 50, "cost" => Dict("total" => 0.125)))
+    snapshot = JuliaForever2.session_footer_snapshot(session)
+    @test snapshot.provider.model == "reference-model"
+    @test snapshot.provider.thinking == "high"
+    @test snapshot.provider.subscription
+    @test snapshot.provider.context_window == 200_000
+    left = JuliaForever2.footer_usage_label(snapshot.usage, snapshot.provider)
+    @test occursin("R50 W50 CH25.0%", left)
+    @test occursin("\$0.125 (sub)", left)
+    @test occursin("0.1%/200k", left)
+
+    @test JuliaForever2.provider_footer_status(JuliaForever2.CodexProvider("codex";
+        model="gpt-test", reasoning="medium")).thinking == "medium"
+    @test JuliaForever2.provider_footer_status(JuliaForever2.CodexProvider("codex")).subscription
+    @test !JuliaForever2.provider_footer_status(
+        JuliaForever2.OpenRouterProvider("fixture", "test-model")).subscription
+    @test JuliaForever2.provider_footer_status(
+        JuliaForever2.OpenRouterProvider("fixture", "test-model")).context_window === nothing
+    close(session)
+end
+
+@testset "Pi footer telemetry: real TUI right alignment and refresh" begin
+    metadata = Dict("contextWindow" => 200_000, "thinkingLevel" => "high",
+        "reasoning" => true)
+    provider = JuliaForever2.ModelProvider(
+        JuliaForever2.ModelSpec(:synthetic, "reference-model"; metadata),
+        (args...) -> nothing)
+    app = App(default_kernel(provider))
+    JuliaForever2.record_usage!(app.session, Dict(
+        "input" => 120, "output" => 18, "cost" => 0.125))
+    wide = Terminal.footer_line_parts(app, 100)
+    @test occursin("↑120 ↓18", wide.left)
+    @test occursin("\$0.125", wide.left)
+    @test occursin("0.1%/200k", wide.left)
+    @test wide.right == "(synthetic) reference-model • high"
+    @test textwidth(wide.left) + textwidth(wide.right) + 2 <= 100
+
+    backend = TestBackend(100, 24)
+    frame = Tachikoma.Frame(backend.buf, backend.buf.area,
+        Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+    Tachikoma.view(app, frame)
+    left = find_text(backend, "↑120 ↓18")
+    right = find_text(backend, "(synthetic) reference-model • high")
+    @test !isnothing(left) && !isnothing(right)
+    if !isnothing(left) && !isnothing(right)
+        @test left.y == 24 && right.y == 24
+        @test left.x < right.x
+        @test right.x + textwidth("(synthetic) reference-model • high") - 1 == 100
+    end
+
+    compact = Terminal.footer_line_parts(app, 40)
+    @test textwidth(compact.left) + textwidth(compact.right) <= 40
+    @test occursin("reference-model", compact.right)
+    install!(app.session.kernel, ComponentSpec(:provider,
+        JuliaForever2.CodexProvider("codex"; model="new-model", reasoning="max")))
+    replaced = Terminal.footer_line_parts(app, 100)
+    @test occursin("new-model • max", replaced.right)
+    @test !occursin("reference-model", replaced.right)
+    @test occursin("(sub)", replaced.left)
+    close(app.session)
+end
