@@ -13,14 +13,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Archive the exact source under review
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Resolve the existing project without executing live tests
+        run: julia --project -e 'using Pkg; Pkg.instantiate(; allow_autoprecomp=false)'
+      - name: Archive public runtime dependencies and exact project source
+        shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/refactor-audit"
           git archive --format=tar HEAD | gzip > "$RUNNER_TEMP/refactor-audit/source.tar.gz"
           git rev-parse HEAD > "$RUNNER_TEMP/refactor-audit/commit.txt"
           git ls-files '*.jl' | xargs wc -l > "$RUNNER_TEMP/refactor-audit/lines.txt"
+          cp Manifest.toml "$RUNNER_TEMP/refactor-audit/Manifest.toml"
+          JULIA_ROOT=$(julia --startup-file=no -e 'print(dirname(Sys.BINDIR))')
+          tar -czf "$RUNNER_TEMP/refactor-audit/julia.tar.gz" --exclude=share/doc -C "$JULIA_ROOT" .
+          tar -czf "$RUNNER_TEMP/refactor-audit/depot.tar.gz" -C "$HOME/.julia" packages artifacts registries
       - uses: actions/upload-artifact@v4
         with:
-          name: refactor-source
+          name: refactor-environment
           path: ${{ runner.temp }}/refactor-audit
-          retention-days: 7
+          retention-days: 2
+          compression-level: 0
