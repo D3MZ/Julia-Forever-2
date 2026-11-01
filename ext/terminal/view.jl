@@ -1,11 +1,31 @@
+"""Compute two non-overlapping footer fields before drawing either field."""
+function footer_line_parts(app::App, width::Integer)
+    snapshot = JuliaForever2.session_footer_snapshot(app.session)
+    left = JuliaForever2.footer_usage_label(snapshot.usage, snapshot.provider)
+    if app.status != "Ready"
+        left = isempty(left) ? app.status : left * " · " * app.status
+    end
+    full_right = JuliaForever2.footer_model_label(snapshot.provider)
+    compact_right = JuliaForever2.footer_model_label(snapshot.provider; include_provider=false)
+    gap = 2
+    parts = if textwidth(left) + gap + textwidth(full_right) <= width
+        (left=left, right=full_right)
+    elseif textwidth(left) + gap + textwidth(compact_right) <= width
+        (left=left, right=compact_right)
+    else
+        # A narrow terminal retains a useful model ID instead of clipping it behind the provider prefix.
+        right = Tachikoma.truncate_to_width(compact_right, max(0, min(textwidth(compact_right), cld(width, 2))))
+        room = max(0, width - textwidth(right) - (isempty(right) ? 0 : gap))
+        (left=Tachikoma.truncate_to_width(left, room), right=right)
+    end
+    return parts
+end
+
 function draw_footer!(buffer, x, y, width, app::App)
-    right = provider_selection_snapshot(app.session.kernel).detail
-    left = usage_label(app.session)
-    app.status == "Ready" || (left = isempty(left) ? app.status : left * " · " * app.status)
-    drawline!(buffer, x, y, width, left, :text_dim)
-    available = max(0, width - textwidth(left) - (isempty(left) ? 0 : 1))
-    clipped = Tachikoma.truncate_to_width(right, available)
-    drawline!(buffer, x + width - textwidth(clipped), y, textwidth(clipped), clipped, :text_dim)
+    parts = footer_line_parts(app, width)
+    isempty(parts.left) || drawline!(buffer, x, y, textwidth(parts.left), parts.left, :text_dim)
+    isempty(parts.right) || drawline!(buffer, x + width - textwidth(parts.right), y,
+        textwidth(parts.right), parts.right, :text_dim)
 end
 
 function pi_style(style::Symbol)

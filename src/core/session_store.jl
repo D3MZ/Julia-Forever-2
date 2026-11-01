@@ -90,11 +90,22 @@ function session_lineage(record::SessionRecord)
         (id=UUID(String(identity["id"])), parent_id=isnothing(ancestor) ? nothing : UUID(String(ancestor)), root_id=UUID(String(identity["root_id"])))
     end
 end
+function validated_session_lineage(record::SessionRecord)
+    # Preserve session_record's field validation without retaining Message objects.
+    for entry in record.data["messages"]
+        Symbol(entry["role"])
+        String(entry["content"])
+        Symbol(entry["kind"])
+    end
+    String(record.data["working_directory"])
+    return session_lineage(record)
+end
+
 """Read persisted ancestry without materializing the session's message history."""
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
     path = session_file(store, name)
     isnothing(path) || !isfile(path) ? nothing :
-        session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
+        validated_session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
 end
 
 """Return stored descendants of a session identity in deterministic session-name order."""
