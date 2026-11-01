@@ -100,7 +100,7 @@ function session_record(record::SessionRecord)
     messages = Message[Message(Symbol(entry["role"]), String(entry["content"]),
         Symbol(entry["kind"])) for entry in record.data["messages"]]
     compaction = restored_compaction(get(record.data, "compaction", nothing), messages)
-    (messages, compaction, directory=String(record.data["working_directory"]),
+    (; messages, compaction, directory=String(record.data["working_directory"]),
         lineage=session_lineage(record))
 end
 
