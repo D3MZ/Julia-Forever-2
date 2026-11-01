@@ -318,16 +318,20 @@ function native_workspace_comparison(reference, directory)
     invalid = JuliaForever2.set_working_directory!(session, "does-not-exist")
     retained = JuliaForever2.working_directory(session)
     resolved = JuliaForever2.workspace_path(session, "example.txt")
+    included = evaluate!(session, RunJulia("include(\"entry.jl\")"))
+    included.ok || error("Native Julia session could not include a workspace-relative file")
     close(session)
     actual = Dict("initial" => initial, "set" => selected.ok, "changed" => changed,
-        "missing" => invalid.ok, "retained" => retained, "resolved" => resolved)
+        "missing" => invalid.ok, "retained" => retained, "resolved" => resolved,
+        "include" => [included.value...])
     expected = Dict(
         "initial" => operations["working-directory-get"]["value"]["cwd"],
         "set" => operations["working-directory-set"]["ok"],
         "changed" => operations["working-directory-after-set"]["value"]["cwd"],
         "missing" => operations["missing-directory"]["ok"],
         "retained" => operations["directory-after-failure"]["value"]["cwd"],
-        "resolved" => joinpath(operations["directory-after-failure"]["value"]["cwd"], "example.txt"))
+        "resolved" => joinpath(operations["directory-after-failure"]["value"]["cwd"], "example.txt"),
+        "include" => [joinpath(operations["directory-after-failure"]["value"]["cwd"], "nested", "sibling.jl"), 71])
     return actual, expected
 end
 
@@ -434,6 +438,10 @@ end
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
         directory = mkpath(joinpath(temporary, "workspace with spaces"))
         mkpath(joinpath(directory, "child"))
+        mkpath(joinpath(directory, "child", "nested"))
+        write(joinpath(directory, "child", "entry.jl"), "include(\"nested/entry.jl\")\n")
+        write(joinpath(directory, "child", "nested", "entry.jl"), "include(\"sibling.jl\")\n")
+        write(joinpath(directory, "child", "nested", "sibling.jl"), "(@__FILE__, 71)\n")
         @testset "SDK process: $name" for name in ("sdk", "sdk-minimal")
             reference = reference_result("sdk", directory, joinpath(temporary, "reference-$name"); profile=name)
             profile = runtime_profile(name, directory, joinpath(temporary, "native-$name"))

@@ -41,7 +41,21 @@ mutable struct Session{C,R,D} <: AbstractSession
     definition::D
 end
 
+execute!(executor::JuliaExecutor, session::Session, code::AbstractString, ::ExecutionContext) =
+    execute_julia!(executor, code, joinpath(working_directory(session), "agent-code.jl"))
+
+execute!(executor::JuliaExecutor, session::Session, action::RunJulia, context::ExecutionContext) =
+    execute!(executor, session, action.source, context)
+
 initialize_executor!(executor, session) = executor
+
+"""Resolve a session include from the current included file, or from the session workspace."""
+function include_in_session(session::Session, target::Module, path::AbstractString)
+    source = Base.source_path()
+    directory = isnothing(source) || !isfile(source) ? working_directory(session) : String(dirname(source))
+    relative = String(path)
+    return Base.include(target, isabspath(relative) ? relative : joinpath(directory, relative))
+end
 
 function initialize_executor!(executor::JuliaExecutor, session::Session)
     scope, output = executor.scope, executor.output
@@ -49,7 +63,7 @@ function initialize_executor!(executor::JuliaExecutor, session::Session)
     Core.eval(scope, :(const kernel = $(QuoteNode(session.kernel))))
     Core.eval(scope, :(const session = $(QuoteNode(session))))
     Core.eval(scope, :(const output = $(QuoteNode(output))))
-    Core.eval(scope, :(include(path) = Base.include(@__MODULE__, path)))
+    Core.eval(scope, :(include(path) = JuliaForever2.include_in_session(session, @__MODULE__, path)))
     Core.eval(scope, :(print(args...) = Base.print(output, args...)))
     Core.eval(scope, :(print(io::IO, args...) = Base.print(io, args...)))
     Core.eval(scope, :(println(args...) = Base.println(output, args...)))
@@ -106,7 +120,7 @@ session_lineage(session::Session) = (id=session.runtime.id, parent_id=session.ru
     root_id=session.runtime.root_id)
 
 """Read the session's workspace independently of the process-wide working directory."""
-working_directory(session::Session) = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
+working_directory(session::Session)::String = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
 
 """Resolve a path against the session's workspace without changing process state."""
 function workspace_path(session::Session, path::AbstractString)
