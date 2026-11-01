@@ -155,7 +155,7 @@ function pi_command!(app::App, name::AbstractString, arguments)
     elseif name in ("model", "tree", "thinking", "scoped-models", "fork", "trust", "resume", "share")
         open_menu!(app, name)
     elseif name == "login"
-        providers_command!(app, arguments)
+        open_menu!(app, "login")
     elseif name == "logout"
         open_menu!(app, "logout")
     elseif name == "new"
@@ -189,7 +189,8 @@ function pi_command!(app::App, name::AbstractString, arguments)
         app.status = "Context compaction is not configured"
     elseif name == "reload"
         refresh_settings!(app)
-        app.status = "Provider settings refreshed"
+        discover_disk_resources!(app)
+        app.status = "Commands, skills and provider settings refreshed"
     elseif name == "quit"
         quit_command!(app, arguments)
     end

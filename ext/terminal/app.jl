@@ -27,6 +27,7 @@ function App(session::Session; settings_dir::AbstractString=config_dir(), regist
     register_event_handler!(app, :response_progress, response_progress_received!)
     register_event_handler!(app, :response_committed, response_committed!)
     refresh_settings!(app)
+    discover_disk_resources!(app)
     return app
 end
 

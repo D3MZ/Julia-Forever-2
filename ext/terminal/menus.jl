@@ -117,13 +117,23 @@ end
 
 """Apply a chosen setting through the same API used by keyboard and mouse navigation."""
 function activate_menu_path!(app::App, path::AbstractVector{<:AbstractString})
-    length(path) < 2 && return nothing
-    name = String(path[end - 1])
+    length(path) < 3 && return nothing
+    name = String(path[2])
     value = String(last(path))
     if name == "skill-commands" && value in ("true", "false")
         set_skill_commands!(app, value == "true")
+    elseif name == "theme"
+        if length(path) >= 4 && path[3] == "single" && value != "/"
+            app.menus.preferences["theme"] = value
+        elseif length(path) >= 5 && path[3] == "automatic"
+            app.menus.preferences[string("theme/", path[4])] = value
+        end
+    elseif name == "model-thinking"
+        app.menus.preferences[string("model-thinking/", path[end - 1])] = value
     end
-    app.menus.preferences[name] = value
+    if name != "theme"
+        app.menus.preferences[name] = value
+    end
     app.status = string(name, ": ", value)
     return nothing
 end
@@ -186,8 +196,16 @@ function discover_commands(app::App)
         (app, arguments) -> prompt_command!(app, item.name); origin=:prompt)
         for item in app.menus.prompts]
     extension = CommandSpec[cmd for cmd in app.commands if cmd.visible && cmd.origin != :builtin]
+    contributed = component(app.session.kernel, :slash_commands)
+    if contributed isa AbstractVector
+        for candidate in contributed
+            candidate isa CommandSpec && candidate.visible && push!(extension, candidate)
+        end
+    end
     names = Set(cmd.name for cmd in builtin)
     filter!(command -> !(command.name in names), extension)
+    seen = Set{String}()
+    filter!(command -> command.name in seen ? false : (push!(seen, command.name); true), extension)
     skills = app.menus.skill_commands_enabled ?
         CommandSpec[CommandSpec("skill:" * item.name, item.description,
             (app, arguments) -> skill_command!(app, item.name); origin=:skill)
@@ -216,8 +234,10 @@ function menu_page_items(app::App)
         return [menu_node(value, value) for value in
             ("off", "minimal", "low", "medium", "high", "xhigh", "max")]
     elseif root == "model" || root == "scoped-models"
-        return [menu_node(string(descriptor.id), descriptor.label)
-            for descriptor in app.settings.providers]
+        models = provider_models(app.settings.registry)
+        return [menu_node(string(model.provider, "/", model.id),
+            string(model.id, " [", model.provider, "]"))
+            for model in models]
     elseif root == "tree" || root == "fork"
         messages = history_snapshot(app.session).messages
         return [menu_node(string(index), string(index, " · ", message.role, " · ",
@@ -252,22 +272,36 @@ function menu_select!(app::App, selected::AbstractString)
         app.menus.cursor = 1
     elseif first(path) == "settings"
         activate_menu_path!(app, path)
-        if length(path) >= 3
-            app.menus.path = path[1:end-2]
-        end
+        app.menus.path = ["settings"]
         app.menus.cursor = 1
     elseif first(path) == "thinking"
         app.menus.preferences["thinking"] = String(selected)
         app.status = "Thinking: " * String(selected)
         app.page = :chat
-    elseif first(path) in ("model", "login")
+    elseif first(path) == "model"
+        parts = split(selected, "/"; limit=2)
+        if length(parts) == 2
+            result = select_provider_model!(app.session.kernel, Symbol(parts[1]), parts[2];
+                dir=app.settings.directory, registry=app.settings.registry)
+            app.status = result.ok ? "Model selected: " * selected : result.reason
+            result.ok && (app.page = :chat)
+        end
+    elseif first(path) == "scoped-models"
+        if selected in app.menus.scoped_models
+            delete!(app.menus.scoped_models, String(selected))
+        else
+            push!(app.menus.scoped_models, String(selected))
+        end
+        app.status = "Scoped models: " * string(length(app.menus.scoped_models))
+    elseif first(path) == "login"
         index = findfirst(provider -> String(provider.id) == selected, app.settings.providers)
         if !isnothing(index)
             app.selected = index
-            if first(path) == "model"
-                select_provider!(app)
+            descriptor = app.settings.providers[index]
+            if !isnothing(descriptor.auth)
+                start_sign_in!(app, descriptor.id; action=descriptor.auth)
             else
-                app.page = :settings
+                select_provider!(app)
             end
         end
     else
@@ -326,4 +360,48 @@ function page_mouse!(app::App, ::Val{:pi_menu}, event::MouseEvent)
         menu_select!(app, items[index]["id"])
     end
     return nothing
+end
+
+"""Read skill/prompt metadata from Pi-compatible project and user directories."""
+function resource_metadata(path::AbstractString, key::AbstractString, default::AbstractString="")
+    for line in eachline(path)
+        startswith(line, "---") && continue
+        if startswith(strip(line), key * ":")
+            return strip(split(line, ":"; limit=2)[2], [' ', '\t', '"', '\''])
+        end
+    end
+    return String(default)
+end
+
+function discover_disk_resources!(app::App; directory::AbstractString=working_directory(app.session),
+        agent_dir::AbstractString=joinpath(homedir(), ".pi", "agent"))
+    for skill_dir in (joinpath(agent_dir, "skills"), joinpath(directory, ".pi", "skills"))
+        isdir(skill_dir) || continue
+        for (root, child_dirs, filenames) in walkdir(skill_dir; follow_symlinks=false)
+            if "SKILL.md" in filenames
+                skill_file = joinpath(root, "SKILL.md")
+                name = resource_metadata(skill_file, "name", basename(root))
+                description = resource_metadata(skill_file, "description")
+                register_skill!(app, name, skill_file; description)
+                empty!(child_dirs)
+            elseif root == skill_dir
+                for file in filenames
+                    endswith(file, ".md") || continue
+                    path = joinpath(root, file)
+                    name = resource_metadata(path, "name", splitext(file)[1])
+                    register_skill!(app, name, path; description=resource_metadata(path, "description"))
+                end
+            end
+        end
+    end
+    for prompt_dir in (joinpath(agent_dir, "prompts"), joinpath(directory, ".pi", "prompts"))
+        isdir(prompt_dir) || continue
+        for filename in readdir(prompt_dir)
+            endswith(filename, ".md") || continue
+            path = joinpath(prompt_dir, filename)
+            isfile(path) || continue
+            register_prompt!(app, splitext(filename)[1], resource_metadata(path, "description"))
+        end
+    end
+    return app
 end

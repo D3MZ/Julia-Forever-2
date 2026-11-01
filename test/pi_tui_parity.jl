@@ -25,7 +25,8 @@ using JSON
                     (:menu_snapshot, :register_prompt!, :register_skill!, :menu_action, :complete_input!))
                 for images in (false, true)
                     expected = result["settings"][images ? "withImages" : "noImages"]
-                    actual = terminal.menu_snapshot(app; images)
+                    actual = terminal.menu_snapshot(app; images,
+                        models=[(provider="demo", id="alpha", reasoning=true)])
                     @test actual == expected
 
                     function check_actions(nodes, trail=String[])
@@ -46,6 +47,12 @@ using JSON
                 @test [command.name for command in terminal.discover_commands(app)] ==
                     result["scenarios"]["default"]["names"]
 
+                @test terminal.menu_action(app, ["settings", "skill-commands", "false"]) isa Function
+                terminal.menu_action(app, ["settings", "skill-commands", "false"])()
+                @test !app.menus.skill_commands_enabled
+                terminal.menu_action(app, ["settings", "skill-commands", "true"])()
+                @test app.menus.skill_commands_enabled
+
                 terminal.register_prompt!(app, "prompt-example", "Example prompt")
                 terminal.register_command!(app, terminal.CommandSpec("ext-example",
                     "Extension command", (app, args) -> (app.status = String(args))))
@@ -53,14 +60,23 @@ using JSON
                 @test [command.name for command in terminal.discover_commands(app)] ==
                     result["scenarios"]["installed"]["names"]
                 @test "skill:example" in [command.name for command in terminal.discover_commands(app)]
+                contributed = terminal.CommandSpec("plugin-example", "Plugin command",
+                    (app, arguments) -> (app.status = String(arguments)))
+                JuliaForever2.install!(app.session.kernel,
+                    JuliaForever2.ComponentSpec(:slash_commands, [contributed]))
+                @test "plugin-example" in [command.name for command in terminal.discover_commands(app)]
+                JuliaForever2.remove!(app.session.kernel, :slash_commands)
+                @test !("plugin-example" in [command.name for command in terminal.discover_commands(app)])
                 terminal.set_skill_commands!(app, false)
                 @test [command.name for command in terminal.discover_commands(app)] ==
                     result["scenarios"]["disabledSkills"]["names"]
                 terminal.set_skill_commands!(app, true)
 
                 Tachikoma.set_text!(app.input, "/set")
-                terminal.complete_input!(app)
+                Tachikoma.update!(app, Tachikoma.KeyEvent(:tab))
                 @test Tachikoma.text(app.input) == result["scenarios"]["default"]["completed"]
+                terminal.command!(app, "new")
+                @test occursin("New session started", app.status)
             end
         end
     end
