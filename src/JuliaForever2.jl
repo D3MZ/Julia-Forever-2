@@ -37,7 +37,7 @@ public RpcError, RpcResult, JsonRpcPeer, request!, notify!, feed!, start!, drain
 public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!, start_runtime, finish_runtime!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
 public runtime_transport_plugin, process_launcher_plugin
-public SessionStore, save_session!, load_session, session_store_plugin, session_lineage, session_descendants
+public SessionStore, save_session!, load_session, session_store_plugin, session_lineage, session_descendants, fork_session
 public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, search_history, session_names
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer
 public start_web_server, web_server_plugin, web_url, web_launch_url
