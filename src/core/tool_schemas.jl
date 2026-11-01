@@ -144,6 +144,22 @@ function checked_json_violations(node::AbstractDict, value, path::String)
     return checked_json_violations(Val(Symbol(kind)), node, value, path)
 end
 
+"""Check only JSON object entries not already checked by declared property schemas."""
+function json_unchecked_properties_lossless(value, properties)
+    for (key, item) in pairs(value)
+        name = if key isa AbstractString
+            key
+        elseif value isa NamedTuple && key isa Symbol
+            String(key)
+        else
+            return false
+        end
+        ismissing(item) && return false
+        haskey(properties, name) || json_lossless(item) || return false
+    end
+    return true
+end
+
 function checked_json_violations(::Val{:object}, node, value, path)
     json_object(value) || return [string(quoted_json_path(path), " must be an object")]
     properties = get(node, "properties", Dict{String,Any}())
@@ -167,7 +183,9 @@ function checked_json_violations(::Val{:object}, node, value, path)
             push!(violations, "\"$location\" is not a declared property (additionalProperties: false)")
         end
     end
-    isempty(violations) && !json_lossless(value) &&
+    # Declared properties were already checked recursively. Validate only the
+    # unexamined values, avoiding a second traversal of large nested schemas.
+    isempty(violations) && !json_unchecked_properties_lossless(value, properties) &&
         push!(violations, string(quoted_json_path(path), " must be a lossless JSON object"))
     return violations
 end
@@ -180,7 +198,8 @@ function checked_json_violations(::Val{:array}, node, value, path)
             append!(violations, checked_json_violations(node["items"], item, "$path[$(index - 1)]"))
         end
     end
-    isempty(violations) && !json_lossless(value) &&
+    # A present items schema already validates every element for losslessness.
+    isempty(violations) && !haskey(node, "items") && !json_lossless(value) &&
         push!(violations, string(quoted_json_path(path), " must be a dense lossless JSON array"))
     return violations
 end
