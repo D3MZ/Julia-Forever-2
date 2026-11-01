@@ -120,3 +120,87 @@ function delete_model_catalog!(store::MemoryModelStore, provider::Symbol)
     end
     return nothing
 end
+
+
+"""Accept only positive, representable model limits; unknown metadata is not guessed."""
+model_limit(value) = nothing
+model_limit(value::Bool) = nothing
+model_limit(value::Integer) = 0 < value <= typemax(Int) ? Int(value) : nothing
+model_limit(metadata::AbstractDict, key::String) = model_limit(get(metadata, key, nothing))
+model_limit(metadata, key::String) = nothing
+model_context_window(model::ModelSpec) = model_limit(model.metadata, "contextWindow")
+model_output_limit(model::ModelSpec) = model_limit(model.metadata, "maxTokens")
+model_context_window(provider::ModelProvider) = model_context_window(provider.model)
+model_output_limit(provider::ModelProvider) = model_output_limit(provider.model)
+
+"""Resolve the selected model's last-known metadata without doing network work."""
+selected_model(provider) = hasproperty(provider, :model) &&
+    getproperty(provider, :model) isa ModelSpec ? getproperty(provider, :model) : nothing
+selected_model(provider::ModelProvider) = provider.model
+selected_model(provider::OpenRouterProvider) = provider_model(:openrouter, provider.model)
+selected_model(provider::CodexProvider) = provider_model(:codex, provider.model)
+selected_model(provider::OpenAIProvider) = isempty(provider.model) ?
+    nothing : provider_model(:chatgpt, provider.model)
+
+model_context_window(provider) = model_context_window(selected_model(provider))
+model_context_window(::Nothing) = nothing
+model_output_limit(provider) = model_output_limit(selected_model(provider))
+model_output_limit(::Nothing) = nothing
+
+"""Refresh only the named provider's catalog; failed validations leave it untouched."""
+function refresh_pi_model_catalog!(registry::ProviderRegistry, provider::Symbol; fetcher=fetch_pi_catalog)
+    descriptor = provider_descriptor(registry, provider)
+    isnothing(descriptor) && return (ok=false, reason="Unknown provider", count=0)
+    url = "https://pi.dev/api/models/providers/" * String(provider)
+    catalog = pi_model_catalog(Base.invokelatest(fetcher, url), provider)
+    isnothing(catalog) && return (ok=false, reason="Invalid model catalog", count=0)
+    factory = descriptor.create
+    factory isa ProviderFactory || return (ok=false, reason="Provider has no model factory", count=0)
+    replacement = ProviderFactory(factory.create; models=() -> copy(catalog), select=factory.select)
+    register_provider!(registry, ProviderDescriptor(descriptor, replacement))
+    return (ok=true, reason="", count=length(catalog))
+end
+refresh_pi_model_catalog!(provider::Symbol; kwargs...) =
+    refresh_pi_model_catalog!(DEFAULT_PROVIDER_REGISTRY, provider; kwargs...)
+
+function fetch_pi_catalog(url::AbstractString)
+    output = IOBuffer()
+    response = Downloads.request(url; output, timeout=15)
+    response.status == 200 ? String(take!(output)) : ""
+end
+
+pi_catalog_rows(data::AbstractVector) = data
+pi_catalog_rows(data::AbstractDict) = pi_catalog_rows(get(data, "models", data))
+pi_catalog_rows(data) = nothing
+pi_catalog_rows(data::AbstractDict{<:AbstractString}) = [
+    merge(Dict{String,Any}("id" => String(id)), entry) for (id, entry) in data
+    if entry isa AbstractDict
+]
+pi_catalog_entry(provider, entry) = nothing
+function pi_catalog_entry(provider::Symbol, entry::AbstractDict)
+    id = get(entry, "id", nothing)
+    id isa AbstractString && !isempty(id) || return nothing
+    for name in ("contextWindow", "maxTokens")
+        haskey(entry, name) && isnothing(model_limit(entry, name)) && return nothing
+    end
+    api = get(entry, "api", "")
+    api isa AbstractString || return nothing
+    model_type = get(entry, "type", "chat")
+    model_type isa AbstractString || return nothing
+    return ModelSpec(provider, String(id); api, kind=Symbol(model_type),
+        metadata=deepcopy(entry))
+end
+
+function pi_model_catalog(text::AbstractString, provider::Symbol)
+    data = parse_json(text)
+    rows = pi_catalog_rows(data)
+    isnothing(rows) && return nothing
+    models = ModelSpec[]
+    for row in rows
+        selected = pi_catalog_entry(provider, row)
+        isnothing(selected) && return nothing
+        push!(models, selected)
+    end
+    isempty(models) ? nothing : models
+end
+pi_model_catalog(data, provider::Symbol) = nothing
