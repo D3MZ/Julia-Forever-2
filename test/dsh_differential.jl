@@ -6,7 +6,9 @@ using Base64
 using JuliaForever2
 
 const DIFFERENTIAL_DIRECTORY = joinpath(@__DIR__, "differential")
+include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
 const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), String))
+CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -548,15 +550,25 @@ function tool_result(input)
     return normalize(results)
 end
 
-final_response_result(input) = JuliaForever2.dsh_final_response(input["events"])
+function profile_group_result(input)
+    original = deepcopy(input["profiles"])
+    layers = [JuliaForever2.Profile(:layer, Symbol.(layer["plugins"]);
+        config=get(layer, "config", Dict())) for layer in input["profiles"]]
+    profile = JuliaForever2.compose_profiles(:composed, layers...)
+    return normalize(Dict("plugins" => String.(profile.plugins),
+        "config" => Dict(String(plugin) => value for (plugin, value) in profile.config),
+        "originalProfiles" => original))
+end
+
+final_response_result(input) = dsh_final_response(input["events"])
 
 function launch_result(input)
     options = input["options"]
     environment = get(options, "env", Dict{String,Any}())
-    profile = JuliaForever2.DSHProfile(get(options, "profile", "sdk");
+    profile = DSHProfile(get(options, "profile", "sdk");
         command=Cmd(["<node>", abspath(options["dshBin"])]), patches=get(options, "patches", String[]),
         directory=get(options, "processCwd", pwd()), environment, home=get(options, "dshHome", nothing))
-    command = JuliaForever2.dsh_command(profile)
+    command = dsh_command(profile)
     selected = Dict{String,String}()
     for (name, value) in environment
         selected[name] = value
@@ -574,12 +586,12 @@ function launch_result(input)
 end
 
 @testset "Pinned DSH differential behavior" begin
-    candidates = (("patches", patch_result), ("layers", layer_result),
+    candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),
             ("callback_close", callback_close_result))
-    required = COVERAGE["native_comparisons"]
+    required = vcat(COVERAGE["native_comparisons"], COVERAGE["reference_only_comparisons"])
     @test Set(keys(CASES)) == Set(first.(candidates)) == Set(area["kind"] for area in required) && length(required) == length(candidates)
     for (kind, candidate) in candidates
         cases = CASES[kind]

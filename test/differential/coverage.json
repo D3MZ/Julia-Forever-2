@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "The required cases establish only the named observable projections. DSH as a complete feature set is not proven to be a subset of JuliaForever2.",
+  "assessment": "Native plugin profile activation and independently implemented seams have bounded differential evidence. Production no longer launches or wraps the DSH SDK/runtime/Web; test-only DSH client scenarios and DSH-specific utility launch comparisons do not establish native SDK or Web parity. Full feature superset remains unproven.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -222,53 +222,6 @@
       ]
     },
     {
-      "kind": "final_response",
-      "case_count": 10,
-      "status": "required-differential-cases",
-      "sources": [
-        {
-          "path": "packages/sdk/client/src/api.ts",
-          "symbols": [
-            "finalResponse"
-          ]
-        }
-      ],
-      "compares": [
-        "last assistant selection",
-        "text block concatenation",
-        "nontext exclusion",
-        "empty and Unicode responses"
-      ],
-      "limits": [
-        "Valid consumed event shapes; upstream envelope validation, malformed block fields and all event semantics are outside this comparison."
-      ]
-    },
-    {
-      "kind": "launch",
-      "case_count": 12,
-      "status": "required-differential-cases",
-      "sources": [
-        {
-          "path": "packages/sdk/client/src/launch.ts",
-          "symbols": [
-            "resolveDshLaunch"
-          ]
-        }
-      ],
-      "compares": [
-        "explicit executable argv",
-        "profile names",
-        "ordered patches",
-        "lexical cwd and path resolution",
-        "selected environment and home overrides"
-      ],
-      "limits": [
-        "Explicit executable mode only; installed-package discovery, source-loader discovery and SDK timeout defaults are unverified.",
-        "Only caller-selected environment variables are compared. SDK options.env replaces its environment; native DSHProfile.environment adds overrides to the inherited environment.",
-        "The executable name is normalized to a fixed node token. Profile launch is not proof of every feature within the selected profile."
-      ]
-    },
-    {
       "kind": "tools",
       "case_count": 17,
       "status": "required-differential-cases",
@@ -383,13 +336,42 @@
         "The child producer and reference client both execute the actual pinned transport. Fixture application handlers emit a requested notification or answer a follow-up request. This isolates transport lifetime and reentrancy; it is not a DSH model or SDK application scenario.",
         "Bounded completion detects this specific notification-reader cycle, not all callback and shutdown interleavings."
       ]
+    },
+    {
+      "kind": "profile_groups",
+      "case_count": 5,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/boot/app-boot/src/profile.ts",
+          "symbols": [
+            "composeEntries"
+          ]
+        },
+        {
+          "path": "vendor/include/src/index.ts",
+          "symbols": [
+            "applyEntryPatches"
+          ]
+        }
+      ],
+      "compares": [
+        "stable ordered plugin-group composition",
+        "last-group configuration precedence",
+        "reused plugin identity",
+        "Unicode plugin names",
+        "input data preservation"
+      ],
+      "limits": [
+        "Only the common observable projection of plugin identity, order, and whole plugin configuration replacement is compared; DSH bundle discovery, patch grammar, hot reload, service bindings, and native plugin lifecycle require separate evidence."
+      ]
     }
   ],
   "unverified_source_families": [
     {
       "family": "acp",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -402,7 +384,7 @@
     {
       "family": "api",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -451,7 +433,7 @@
     {
       "family": "attachment",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -468,7 +450,7 @@
     {
       "family": "boot",
       "status": "unverified-remainder",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [
         "layers"
       ],
@@ -503,7 +485,7 @@
     {
       "family": "browser-use",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -516,7 +498,7 @@
     {
       "family": "bundle",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -549,7 +531,7 @@
     {
       "family": "client",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -834,7 +816,7 @@
     {
       "family": "compaction",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -863,7 +845,7 @@
     {
       "family": "computer-use",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -876,7 +858,7 @@
     {
       "family": "context",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -913,7 +895,7 @@
     {
       "family": "core",
       "status": "unverified-remainder",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [
         "tools",
         "events"
@@ -965,7 +947,7 @@
     {
       "family": "credentials",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -994,7 +976,7 @@
     {
       "family": "deliverables",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1015,7 +997,7 @@
     {
       "family": "document",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1028,7 +1010,7 @@
     {
       "family": "experimental",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1297,7 +1279,7 @@
     {
       "family": "extensions",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1322,7 +1304,7 @@
     {
       "family": "feedback",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1339,7 +1321,7 @@
     {
       "family": "fs",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1380,7 +1362,7 @@
     {
       "family": "goal",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1405,7 +1387,7 @@
     {
       "family": "guard",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1422,7 +1404,7 @@
     {
       "family": "host",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1467,7 +1449,7 @@
     {
       "family": "identity",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1480,7 +1462,7 @@
     {
       "family": "interaction",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1509,7 +1491,7 @@
     {
       "family": "jobs",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1530,7 +1512,7 @@
     {
       "family": "llm",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1575,7 +1557,7 @@
     {
       "family": "lsp",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1596,7 +1578,7 @@
     {
       "family": "mcp",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1613,7 +1595,7 @@
     {
       "family": "plan",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1626,7 +1608,7 @@
     {
       "family": "preset",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1647,7 +1629,7 @@
     {
       "family": "ptc-runtime",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1664,7 +1646,7 @@
     {
       "family": "sandbox",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1689,7 +1671,7 @@
     {
       "family": "schedule",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1706,7 +1688,7 @@
     {
       "family": "sdk",
       "status": "unverified-remainder",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [
         "transport",
         "outgoing",
@@ -1733,7 +1715,7 @@
     {
       "family": "session",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1830,7 +1812,7 @@
     {
       "family": "session-query",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1851,7 +1833,7 @@
     {
       "family": "settings",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1864,7 +1846,7 @@
     {
       "family": "shell",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1913,7 +1895,7 @@
     {
       "family": "skill",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1942,7 +1924,7 @@
     {
       "family": "spill",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1963,7 +1945,7 @@
     {
       "family": "ssh",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -1992,7 +1974,7 @@
     {
       "family": "storage",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2017,7 +1999,7 @@
     {
       "family": "subagent",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2062,7 +2044,7 @@
     {
       "family": "subprocess",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2083,7 +2065,7 @@
     {
       "family": "telemetry",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2096,7 +2078,7 @@
     {
       "family": "terminal",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2154,7 +2136,7 @@
     {
       "family": "todo",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2167,7 +2149,7 @@
     {
       "family": "typert",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2192,7 +2174,7 @@
     {
       "family": "util",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2285,7 +2267,7 @@
     {
       "family": "web",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2322,7 +2304,7 @@
     {
       "family": "workflow",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2343,7 +2325,7 @@
     {
       "family": "workspace",
       "status": "unverified",
-      "compatibility_route": "delegated-candidate",
+      "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [],
       "packages": [
         {
@@ -2357,14 +2339,14 @@
   "runtime_evidence": {
     "runner": "../dsh_runtime_differential.jl",
     "reference_commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
-    "scope": "Direct processes built from the pinned DSH checkout are compared with Julia SDK helpers and native frontend plugins launching the same checkout. These forwarding comparisons do not imply native reimplementation or verification of every enabled plugin.",
+    "scope": "Test-only DSH protocol clients exercise the native framework-neutral JSON-RPC transport and process lifecycle against a pinned upstream CLI. DSH SDK and Web behavior is delegated inside tests only; it does not establish native SDK, Web, or application feature parity.",
     "required_comparisons": 10,
     "guards": [
       "The CLI must be built at apps/cli/lib/bin.js in an unmodified tracked source checkout at the pinned revision; the same-version published npm package is not accepted.",
       "Both SDK profiles must initialize, reject an uninitialized prompt, and validate session/query input. Unknown-method failures do not count as query support.",
       "All five shipped profiles must appear in the configuration comparison.",
       "The Web process must become ready, exchange its own launch token for a browser cookie, serve authenticated HTML with status 200, and serve a nonempty built static asset. Matching startup failures cannot pass.",
-      "Successful-turn scenarios use the pinned upstream llm-mock-server on IPv4 loopback with four scripted success requests. The original SDK must produce the exact fixture response and its resumed model request must contain the original user prompt, assistant response, and continuation prompt."
+      "Successful-turn scenarios use the pinned upstream llm-mock-server on IPv4 loopback with four scripted success requests. The pinned SDK must produce the exact fixture response and its resumed model request must contain the original user prompt, assistant response, and continuation prompt."
     ],
     "scenarios": [
       {
@@ -2384,7 +2366,7 @@
           "acp"
         ],
         "comparisons": 5,
-        "projection": "Complete --dump-config stdout, stderr, and exit status through the native process-launcher/frontend plugin composition."
+        "projection": "Complete --dump-config stdout, stderr, and exit status through the test-only DSH frontend adapter with native process launcher."
       },
       {
         "profiles": [
@@ -2410,7 +2392,8 @@
     ],
     "unverified": [
       "External model responses, generated tool execution, approval and question interaction flows, other persistence histories and recovery/migration cases, jobs, goals, schedules, MCP and third-party package replacement behavior are not exercised by these runtime scenarios.",
-      "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons."
+      "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons.",
+      "No native DSH SDK/application/Web implementation is supplied by the test-only DSH protocol adapters. Their successful forwarding and server startup are reference-only and do not establish product parity."
     ],
     "included_in_native_case_counts": false
   },
@@ -2418,7 +2401,59 @@
     "required-differential-cases": "The suite requires these comparisons on every run; current pass or fail is determined by execution, not by this metadata.",
     "unverified": "No behavioral parity for the complete family has been established.",
     "unverified-remainder": "The explicitly listed projections have differential cases; all other behavior in the family remains unverified.",
-    "delegated-candidate": "An optional DSH composition may expose the family. Presence in the source tree or a profile does not establish operational parity.",
-    "reference-support": "Upstream test helpers or support code, not an automatically verified user capability."
-  }
+    "reference-support": "Upstream test helpers or support code, not an automatically verified user capability.",
+    "native-implementation-unverified": "The family needs independent Julia implementation and relevant differential evidence; some native subset may exist, but a DSH runtime proxy cannot count as parity.",
+    "reference-support-only": "Test-only utilities compared to DSH source to keep the oracle and transport fixtures stable; not a JuliaForever2 product capability."
+  },
+  "reference_only_comparisons": [
+    {
+      "kind": "final_response",
+      "case_count": 10,
+      "status": "reference-support-only",
+      "sources": [
+        {
+          "path": "packages/sdk/client/src/api.ts",
+          "symbols": [
+            "finalResponse"
+          ]
+        }
+      ],
+      "compares": [
+        "last assistant selection",
+        "text block concatenation",
+        "nontext exclusion",
+        "empty and Unicode responses"
+      ],
+      "limits": [
+        "Valid consumed event shapes; upstream envelope validation, malformed block fields and all event semantics are outside this comparison.",
+        "The compared DSH-specific helper now exists in differential test support only, not the JuliaForever2 production API; these comparisons provide no native feature-parity evidence."
+      ]
+    },
+    {
+      "kind": "launch",
+      "case_count": 12,
+      "status": "reference-support-only",
+      "sources": [
+        {
+          "path": "packages/sdk/client/src/launch.ts",
+          "symbols": [
+            "resolveDshLaunch"
+          ]
+        }
+      ],
+      "compares": [
+        "explicit executable argv",
+        "profile names",
+        "ordered patches",
+        "lexical cwd and path resolution",
+        "selected environment and home overrides"
+      ],
+      "limits": [
+        "Explicit executable mode only; installed-package discovery, source-loader discovery and SDK timeout defaults are unverified.",
+        "Only caller-selected environment variables are compared. SDK options.env replaces its environment; native DSHProfile.environment adds overrides to the inherited environment.",
+        "The executable name is normalized to a fixed node token. Profile launch is not proof of every feature within the selected profile.",
+        "The compared DSH-specific helper now exists in differential test support only, not the JuliaForever2 production API; these comparisons provide no native feature-parity evidence."
+      ]
+    }
+  ]
 }

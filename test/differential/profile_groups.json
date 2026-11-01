@@ -1,0 +1,120 @@
+[
+  {
+    "name": "empty profile groups",
+    "profiles": []
+  },
+  {
+    "name": "independent plugin groups",
+    "profiles": [
+      {
+        "plugins": [
+          "model",
+          "tools"
+        ],
+        "config": {
+          "model": {
+            "provider": "local"
+          },
+          "tools": {
+            "limit": 2
+          }
+        }
+      },
+      {
+        "plugins": [
+          "web"
+        ],
+        "config": {
+          "web": {
+            "theme": "dark"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "later configuration replaces earlier configuration",
+    "profiles": [
+      {
+        "plugins": [
+          "model",
+          "tools"
+        ],
+        "config": {
+          "model": {
+            "model": "base",
+            "obsolete": true
+          },
+          "tools": {
+            "enabled": true
+          }
+        }
+      },
+      {
+        "plugins": [
+          "tools",
+          "storage"
+        ],
+        "config": {
+          "tools": {
+            "enabled": false
+          },
+          "storage": {
+            "backend": "memory"
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "repeated plugin without new configuration",
+    "profiles": [
+      {
+        "plugins": [
+          "alpha"
+        ],
+        "config": {
+          "alpha": {
+            "version": 1
+          }
+        }
+      },
+      {
+        "plugins": [
+          "alpha",
+          "beta"
+        ]
+      },
+      {
+        "plugins": [
+          "beta"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "unicode plugin identity and empty configuration",
+    "profiles": [
+      {
+        "plugins": [
+          "日本語",
+          "alpha"
+        ],
+        "config": {
+          "日本語": {
+            "language": "ja"
+          }
+        }
+      },
+      {
+        "plugins": [
+          "alpha",
+          "日本語"
+        ],
+        "config": {
+          "日本語": {}
+        }
+      }
+    ]
+  }
+]

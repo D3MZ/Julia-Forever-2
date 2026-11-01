@@ -84,3 +84,11 @@ function Base.close(feature::ProcessFeature)
     end
     return nothing
 end
+
+"""Publish a replaceable JSON-RPC transport service for caller-selected processes."""
+runtime_transport_plugin(name=:jsonrpc_transport; service_name=:runtime_transport, factory=start_runtime) =
+    PluginSpec(name, context -> provide!(context, service_name, factory); provides=[service_name])
+
+"""Publish generic process lifetime management independently of any application protocol."""
+process_launcher_plugin(name=:process_launcher; service_name=:process_launcher, launcher=launch_feature) =
+    PluginSpec(name, context -> provide!(context, service_name, launcher); provides=[service_name])

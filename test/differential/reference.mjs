@@ -8,7 +8,7 @@ const directory = dirname(fileURLToPath(import.meta.url))
 export const referenceLock = JSON.parse(readFileSync(resolve(directory, 'reference-lock.json'), 'utf8'))
 const coverage = JSON.parse(readFileSync(resolve(directory, 'coverage.json'), 'utf8'))
 if (coverage.reference.commit !== referenceLock.commit) throw new Error('Coverage metadata and oracle source lock disagree')
-for (const comparison of coverage.native_comparisons) {
+for (const comparison of [...coverage.native_comparisons, ...coverage.reference_only_comparisons]) {
   for (const source of comparison.sources) {
     if (!Object.hasOwn(referenceLock.sources, source.path)) throw new Error(`Coverage source is not locked: ${source.path}`)
   }
