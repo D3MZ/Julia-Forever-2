@@ -89,12 +89,12 @@ jobs:
           end
           
           const fixtures = [
-              make_fixture("integration/deep-1024" |> x -> replace(x, "/" => "_"), 1024, :chain),
-              make_fixture("integration/deep-256" |> x -> replace(x, "/" => "_"), 256, :chain),
-              make_fixture("integration/star-512" |> x -> replace(x, "/" => "_"), 512, :star),
-              make_fixture("integration/tree-768" |> x -> replace(x, "/" => "_"), 768, :tree),
-              make_fixture("integration/disconnected-512" |> x -> replace(x, "/" => "_"), 512, :disconnected),
-              make_fixture("integration/cycle-256" |> x -> replace(x, "/" => "_"), 256, :cycle),
+              make_fixture("deep-1024", 1024, :chain),
+              make_fixture("deep-256", 256, :chain),
+              make_fixture("star-512", 512, :star),
+              make_fixture("tree-768", 768, :tree),
+              make_fixture("disconnected-512", 512, :disconnected),
+              make_fixture("cycle-256", 256, :cycle),
           ]
           
           function run_workload(package, fixture)
@@ -165,7 +165,7 @@ jobs:
           end
           
           const metadata = (; baseline_sha=readchomp(Cmd(["git", "-C", baseline_directory, "rev-parse", "HEAD"])),
-              candidate_sha=readchomp("git rev-parse HEAD" |> Cmd),
+              candidate_sha=readchomp(Cmd(["git", "rev-parse", "HEAD"])),
               julia_version=string(VERSION), threads=Threads.nthreads(),
               cpu=Sys.CPU_NAME, logical_cpus=Sys.CPU_THREADS, os=string(Sys.KERNEL),
               architecture=string(Sys.ARCH), json_version=string(Base.pkgversion(JSON)),
@@ -212,8 +212,8 @@ jobs:
                   candidate_median_bytes=median(getproperty.(new_samples, :allocated_bytes)))
               results[fixture.label] = result
               write(joinpath(evidence, "paired-raw.json"), JSON.json((; metadata, results)))
-              println(fixture.label, ": median gain=", round(100result.median_improvement; digits=2),
-                  "% 95%lower=", round(100result.lower95; digits=2),
+              println(fixture.label, ": median gain=", round(100 * result.median_improvement; digits=2),
+                  "% 95%lower=", round(100 * result.lower95; digits=2),
                   "% allocations=", result.baseline_median_allocations,
                   " -> ", result.candidate_median_allocations)
               flush(stdout)
@@ -248,6 +248,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: session-lineage-paired-evidence
-          path: $RUNNER_TEMP/lineage-evidence/
+          path: ${{ runner.temp }}/lineage-evidence/
           if-no-files-found: warn
           retention-days: 30
