@@ -368,3 +368,20 @@ end
     @test scope.users == 0
     close(scope)
 end
+
+
+@testset "Deferred event cleanup honors held scope resources" begin
+    scope = JuliaForever2.ExtensionScope()
+    cleaned = Symbol[]
+    JuliaForever2.own_resource!(scope, :owned; cleanup=value -> push!(cleaned, value))
+    JuliaForever2.on!(_ -> nothing, scope, :held)
+    invocation = only(JuliaForever2.event_invocations(scope, :held))
+    @test scope.users == 1
+
+    close(scope)
+    @test !isopen(scope)
+    @test isempty(cleaned)
+    JuliaForever2.release!(invocation)
+    @test scope.users == 0
+    @test cleaned == [:owned]
+end

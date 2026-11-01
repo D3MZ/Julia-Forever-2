@@ -268,8 +268,13 @@ function release!(invocation::EventInvocation)
     end
     isempty(resources) && isnothing(invocation.retention) && return nothing
     failures = Task[]
-    for cleanup in (() -> dispose_extension_resources!(resources), () -> isnothing(invocation.retention) || release!(invocation.retention))
-        worker = spawn_cleanup(cleanup)
+    if !isempty(resources)
+        worker = spawn_cleanup(() -> dispose_extension_resources!(resources))
+        wait(worker; throw=false)
+        istaskfailed(worker) && push!(failures, worker)
+    end
+    if !isnothing(invocation.retention)
+        worker = spawn_cleanup(() -> release!(invocation.retention))
         wait(worker; throw=false)
         istaskfailed(worker) && push!(failures, worker)
     end
