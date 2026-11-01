@@ -436,24 +436,24 @@ end
     @test isempty(JuliaForever2.tool_argument_violations(checked, arguments))
     rows[2]["id"] = "not an integer"
     @test JuliaForever2.tool_argument_violations(checked, arguments) ==
-        ["\\\"arguments.rows[1].id\\\" must be an integer"]
+        ["\"arguments.rows[1].id\" must be an integer"]
     rows[2]["id"] = 2
     rows[2]["extra"] = Dict("lossless" => true, "invalid" => NaN)
     @test JuliaForever2.tool_argument_violations(checked, arguments) ==
-        ["\\\"arguments.rows[1]\\\" must be a lossless JSON object"]
+        ["\"arguments.rows[1]\" must be a lossless JSON object"]
     delete!(rows[2], "extra")
     rows[2]["name"] = missing
     @test JuliaForever2.tool_argument_violations(checked, arguments) ==
-        ["\\\"arguments.rows[1]\\\" must be a lossless JSON object"]
+        ["\"arguments.rows[1]\" must be a lossless JSON object"]
     rows[2]["name"] = "row-2"
     @test isempty(JuliaForever2.tool_argument_violations(checked, arguments))
 
     untyped = JuliaForever2.CheckedJSONSchema(Dict("type" => "array"))
     @test JuliaForever2.tool_argument_violations(untyped, Any[NaN]) ==
-        ["\\\"arguments\\\" must be a dense lossless JSON array"]
+        ["\"arguments\" must be a dense lossless JSON array"]
     @test JuliaForever2.tool_argument_violations(checked,
         Dict{Any,Any}("rows" => rows, 1 => nothing)) ==
-        ["\\\"arguments\\\" must be a lossless JSON object"]
+        ["\"arguments\" must be a lossless JSON object"]
     @test isempty(JuliaForever2.tool_argument_violations(checked,
         (rows=[(id=1, name="named tuple")],)))
 end
