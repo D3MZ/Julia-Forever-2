@@ -1,4 +1,31 @@
+"""Wrap printable ASCII by byte offsets; Unicode and control characters keep the grapheme path."""
+function wrap_printable_ascii_line(line::Union{String,SubString{String}}, width::Int)
+    stop = ncodeunits(line)
+    stop == 0 && return [""]
+    lines = String[]
+    offset = 1
+    capacity = max(1, width)
+    while offset <= stop
+        endpoint = offset + min(capacity, stop - offset + 1) - 1
+        boundary = endpoint + 1
+        if endpoint < stop
+            space_boundary = offset
+            for index in offset:endpoint
+                codeunit(line, index) == 0x20 && (space_boundary = index + 1)
+            end
+            offset < space_boundary < boundary && (boundary = space_boundary)
+        end
+        push!(lines, String(SubString(line, offset, boundary - 1)))
+        offset = boundary
+    end
+    return lines
+end
+
 function wrap_conversation_line(line::AbstractString, width::Int)
+    if line isa Union{String,SubString{String}} &&
+            all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
+        return wrap_printable_ascii_line(line, width)
+    end
     graphemes = Base.Unicode.graphemes(line)
     current = iterate(graphemes)
     isnothing(current) && return [""]
