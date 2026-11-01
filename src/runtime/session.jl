@@ -35,13 +35,20 @@ mutable struct Session{C,R,D} <: AbstractSession
     definition::D
 end
 
+execute!(executor::JuliaExecutor, session::Session, code::AbstractString, ::ExecutionContext) =
+    execute_julia!(executor, code, joinpath(working_directory(session), "agent-code.jl"))
+
+execute!(executor::JuliaExecutor, session::Session, action::RunJulia, context::ExecutionContext) =
+    execute!(executor, session, action.source, context)
+
 initialize_executor!(executor, session) = executor
 
 """Resolve a session include from the current included file, or from the session workspace."""
 function include_in_session(session::Session, target::Module, path::AbstractString)
     source = Base.source_path()
-    directory = isnothing(source) || !isfile(source) ? working_directory(session) : dirname(source)
-    return Base.include(target, isabspath(path) ? path : joinpath(directory, path))
+    directory = isnothing(source) || !isfile(source) ? working_directory(session) : String(dirname(source))
+    relative = String(path)
+    return Base.include(target, isabspath(relative) ? relative : joinpath(directory, relative))
 end
 
 function initialize_executor!(executor::JuliaExecutor, session::Session)

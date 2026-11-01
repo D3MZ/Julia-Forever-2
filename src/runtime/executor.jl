@@ -27,8 +27,3 @@ execute!(executor::JuliaExecutor, code::AbstractString, ::ExecutionContext) =
 execute!(executor::JuliaExecutor, action::RunJulia, context::ExecutionContext) =
     execute!(executor, action.source, context)
 
-execute!(executor::JuliaExecutor, session, code::AbstractString, ::ExecutionContext) =
-    execute_julia!(executor, code, joinpath(working_directory(session), "agent-code.jl"))
-
-execute!(executor::JuliaExecutor, session, action::RunJulia, context::ExecutionContext) =
-    execute!(executor, session, action.source, context)
