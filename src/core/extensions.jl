@@ -25,8 +25,9 @@ ToolSpec(name::Symbol, schema, callback, description::String, output_schema, con
     ToolSpec(name, schema, callback, description, output_schema, concurrency_policy, nothing, nothing)
 ToolSpec(name::Symbol, schema, callback, description::String, output_schema, concurrency_policy, renderer) =
     ToolSpec(name, schema, callback, description, output_schema, concurrency_policy, renderer, nothing)
-ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, concurrency_safe=false, render_output=nothing) =
-    ToolSpec(name, schema, callback; description, output_schema, concurrency_safe, render_output)
+ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing,
+        concurrency_safe=false, render_output=nothing, when=nothing) =
+    ToolSpec(name, schema, callback; description, output_schema, concurrency_safe, render_output, when)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}, schema; kwargs...) = ToolSpec(name, schema, callback; kwargs...)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}; kwargs...) = ToolSpec(name, callback; kwargs...)
 
