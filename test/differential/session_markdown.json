@@ -227,5 +227,85 @@
         "content": "two replies"
       }
     ]
+  },
+  {
+    "name": "public-answer-with-private-kinds",
+    "messages": [
+      {
+        "role": "user",
+        "kind": "text",
+        "content": "Public question"
+      },
+      {
+        "role": "assistant",
+        "kind": "code",
+        "content": "PRIVATE_CODE_SENTINEL"
+      },
+      {
+        "role": "code_result",
+        "kind": "text",
+        "content": "PRIVATE_RESULT_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "action",
+        "content": "PRIVATE_ACTION_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "reasoning",
+        "content": "PRIVATE_REASONING_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "unknown",
+        "content": "PRIVATE_UNKNOWN_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "answer",
+        "content": "Public final answer"
+      }
+    ]
+  },
+  {
+    "name": "nonpublic-user-kinds-and-roles",
+    "messages": [
+      {
+        "role": "user",
+        "kind": "reasoning",
+        "content": "PRIVATE_USER_REASONING"
+      },
+      {
+        "role": "user",
+        "kind": "answer",
+        "content": "PRIVATE_USER_NON_TEXT"
+      },
+      {
+        "role": "system",
+        "kind": "text",
+        "content": "PRIVATE_SYSTEM"
+      },
+      {
+        "role": "developer",
+        "kind": "text",
+        "content": "PRIVATE_DEVELOPER"
+      },
+      {
+        "role": "reasoning",
+        "kind": "text",
+        "content": "PRIVATE_ROLE_REASONING"
+      },
+      {
+        "role": "user",
+        "kind": "text",
+        "content": "Public prompt"
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "content": "Public plain text"
+      }
+    ]
   }
 ]

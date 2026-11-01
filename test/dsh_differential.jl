@@ -4,18 +4,24 @@ using Test
 using JSON
 using Base64
 using JuliaForever2
+using JuliaForever2: SessionAPI, session_api_request!, append_message!, history_snapshot,
+    working_directory, session_lineage, RpcError
 
 const DIFFERENTIAL_DIRECTORY = joinpath(@__DIR__, "differential")
+include(joinpath(DIFFERENTIAL_DIRECTORY, "batch_projections.jl"))
 include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
 const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), String))
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["session_markdown"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_markdown.json"), String))
 CASES["session_control"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_control.json"), String))
+CASES["session_fork"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_fork.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
-CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
+CASES["tool_outputs"] = vcat(deepcopy(CASES["tool_arguments"]),
+    JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_outputs.json"), String)))
 CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
+CASES["tool_batches"] = DSHBatchProjections.CASES
 CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
 CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
 CASES["tool_completion"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_completion.json"), String))
@@ -1140,7 +1146,7 @@ end
 
 """Compare independent Julia transcript rendering and its native RPC to pinned DSH Markdown output."""
 function session_markdown_result(input)
-    messages = Message[Message(Symbol(item["role"]), item["content"]) for item in input["messages"]]
+    messages = Message[Message(Symbol(item["role"]), item["content"], Symbol(get(item, "kind", "text"))) for item in input["messages"]]
     title = get(input, "title", nothing)
     source_path = get(input, "source_path", nothing)
     session = Session(Kernel(); messages, owns_kernel=true)
@@ -1156,6 +1162,13 @@ function session_markdown_result(input)
     isnothing(title) || (params["title"] = title)
     isnothing(source_path) || (params["sourcePath"] = source_path)
     response = JuliaForever2.session_api_request!(api, "session/markdown", params)
+    any_history = Any[messages...]
+    any_session = Session(Kernel(); messages=any_history, owns_kernel=true)
+    api.sessions["any-markdown"] = any_session
+    @test JuliaForever2.session_markdown(messages; title, source_path) == rendered
+    @test JuliaForever2.session_markdown(any_history; title, source_path) == rendered
+    @test JuliaForever2.session_markdown(any_session; title, source_path) == rendered
+    @test JuliaForever2.session_api_request!(api, "session/markdown", merge(params, Dict("session" => "any-markdown"))) == response
     close(api)
     response isa AbstractDict && get(response, "markdown", nothing) == rendered ||
         error("Native Markdown RPC differs from direct session export")
@@ -1221,6 +1234,55 @@ function session_control_result(input)
     return normalize(observations)
 end
 
+"""Compare independent native session forks with the pinned upstream's visible prefix."""
+function session_fork_result(input)
+    api = SessionAPI()
+    opened = session_api_request!(api, "session/open", Dict("session" => "source"))
+    @test opened isa AbstractDict
+    source = api.sessions["source"]
+    for entry in input["messages"]
+        append_message!(source, Message(Symbol(entry["role"]), entry["content"];
+            metadata=Dict("tags" => ["source"])))
+    end
+    params = Dict{String,Any}("session" => "source", "newSession" => "branch")
+    haskey(input, "at_index") && (params["atIndex"] = input["at_index"])
+    forked = session_api_request!(api, "session/fork", params)
+    result = if forked isa RpcError
+        Dict("ok" => false, "messages" => Any[])
+    else
+        branch = api.sessions["branch"]
+        inherited = history_snapshot(branch).messages
+        actual = [Dict("role" => String(message.role), "content" => message.content)
+            for message in inherited]
+        @test branch !== source
+        @test branch.kernel !== source.kernel
+        @test working_directory(branch) == working_directory(source)
+        child_lineage = session_lineage(branch)
+        @test child_lineage.parent_id === nothing
+        @test child_lineage.root_id == child_lineage.id
+        @test child_lineage.id != session_lineage(source).id
+        @test length(inherited) > 0
+        push!(inherited[1].metadata["tags"], "branch")
+        @test history_snapshot(source).messages[1].metadata["tags"] == ["source"]
+        append_message!(branch, Message(:user, "branch-only"))
+        typed = [Message(:user, "specialized"; metadata=Dict("tags" => ["typed"]))]
+        separately_forked = JuliaForever2.fork_session(source, typed)
+        append_message!(separately_forked, Message(:assistant, "continuation"))
+        @test length(history_snapshot(separately_forked).messages) == 2
+        @test history_snapshot(separately_forked).messages[1].metadata["tags"] == ["typed"]
+        close(separately_forked)
+        @test length(history_snapshot(source).messages) == length(input["messages"])
+        @test length(history_snapshot(branch).messages) == length(inherited) + 1
+        invalid = session_api_request!(api, "session/fork",
+            Dict("session" => "source", "newSession" => "invalid", "atIndex" => length(input["messages"]) + 1))
+        @test invalid isa RpcError
+        @test !haskey(api.sessions, "invalid")
+        normalize(Dict("ok" => true, "messages" => actual))
+    end
+    close(api)
+    return result
+end
+
 @testset "DSH full-product proof requires complete native differential evidence" begin
     verified = COVERAGE["verified_source_families"]
     cases = Set(area["kind"] for area in COVERAGE["native_comparisons"])
@@ -1238,9 +1300,11 @@ end
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result), ("session_markdown", session_markdown_result), ("session_control", session_control_result),
+            ("session_fork", session_fork_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
-            ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
+            ("tool_batch", tool_batch_result), ("tool_batches", DSHBatchProjections.native_result),
+            ("tool_cancellation", tool_cancellation_result),
             ("tool_approval", tool_approval_result), ("tool_completion", tool_completion_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),

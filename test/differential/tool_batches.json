@@ -1,0 +1,317 @@
+[
+  {
+    "name": "empty batch",
+    "tools": [],
+    "calls": [],
+    "max_parallel": 2
+  },
+  {
+    "name": "single exclusive",
+    "tools": [
+      {
+        "name": "a"
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "alpha"
+      }
+    ],
+    "max_parallel": 3
+  },
+  {
+    "name": "two exclusive form barriers",
+    "tools": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "b"
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "alpha",
+        "delay_ms": 5
+      },
+      {
+        "name": "b",
+        "value": "beta",
+        "delay_ms": 5
+      }
+    ],
+    "max_parallel": 3
+  },
+  {
+    "name": "opt-in parallel siblings",
+    "tools": [
+      {
+        "name": "a",
+        "parallel": true
+      },
+      {
+        "name": "b",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "alpha",
+        "delay_ms": 75
+      },
+      {
+        "name": "b",
+        "value": "beta",
+        "delay_ms": 75
+      }
+    ],
+    "max_parallel": 2
+  },
+  {
+    "name": "bounded parallel pool",
+    "tools": [
+      {
+        "name": "a",
+        "parallel": true
+      },
+      {
+        "name": "b",
+        "parallel": true
+      },
+      {
+        "name": "c",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "a",
+        "delay_ms": 75
+      },
+      {
+        "name": "b",
+        "value": "b",
+        "delay_ms": 75
+      },
+      {
+        "name": "c",
+        "value": "c",
+        "delay_ms": 75
+      }
+    ],
+    "max_parallel": 2
+  },
+  {
+    "name": "exclusive barrier between pools",
+    "tools": [
+      {
+        "name": "a",
+        "parallel": true
+      },
+      {
+        "name": "b",
+        "parallel": true
+      },
+      {
+        "name": "barrier"
+      },
+      {
+        "name": "c",
+        "parallel": true
+      },
+      {
+        "name": "d",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "a",
+        "delay_ms": 75
+      },
+      {
+        "name": "b",
+        "value": "b",
+        "delay_ms": 75
+      },
+      {
+        "name": "barrier",
+        "value": "barrier",
+        "delay_ms": 15
+      },
+      {
+        "name": "c",
+        "value": "c",
+        "delay_ms": 75
+      },
+      {
+        "name": "d",
+        "value": "d",
+        "delay_ms": 75
+      }
+    ],
+    "max_parallel": 3
+  },
+  {
+    "name": "safe callback failure is contained",
+    "tools": [
+      {
+        "name": "a",
+        "parallel": true
+      },
+      {
+        "name": "b",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "a",
+        "delay_ms": 60,
+        "fail": true
+      },
+      {
+        "name": "b",
+        "value": "b",
+        "delay_ms": 60
+      }
+    ],
+    "max_parallel": 2
+  },
+  {
+    "name": "unknown call is exclusive and fails",
+    "tools": [
+      {
+        "name": "a",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "a",
+        "delay_ms": 20
+      },
+      {
+        "name": "missing",
+        "value": "missing"
+      },
+      {
+        "name": "a",
+        "value": "a2",
+        "delay_ms": 20
+      }
+    ],
+    "max_parallel": 3
+  },
+  {
+    "name": "repeated safely concurrent tool",
+    "tools": [
+      {
+        "name": "repeat",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "repeat",
+        "value": "first",
+        "delay_ms": 60
+      },
+      {
+        "name": "repeat",
+        "value": "second",
+        "delay_ms": 60
+      },
+      {
+        "name": "repeat",
+        "value": "third",
+        "delay_ms": 60
+      }
+    ],
+    "max_parallel": 3
+  },
+  {
+    "name": "max parallel one is exclusive in practice",
+    "tools": [
+      {
+        "name": "a",
+        "parallel": true
+      },
+      {
+        "name": "b",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "a",
+        "delay_ms": 10
+      },
+      {
+        "name": "b",
+        "value": "b",
+        "delay_ms": 10
+      }
+    ],
+    "max_parallel": 1
+  },
+  {
+    "name": "session tool executor batch",
+    "tools": [
+      {
+        "name": "a",
+        "parallel": true
+      },
+      {
+        "name": "b",
+        "parallel": true
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "a",
+        "delay_ms": 75
+      },
+      {
+        "name": "b",
+        "value": "b",
+        "delay_ms": 75
+      }
+    ],
+    "max_parallel": 2,
+    "session": true
+  },
+  {
+    "name": "sequential session batch failure",
+    "tools": [
+      {
+        "name": "a"
+      },
+      {
+        "name": "b"
+      }
+    ],
+    "calls": [
+      {
+        "name": "a",
+        "value": "a",
+        "fail": true
+      },
+      {
+        "name": "b",
+        "value": "b"
+      }
+    ],
+    "max_parallel": 2,
+    "session": true
+  }
+]

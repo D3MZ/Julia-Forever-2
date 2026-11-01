@@ -1,0 +1,103 @@
+[
+  {
+    "name": "full-completed-history",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Question one"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer one"
+      },
+      {
+        "role": "user",
+        "content": "Question two"
+      },
+      {
+        "role": "assistant",
+        "content": "Answer two"
+      }
+    ]
+  },
+  {
+    "name": "fork-at-first-message",
+    "at_index": 1,
+    "messages": [
+      {
+        "role": "user",
+        "content": "North"
+      },
+      {
+        "role": "assistant",
+        "content": "South"
+      },
+      {
+        "role": "user",
+        "content": "West"
+      }
+    ]
+  },
+  {
+    "name": "fork-before-last-turn",
+    "at_index": 2,
+    "messages": [
+      {
+        "role": "user",
+        "content": "alpha"
+      },
+      {
+        "role": "assistant",
+        "content": "beta"
+      },
+      {
+        "role": "user",
+        "content": "gamma"
+      },
+      {
+        "role": "assistant",
+        "content": "delta"
+      }
+    ]
+  },
+  {
+    "name": "unicode-message-prefix",
+    "at_index": 3,
+    "messages": [
+      {
+        "role": "user",
+        "content": "日本語 ☼"
+      },
+      {
+        "role": "assistant",
+        "content": "café"
+      },
+      {
+        "role": "user",
+        "content": "Δοκιμή"
+      },
+      {
+        "role": "assistant",
+        "content": "excluded"
+      }
+    ]
+  },
+  {
+    "name": "repeated-content-distinct-boundary",
+    "at_index": 2,
+    "messages": [
+      {
+        "role": "user",
+        "content": "same"
+      },
+      {
+        "role": "assistant",
+        "content": "same"
+      },
+      {
+        "role": "user",
+        "content": "same"
+      }
+    ]
+  }
+]

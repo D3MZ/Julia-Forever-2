@@ -256,3 +256,101 @@ end
     @test cleared_accounting.context_tokens === nothing
     @test merge(cleared_accounting, (context_tokens=accounting.context_tokens,)) == accounting
 end
+
+@testset "JSON-RPC peer keyword construction and isolated mutable defaults" begin
+    legacy_input, legacy_output = IOBuffer(), IOBuffer()
+    legacy = JuliaForever2.JsonRpcPeer(legacy_input, legacy_output)
+    @test legacy isa JuliaForever2.JsonRpcPeer{typeof(legacy_input),typeof(legacy_output)}
+    @test legacy.input === legacy_input
+    @test legacy.output === legacy_output
+    @test isnothing(legacy.on_request)
+    @test isnothing(legacy.on_notification)
+
+    input, output = IOBuffer(), IOBuffer()
+    on_request = (method, params) -> (method=method, params=params)
+    on_notification = (method, params) -> nothing
+    peer = JuliaForever2.JsonRpcPeer(; input, output, on_request, on_notification)
+    @test peer isa JuliaForever2.JsonRpcPeer{typeof(input),typeof(output)}
+    @test peer.input === input
+    @test peer.output === output
+    @test peer.on_request === on_request
+    @test peer.on_notification === on_notification
+    @test isopen(peer)
+    @test isempty(peer.buffer) && isempty(peer.pending) && isempty(peer.handlers)
+    @test isnothing(peer.reader) && isnothing(peer.reader_worker) && isnothing(peer.failure)
+    @test peer.lock !== legacy.lock
+    @test peer.write_lock !== legacy.write_lock
+    @test peer.buffer !== legacy.buffer
+    @test peer.pending !== legacy.pending
+    @test peer.handlers !== legacy.handlers
+    push!(peer.buffer, 0x42)
+    @test isempty(legacy.buffer)
+
+    callbacks = JuliaForever2.JsonRpcPeer(IOBuffer(), IOBuffer(); on_request, on_notification)
+    @test callbacks.on_request === on_request
+    @test callbacks.on_notification === on_notification
+    @test_throws UndefKeywordError JuliaForever2.JsonRpcPeer(; input)
+    @test_throws UndefKeywordError JuliaForever2.JsonRpcPeer(; output)
+    @test_throws MethodError JuliaForever2.JsonRpcPeer(; input, output, unsupported=true)
+
+    supplied_lock = ReentrantLock()
+    supplied_buffer = UInt8[0x43]
+    overridden = JuliaForever2.JsonRpcPeer(; input, output,
+        lock=supplied_lock, buffer=supplied_buffer)
+    @test overridden.lock === supplied_lock
+    @test overridden.buffer === supplied_buffer
+    @test overridden.pending !== peer.pending
+    @test peer.buffer == UInt8[0x42]
+    @test isempty(legacy.buffer)
+
+    pending = Dict{Any,Channel{JuliaForever2.JSONRPCTransport.RpcResult}}()
+    handlers = Task[]
+    full = JuliaForever2.JsonRpcPeer(input, output, ReentrantLock(),
+        ReentrantLock(), UInt8[], pending, handlers, nothing, nothing,
+        nothing, nothing, nothing)
+    @test full isa JuliaForever2.JsonRpcPeer{typeof(input),typeof(output)}
+    @test full.pending === pending
+    @test full.handlers === handlers
+end
+
+JuliaForever2.session_markdown_entry(::Val{:markdown_test_notice}, content::AbstractString) = "Notice: " * content
+
+@testset "Markdown public role and kind projection preserves history and role hooks" begin
+    messages = Message[
+        Message(:system, "PRIVATE_SYSTEM"),
+        Message(:developer, "PRIVATE_DEVELOPER"),
+        Message(:reasoning, "PRIVATE_REASONING_ROLE"),
+        Message(:user, "Public prompt"),
+        Message(ActionDecision(RunJulia("PRIVATE_CODE"))),
+        Message(:assistant, "PRIVATE_ACTION", :action; metadata=(secret="PRIVATE_METADATA",)),
+        Message(:assistant, "PRIVATE_REASONING", :reasoning),
+        Message(:assistant, "PRIVATE_UNKNOWN", :unknown),
+        Message(:code_result, "PRIVATE_RESULT"),
+        Message(:user, "PRIVATE_USER_REASONING", :reasoning),
+        Message(:user, "PRIVATE_USER_ANSWER", :answer),
+        Message(Answer("Public answer")),
+        Message(:assistant, "Public text"),
+        Message(:markdown_test_notice, "Public custom"),
+        Message(:markdown_test_notice, "PRIVATE_CUSTOM_ACTION", :action),
+        Message(:markdown_test_notice, "PRIVATE_CUSTOM_REASONING", :reasoning),
+        Message(:markdown_test_notice, "PRIVATE_CUSTOM_ANSWER", :answer)]
+    expected = "# Untitled Session\n\n> Public prompt\n\nPublic answer\n\nPublic text\n\nNotice: Public custom\n"
+    api = JuliaForever2.SessionAPI()
+    for (name, history) in (("typed", messages), ("any", Any[messages...]))
+        original = copy(history)
+        session = Session(Kernel(); messages=history, owns_kernel=true)
+        api.sessions[name] = session
+        @test JuliaForever2.session_markdown(history) == expected
+        @test JuliaForever2.session_markdown(session) == expected
+        response = JuliaForever2.session_api_request!(api, "session/markdown", Dict("session" => name))
+        @test response == Dict("markdown" => expected)
+        @test !occursin("PRIVATE_", response["markdown"])
+        @test history == original
+    end
+    @test JuliaForever2.session_markdown(Message[]) == JuliaForever2.session_markdown(Any[])
+    @test_throws MethodError JuliaForever2.session_markdown(Any[(role=:user, content="not a Message", kind=:text)])
+    @test_throws MethodError JuliaForever2.session_markdown(Any[messages[4], "not a Message"])
+    api.sessions["invalid-markdown"] = Session(Kernel(); messages=Any[(role=:user, content="not a Message", kind=:text)], owns_kernel=true)
+    @test_throws MethodError JuliaForever2.session_api_request!(api, "session/markdown", Dict("session" => "invalid-markdown"))
+    close(api)
+end
