@@ -627,3 +627,55 @@ end
         close(context)
     end
 end
+
+@testset "Model stream state keyword constructor and isolated mutable defaults" begin
+    model = JuliaForever2.ModelSpec(:test, "state-constructor"; api="chat")
+    context = ExecutionContext()
+    message = JuliaForever2.empty_model_message(model)
+    first_state = JuliaForever2.ModelStreamState(; model, context, message)
+    second_state = JuliaForever2.ModelStreamState(; model, context, message=deepcopy(message))
+
+    @test first_state isa JuliaForever2.ModelStreamState{typeof(model),typeof(context)}
+    @test first_state.model === model
+    @test first_state.context === context
+    @test first_state.message === message
+    @test isempty(first_state.blocks)
+    @test isempty(first_state.arguments)
+    @test isempty(first_state.text_buffers)
+    @test isempty(first_state.closed_blocks)
+    @test !first_state.received_start && !first_state.received_stop
+    @test !first_state.started && !first_state.finished
+    @test first_state.error == ""
+    @test first_state.started_at isa UInt64
+    @test first_state.started_at > 0
+
+    @test first_state.blocks !== second_state.blocks
+    @test first_state.arguments !== second_state.arguments
+    @test first_state.text_buffers !== second_state.text_buffers
+    @test first_state.closed_blocks !== second_state.closed_blocks
+    first_state.blocks[:token] = 1
+    first_state.arguments[1] = "{}"
+    first_state.text_buffers[1] = IOBuffer()
+    push!(first_state.closed_blocks, 1)
+    @test isempty(second_state.blocks)
+    @test isempty(second_state.arguments)
+    @test isempty(second_state.text_buffers)
+    @test isempty(second_state.closed_blocks)
+
+    configured = JuliaForever2.ModelStreamState(; model, context, message,
+        started=true, error="incomplete", started_at=UInt64(7))
+    @test configured.started
+    @test configured.error == "incomplete"
+    @test configured.started_at == UInt64(7)
+    @test_throws UndefKeywordError JuliaForever2.ModelStreamState(; model, context)
+
+    legacy = JuliaForever2.ModelStreamState(model, context)
+    @test legacy isa typeof(first_state)
+    @test legacy.message["model"] == model.id
+    @test legacy.message !== message
+    positional = JuliaForever2.ModelStreamState(model, context, deepcopy(message),
+        Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(),
+        false, false, false, false, "", UInt64(19))
+    @test positional.started_at == UInt64(19)
+    close(context)
+end
