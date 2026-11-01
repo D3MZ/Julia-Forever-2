@@ -535,7 +535,7 @@ function native_web_stop_comparison()
     server = JuliaForever2.start_web_server(api)
     origin = JuliaForever2.web_url(server)
     released = Base.Event[]
-    try
+    observed = try
         exchange = HTTP.request("GET", JuliaForever2.web_launch_url(server);
             redirect=false, status_exception=false)
         cookie = first(split(HTTP.header(exchange, "Set-Cookie"), ';'))
@@ -576,7 +576,7 @@ function native_web_stop_comparison()
             occursin("session/cancel", javascript) &&
             occursin("runningSession", javascript))
         expected = Dict("control" => reference, "stopUI" => true)
-        return actual, expected
+        (actual, expected)
     finally
         foreach(notify, released)
         while isready(entered)
@@ -585,6 +585,7 @@ function native_web_stop_comparison()
         close(server)
         close(api)
     end
+    observed
 end
 
 function native_web_console_comparison(sdk_reference, web_reference, directory, temporary)
