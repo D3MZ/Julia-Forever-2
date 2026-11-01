@@ -344,3 +344,26 @@ end
     close(listener)
     close(context)
 end
+
+@testset "Context-aware method transports without a streaming argument" begin
+    context = JuliaForever2.ExecutionContext()
+    calls = []
+    transport = (url, method, body, headers, request_context) -> begin
+        push!(calls, (method=method, body=body, context=request_context))
+        return (status=200, body="mock response")
+    end
+    headers = Pair{String,String}[]
+
+    buffered = JuliaForever2.transport_request(transport, "https://example.invalid", "GET", "", headers, context)
+    @test buffered.status == 200
+    @test buffered.body == "mock response"
+
+    sink = IOBuffer()
+    streamed = JuliaForever2.transport_request(transport, "https://example.invalid", "POST", "request", headers, context, sink)
+    @test streamed.status == 200
+    @test String(take!(sink)) == "mock response"
+    @test [call.method for call in calls] == ["GET", "POST"]
+    @test [call.body for call in calls] == ["", "request"]
+    @test all(call -> call.context === context, calls)
+    close(context)
+end
