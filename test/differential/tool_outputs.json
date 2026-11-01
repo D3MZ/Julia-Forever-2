@@ -1,0 +1,326 @@
+[
+  {
+    "name": "empty object accepted",
+    "schema": {
+      "type": "object"
+    },
+    "value": {}
+  },
+  {
+    "name": "scalar returned for object rejected",
+    "schema": {
+      "type": "object"
+    },
+    "value": 15
+  },
+  {
+    "name": "nested records accepted",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "label"
+          ]
+        }
+      },
+      "required": [
+        "record"
+      ]
+    },
+    "value": {
+      "record": {
+        "id": 4,
+        "label": "sample"
+      }
+    }
+  },
+  {
+    "name": "missing nested required output",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "record"
+      ]
+    },
+    "value": {
+      "record": {}
+    }
+  },
+  {
+    "name": "wrong nested output type",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "record": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "required": [
+        "record"
+      ]
+    },
+    "value": {
+      "record": {
+        "id": "4"
+      }
+    }
+  },
+  {
+    "name": "closed object accepted",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "value": {
+      "status": true
+    }
+  },
+  {
+    "name": "closed object rejects undeclared output",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "value": {
+      "status": true,
+      "debug": true
+    }
+  },
+  {
+    "name": "array of objects accepted",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ]
+      }
+    },
+    "value": [
+      {
+        "tag": "first"
+      },
+      {
+        "tag": "last"
+      }
+    ]
+  },
+  {
+    "name": "array wrong element rejected",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tag"
+        ]
+      }
+    },
+    "value": [
+      {
+        "tag": "first"
+      },
+      {}
+    ]
+  },
+  {
+    "name": "string output accepted",
+    "schema": {
+      "type": "string"
+    },
+    "value": "Julia λ"
+  },
+  {
+    "name": "number rejected under string",
+    "schema": {
+      "type": "string"
+    },
+    "value": 5
+  },
+  {
+    "name": "finite numeric output accepted",
+    "schema": {
+      "type": "number"
+    },
+    "value": 4.125
+  },
+  {
+    "name": "boolean rejected under number",
+    "schema": {
+      "type": "number"
+    },
+    "value": false
+  },
+  {
+    "name": "integral number accepted",
+    "schema": {
+      "type": "integer"
+    },
+    "value": 3
+  },
+  {
+    "name": "fraction rejected under integer",
+    "schema": {
+      "type": "integer"
+    },
+    "value": 3.5
+  },
+  {
+    "name": "enumerated string accepted",
+    "schema": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "queued",
+        "done"
+      ]
+    },
+    "value": "queued"
+  },
+  {
+    "name": "enumerated string rejected",
+    "schema": {
+      "type": "string",
+      "enum": [
+        "ready",
+        "queued",
+        "done"
+      ]
+    },
+    "value": "failed"
+  },
+  {
+    "name": "constant boolean accepted",
+    "schema": {
+      "type": "boolean",
+      "const": true
+    },
+    "value": true
+  },
+  {
+    "name": "constant boolean rejected",
+    "schema": {
+      "type": "boolean",
+      "const": true
+    },
+    "value": false
+  },
+  {
+    "name": "null accepted",
+    "schema": {
+      "type": "null"
+    },
+    "value": null
+  },
+  {
+    "name": "null rejected",
+    "schema": {
+      "type": "null"
+    },
+    "value": []
+  },
+  {
+    "name": "oneOf unique match accepted",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "value": "text"
+  },
+  {
+    "name": "oneOf no match rejected",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "value": false
+  },
+  {
+    "name": "oneOf ambiguous overlapping match rejected",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "value": 7
+  },
+  {
+    "name": "unconstrained JSON object accepted",
+    "schema": {},
+    "value": {
+      "items": [
+        null,
+        true,
+        2,
+        "ok"
+      ]
+    }
+  }
+]

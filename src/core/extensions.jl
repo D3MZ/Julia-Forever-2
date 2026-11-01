@@ -9,9 +9,28 @@ struct ToolSpec{S,F}
     description::String
 end
 
+"""Check successful callback results against an opt-in, replaceable output contract."""
+struct CheckedToolOutput{F,S}
+    callback::F
+    schema::S
+end
+
+function (checked::CheckedToolOutput)(arguments...)
+    result = tool_result(event_value(Base.invokelatest(checked.callback, arguments...)))
+    result.ok || return result
+    violations = tool_output_violations(checked.schema, result.value)
+    isempty(violations) && return result
+    return ExecutionResult(false, join(violations, "; "))
+end
+
 """Describe a tool independently of its executor, provider schema, or presentation protocol."""
-ToolSpec(name, schema, callback; description="") = ToolSpec(Symbol(name), schema, callback, String(description))
-ToolSpec(name, callback; schema=(type="object",), description="") = ToolSpec(name, schema, callback; description)
+function ToolSpec(name, schema, callback; description="", output_schema=nothing)
+    callable = isnothing(output_schema) ? callback :
+        CheckedToolOutput(callback, tool_output_schema(output_schema))
+    return ToolSpec(Symbol(name), schema, callable, String(description))
+end
+ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing) =
+    ToolSpec(name, schema, callback; description, output_schema)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}, schema; kwargs...) = ToolSpec(name, schema, callback; kwargs...)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}; kwargs...) = ToolSpec(name, callback; kwargs...)
 

@@ -208,3 +208,11 @@ function checked_json_violations(::Val{:null}, node, value, path)
     isnothing(value) || return [string(quoted_json_path(path), " must be null")]
     return json_literal_violations(node, value, path)
 end
+
+"""Validate a canonical tool output independently of its input argument schema."""
+tool_output_violations(schema, value) = String[]
+tool_output_violations(schema::CheckedJSONSchema, value) =
+    checked_json_violations(schema.definition, value, "output")
+
+tool_output_schema(schema) = schema
+tool_output_schema(schema::AbstractDict) = CheckedJSONSchema(schema)

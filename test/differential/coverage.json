@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified.",
+  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Native tool callbacks may additionally opt into independently implemented output-schema admission; bounded outputs are compared with the original pinned DSH JSON Schema validator. Full tool execution and rendering parity remains unverified.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -423,6 +423,28 @@
       "limits": [
         "Only 31 JSON-compatible fixtures against the original pinned validator; unsupported-schema diagnostics, unbounded nesting, non-JSON objects, batch execution and every other DSH tool-executor behavior remain unverified.",
         "Validation is opt-in via CheckedJSONSchema; existing opaque ToolSpec schemas remain caller-defined. This does not establish native parity for DSH tool approval, scheduling, cancellation, or output validation."
+      ]
+    },
+    {
+      "kind": "tool_outputs",
+      "case_count": 25,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/json-schema.ts",
+          "symbols": [
+            "assertSupportedJsonSchema",
+            "validateJsonSchemaValue"
+          ]
+        }
+      ],
+      "compares": [
+        "The pinned upstream JSON Schema validator's externally observable acceptance and path-qualified violations for canonical tool result values.",
+        "Native opt-in output contracts reject invalid successful tool results while preserving validated result values."
+      ],
+      "limits": [
+        "Only bounded JSON-value validation fixtures are compared to the pinned upstream schema validator, not the complete DSH tool-execution pipeline, output rendering, approval policies or parallel scheduling.",
+        "Native output schema checks are opt-in to preserve existing Julia ToolSpec APIs; plugin-defined schema types can implement tool_output_violations by multiple dispatch."
       ]
     }
   ],

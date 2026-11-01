@@ -11,6 +11,7 @@ const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), St
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
+CASES["tool_outputs"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_outputs.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -570,6 +571,20 @@ function tool_result(input)
     return normalize(results)
 end
 
+function tool_outputs_result(input)
+    schema = JuliaForever2.CheckedJSONSchema(input["schema"])
+    scope = JuliaForever2.ExtensionScope()
+    specification = JuliaForever2.ToolSpec(:checked_output, Dict("type" => "object"),
+        arguments -> input["value"]; output_schema=schema)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    result = JuliaForever2.invoke_tool!(scope, :checked_output, Dict{String,Any}())
+    violations = sort!(JuliaForever2.tool_output_violations(schema, input["value"]))
+    close(scope)
+    return normalize(Dict("violations" => violations, "accepted" => result.ok,
+        "value" => result.ok ? result.value : nothing))
+end
+
 function profile_group_result(input)
     original = deepcopy(input["profiles"])
     layers = [JuliaForever2.Profile(:layer, Symbol.(layer["plugins"]);
@@ -743,7 +758,7 @@ end
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
-            ("tool_arguments", tool_arguments_result),
+            ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),
