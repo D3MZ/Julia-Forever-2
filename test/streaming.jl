@@ -99,6 +99,15 @@ end
     @test isempty(positional.line)
     @test isempty(complete.data)
 
+    custom_line = UInt8[0x64, 0x61]
+    customized = JuliaForever2.SSEDecoder(; sink, line=custom_line, first_line=false)
+    @test customized.line === custom_line
+    @test isempty(customized.data)
+    @test customized.event == ""
+    @test !customized.first_line
+    @test_throws UndefKeywordError JuliaForever2.SSEDecoder()
+    @test_throws MethodError JuliaForever2.SSEDecoder(; sink, unknown=true)
+
     write(second, "id: retained\ndata: keyword\n\n")
     @test length(events) == 1
     @test only(events).data == "keyword"
