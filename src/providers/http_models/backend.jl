@@ -42,7 +42,7 @@ mutable struct ModelStreamState{M,C}
     message::Dict{String,Any}
     blocks::Dict{Any,Int}
     arguments::Dict{Int,String}
-    text_buffers::Dict{Int,IOBuffer}
+    text_buffers::Union{Nothing,Dict{Int,IOBuffer}}
     closed_blocks::Set{Int}
     received_start::Bool
     received_stop::Bool
@@ -52,7 +52,7 @@ mutable struct ModelStreamState{M,C}
     started_at::UInt64
 end
 ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model),
-    Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns())
+    Dict{Any,Int}(), Dict{Int,String}(), nothing, Set{Int}(), false, false, false, false, "", time_ns())
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -98,17 +98,36 @@ function text_model_block!(state::ModelStreamState, kind::String, delta::Abstrac
         state.blocks[kind] = index
         model_event!(state, kind * "_start"; contentIndex=index - 1)
     end
-    write(get!(IOBuffer, state.text_buffers, index), delta)
+    block = state.message["content"][index]
+    buffers = state.text_buffers
+    if (isnothing(buffers) || !haskey(buffers, index)) &&
+            ncodeunits(block[kind]) + ncodeunits(delta) <= 256
+        # Small responses avoid the buffer entirely; longer streams switch once.
+        block[kind] *= delta
+    else
+        if isnothing(buffers)
+            buffers = Dict{Int,IOBuffer}()
+            state.text_buffers = buffers
+        end
+        output = get!(buffers, index) do
+            output = IOBuffer()
+            write(output, block[kind])
+            output
+        end
+        write(output, delta)
+    end
     model_event!(state, kind * "_delta"; contentIndex=index - 1, delta=String(delta))
     return nothing
 end
 
 """Materialize a streamed text block exactly once, before its completion event."""
 function flush_model_text!(state::ModelStreamState, index::Int)
-    output = pop!(state.text_buffers, index, nothing)
+    buffers = state.text_buffers
+    isnothing(buffers) && return nothing
+    output = pop!(buffers, index, nothing)
     isnothing(output) && return nothing
     block = state.message["content"][index]
-    block[block["type"]] *= String(take!(output))
+    block[block["type"]] = String(take!(output))
     return nothing
 end
 
@@ -184,11 +203,13 @@ finish_protocol_stream!(protocol, state::ModelStreamState) = finish_model_blocks
 
 function finish_model_stream!(state::ModelStreamState)
     state.finished && return nothing
-    for (index, output) in state.text_buffers
-        block = state.message["content"][index]
-        block[block["type"]] *= String(take!(output))
+    if !isnothing(state.text_buffers)
+        for (index, output) in state.text_buffers
+            block = state.message["content"][index]
+            block[block["type"]] = String(take!(output))
+        end
+        empty!(state.text_buffers)
     end
-    empty!(state.text_buffers)
     state.finished = true
     state.message["durationMs"] = Int((time_ns() - state.started_at) ÷ 1_000_000)
     if cancelled(state.context)
