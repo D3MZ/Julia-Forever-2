@@ -75,6 +75,11 @@ end
     @test isnothing(normalized.input_tokens)
     @test normalized.output_tokens == 4
     @test isnothing(normalized.cost)
+    malformed = Dict("input_tokens" => "invalid", "output_tokens" => 4, "cost" => true)
+    parsed = JuliaForever2.UsageReport(malformed)
+    @test isnothing(parsed.input_tokens)
+    @test parsed.output_tokens == 4
+    @test isnothing(parsed.cost)
 end
 
 @testset "Constructors compose definitions and independent profiles" begin
