@@ -245,9 +245,10 @@ function default_input!(app::App, event::KeyEvent)
     return nothing
 end
 
-page_input!(app::App, page::Val, event::KeyEvent) = page_input!(app, page, event, UInt8[])
+"""Preserve existing page-specific input handlers when raw bytes are unused."""
+page_input!(app::App, page::Val, event::KeyEvent, raw::AbstractVector{UInt8}) = page_input!(app, page, event)
 
-function page_input!(app::App, page::Val, event::KeyEvent, raw::AbstractVector{UInt8})
+function page_input!(app::App, page::Val, event::KeyEvent)
     event.key in (:escape, :enter) && (app.page = :chat)
     return nothing
 end
