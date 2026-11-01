@@ -553,6 +553,58 @@ end
 end
 
 
+using JSON
+using UUIDs
+
+@testset "Saved session lineage traversal handles deep, branched, and cyclic links" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        identity(number) = UUID("00000000-0000-0000-0000-" * string(number; base=16, pad=12))
+        function persist(name, number, parent)
+            metadata = Dict(
+                "format" => "JuliaForever2.session", "version" => 2, "name" => name,
+                "working_directory" => directory, "messages" => Any[],
+                "lineage" => Dict("id" => string(identity(number)),
+                    "parent_id" => isnothing(parent) ? nothing : string(identity(parent)),
+                    "root_id" => string(identity(1))))
+            write(joinpath(directory, name * ".json"), JSON.json(metadata))
+        end
+        for (name, number, parent) in (
+                ("root", 1, nothing), ("child", 2, 1), ("grandchild", 3, 2),
+                ("sibling", 4, 1), ("orphan", 5, 99),
+                ("cycle_a", 6, 7), ("cycle_b", 7, 6))
+            persist(name, number, parent)
+        end
+        @test JuliaForever2.session_descendants(store, identity(1)) ==
+            ["child", "grandchild", "sibling"]
+        @test JuliaForever2.session_descendants(store, identity(1); include_self=true) ==
+            ["child", "grandchild", "root", "sibling"]
+        @test JuliaForever2.session_descendants(store, identity(99)) == ["orphan"]
+        @test JuliaForever2.session_descendants(store, identity(6)) == ["cycle_b"]
+        @test JuliaForever2.session_descendants(store, identity(6); include_self=true) ==
+            ["cycle_a", "cycle_b"]
+        @test isempty(JuliaForever2.session_descendants(store, identity(98)))
+    end
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        identity(number) = UUID("00000000-0000-0000-0000-" * string(number; base=16, pad=12))
+        for index in 1:96
+            name = "deep_" * lpad(index, 3, '0')
+            parent = index == 1 ? 9000 : index - 1
+            metadata = Dict("format" => "JuliaForever2.session", "version" => 2,
+                "name" => name, "working_directory" => directory, "messages" => Any[],
+                "lineage" => Dict("id" => string(identity(index)),
+                    "parent_id" => string(identity(parent)),
+                    "root_id" => string(identity(9000))))
+            write(joinpath(directory, name * ".json"), JSON.json(metadata))
+        end
+        expected = ["deep_" * lpad(index, 3, '0') for index in 1:96]
+        @test JuliaForever2.session_descendants(store, identity(9000)) == expected
+        @test JuliaForever2.session_descendants(store, identity(1); include_self=true) ==
+            expected
+    end
+end
+
 @testset "ProfileStore ignores symlinks when listing and loading saved profiles" begin
     mktempdir() do directory
         store = JuliaForever2.ProfileStore(joinpath(directory, "profiles"))
