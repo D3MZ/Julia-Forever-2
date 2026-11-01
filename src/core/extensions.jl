@@ -296,14 +296,8 @@ end
 function dispatch_listeners(::Val{:parallel}, invocations, arguments)
     workers = Task[]
     for invocation in invocations
-        callback = spawn_scoped(() -> invoke_listener(invocation, arguments))
-        wait(callback; throw=false)
-        if istaskfailed(callback)
-            push!(workers, callback)
-        else
-            value = fetch(callback)
-            push!(workers, spawn_scoped(() -> event_value(value)))
-        end
+        worker = @async event_value(invoke_listener(invocation, arguments))
+        push!(workers, worker)
     end
     foreach(worker -> wait(worker; throw=false), workers)
     failed = findfirst(istaskfailed, workers)
