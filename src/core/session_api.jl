@@ -93,6 +93,21 @@ function api_close_session!(api::SessionAPI, params::AbstractDict)
 end
 api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(params["session"], session), api_session(api, params))
 api_session_messages(api::SessionAPI, params::AbstractDict) = apply(session -> api_message.(history_snapshot(session).messages), api_session(api, params))
+
+"""Export public session text through a Julia-owned, replaceable Markdown renderer."""
+function api_session_markdown(api::SessionAPI, params::AbstractDict)
+    title = get(params, "title", nothing)
+    source_path = get(params, "sourcePath", nothing)
+    if !(isnothing(title) || title isa AbstractString) ||
+            !(isnothing(source_path) || source_path isa AbstractString)
+        RpcError(-32602, "Invalid Markdown export options")
+    else
+        apply(api_session(api, params)) do session
+            Dict("markdown" => session_markdown(session; title, source_path))
+        end
+    end
+end
+
 """Validate external predicates before constructing a native history query."""
 function api_search_parameters(params::AbstractDict)
     text = api_parameter(params, "text")
@@ -288,6 +303,7 @@ const SESSION_OPERATIONS = Dict(
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,
+    "session/markdown" => api_session_markdown,
     "session/search" => api_session_search,
     "session/search/all" => api_persisted_search,
     "session/workspace/get" => api_session_workspace,

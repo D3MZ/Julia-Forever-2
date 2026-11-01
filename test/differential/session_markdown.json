@@ -1,0 +1,311 @@
+[
+  {
+    "name": "untitled-empty",
+    "messages": []
+  },
+  {
+    "name": "user-only",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Question without an answer."
+      }
+    ]
+  },
+  {
+    "name": "basic-exchange",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is the token?"
+      },
+      {
+        "role": "assistant",
+        "content": "sapphire"
+      }
+    ]
+  },
+  {
+    "name": "two-complete-turns",
+    "messages": [
+      {
+        "role": "user",
+        "content": "First question?"
+      },
+      {
+        "role": "assistant",
+        "content": "First answer."
+      },
+      {
+        "role": "user",
+        "content": "Second question?"
+      },
+      {
+        "role": "assistant",
+        "content": "Second answer."
+      }
+    ]
+  },
+  {
+    "name": "title-trim",
+    "title": "  Julia transcript  ",
+    "messages": [
+      {
+        "role": "user",
+        "content": "hello"
+      },
+      {
+        "role": "assistant",
+        "content": "world"
+      }
+    ]
+  },
+  {
+    "name": "title-newlines",
+    "title": "multi\r\nline\nname",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "ready"
+      }
+    ]
+  },
+  {
+    "name": "unicode",
+    "title": "機械学習 ✓",
+    "messages": [
+      {
+        "role": "user",
+        "content": "¿Qué tal? 🧪"
+      },
+      {
+        "role": "assistant",
+        "content": "Très bien — 東京."
+      }
+    ]
+  },
+  {
+    "name": "multiline-user",
+    "messages": [
+      {
+        "role": "user",
+        "content": "first line\n\nthird line"
+      },
+      {
+        "role": "assistant",
+        "content": "done"
+      }
+    ]
+  },
+  {
+    "name": "crlf-trailing-user",
+    "messages": [
+      {
+        "role": "user",
+        "content": "line one\r\nline two\r\n\r\n"
+      },
+      {
+        "role": "assistant",
+        "content": "ok"
+      }
+    ]
+  },
+  {
+    "name": "assistant-blank-edge-lines",
+    "messages": [
+      {
+        "role": "user",
+        "content": "go"
+      },
+      {
+        "role": "assistant",
+        "content": "  \n  indented start\n\nfinal line\n \t"
+      }
+    ]
+  },
+  {
+    "name": "assistant-only",
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "The response has no prompt."
+      }
+    ]
+  },
+  {
+    "name": "empty-content",
+    "messages": [
+      {
+        "role": "user",
+        "content": ""
+      },
+      {
+        "role": "assistant",
+        "content": ""
+      },
+      {
+        "role": "user",
+        "content": "real prompt"
+      },
+      {
+        "role": "assistant",
+        "content": "real answer"
+      }
+    ]
+  },
+  {
+    "name": "ignored-nonpublic-roles",
+    "messages": [
+      {
+        "role": "system",
+        "content": "Hidden instructions"
+      },
+      {
+        "role": "developer",
+        "content": "Private"
+      },
+      {
+        "role": "user",
+        "content": "Public prompt"
+      },
+      {
+        "role": "reasoning",
+        "content": "Chain of thought"
+      },
+      {
+        "role": "assistant",
+        "content": "Public answer"
+      }
+    ]
+  },
+  {
+    "name": "optional-source",
+    "title": "Saved transcript",
+    "source_path": "/tmp/native-session.jsonl",
+    "messages": [
+      {
+        "role": "user",
+        "content": "save"
+      },
+      {
+        "role": "assistant",
+        "content": "saved"
+      }
+    ]
+  },
+  {
+    "name": "source-with-fence",
+    "source_path": "/tmp/a```b/log.jsonl",
+    "messages": []
+  },
+  {
+    "name": "markdown-content",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Please respond in Markdown"
+      },
+      {
+        "role": "assistant",
+        "content": "**Done**\n\n- first\n- second"
+      }
+    ]
+  },
+  {
+    "name": "multiple-user-messages",
+    "messages": [
+      {
+        "role": "user",
+        "content": "one"
+      },
+      {
+        "role": "user",
+        "content": "two"
+      },
+      {
+        "role": "assistant",
+        "content": "two replies"
+      }
+    ]
+  },
+  {
+    "name": "public-answer-with-private-kinds",
+    "messages": [
+      {
+        "role": "user",
+        "kind": "text",
+        "content": "Public question"
+      },
+      {
+        "role": "assistant",
+        "kind": "code",
+        "content": "PRIVATE_CODE_SENTINEL"
+      },
+      {
+        "role": "code_result",
+        "kind": "text",
+        "content": "PRIVATE_RESULT_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "action",
+        "content": "PRIVATE_ACTION_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "reasoning",
+        "content": "PRIVATE_REASONING_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "unknown",
+        "content": "PRIVATE_UNKNOWN_SENTINEL"
+      },
+      {
+        "role": "assistant",
+        "kind": "answer",
+        "content": "Public final answer"
+      }
+    ]
+  },
+  {
+    "name": "nonpublic-user-kinds-and-roles",
+    "messages": [
+      {
+        "role": "user",
+        "kind": "reasoning",
+        "content": "PRIVATE_USER_REASONING"
+      },
+      {
+        "role": "user",
+        "kind": "answer",
+        "content": "PRIVATE_USER_NON_TEXT"
+      },
+      {
+        "role": "system",
+        "kind": "text",
+        "content": "PRIVATE_SYSTEM"
+      },
+      {
+        "role": "developer",
+        "kind": "text",
+        "content": "PRIVATE_DEVELOPER"
+      },
+      {
+        "role": "reasoning",
+        "kind": "text",
+        "content": "PRIVATE_ROLE_REASONING"
+      },
+      {
+        "role": "user",
+        "kind": "text",
+        "content": "Public prompt"
+      },
+      {
+        "role": "assistant",
+        "kind": "text",
+        "content": "Public plain text"
+      }
+    ]
+  }
+]

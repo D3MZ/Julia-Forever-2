@@ -312,3 +312,45 @@ end
     @test full.pending === pending
     @test full.handlers === handlers
 end
+
+JuliaForever2.session_markdown_entry(::Val{:markdown_test_notice}, content::AbstractString) = "Notice: " * content
+
+@testset "Markdown public role and kind projection preserves history and role hooks" begin
+    messages = Message[
+        Message(:system, "PRIVATE_SYSTEM"),
+        Message(:developer, "PRIVATE_DEVELOPER"),
+        Message(:reasoning, "PRIVATE_REASONING_ROLE"),
+        Message(:user, "Public prompt"),
+        Message(ActionDecision(RunJulia("PRIVATE_CODE"))),
+        Message(:assistant, "PRIVATE_ACTION", :action; metadata=(secret="PRIVATE_METADATA",)),
+        Message(:assistant, "PRIVATE_REASONING", :reasoning),
+        Message(:assistant, "PRIVATE_UNKNOWN", :unknown),
+        Message(:code_result, "PRIVATE_RESULT"),
+        Message(:user, "PRIVATE_USER_REASONING", :reasoning),
+        Message(:user, "PRIVATE_USER_ANSWER", :answer),
+        Message(Answer("Public answer")),
+        Message(:assistant, "Public text"),
+        Message(:markdown_test_notice, "Public custom"),
+        Message(:markdown_test_notice, "PRIVATE_CUSTOM_ACTION", :action),
+        Message(:markdown_test_notice, "PRIVATE_CUSTOM_REASONING", :reasoning),
+        Message(:markdown_test_notice, "PRIVATE_CUSTOM_ANSWER", :answer)]
+    expected = "# Untitled Session\n\n> Public prompt\n\nPublic answer\n\nPublic text\n\nNotice: Public custom\n"
+    api = JuliaForever2.SessionAPI()
+    for (name, history) in (("typed", messages), ("any", Any[messages...]))
+        original = copy(history)
+        session = Session(Kernel(); messages=history, owns_kernel=true)
+        api.sessions[name] = session
+        @test JuliaForever2.session_markdown(history) == expected
+        @test JuliaForever2.session_markdown(session) == expected
+        response = JuliaForever2.session_api_request!(api, "session/markdown", Dict("session" => name))
+        @test response == Dict("markdown" => expected)
+        @test !occursin("PRIVATE_", response["markdown"])
+        @test history == original
+    end
+    @test JuliaForever2.session_markdown(Message[]) == JuliaForever2.session_markdown(Any[])
+    @test_throws MethodError JuliaForever2.session_markdown(Any[(role=:user, content="not a Message", kind=:text)])
+    @test_throws MethodError JuliaForever2.session_markdown(Any[messages[4], "not a Message"])
+    api.sessions["invalid-markdown"] = Session(Kernel(); messages=Any[(role=:user, content="not a Message", kind=:text)], owns_kernel=true)
+    @test_throws MethodError JuliaForever2.session_api_request!(api, "session/markdown", Dict("session" => "invalid-markdown"))
+    close(api)
+end

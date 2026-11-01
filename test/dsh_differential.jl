@@ -13,6 +13,7 @@ include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
 const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), String))
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
+CASES["session_markdown"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_markdown.json"), String))
 CASES["session_control"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_control.json"), String))
 CASES["session_fork"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_fork.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
@@ -1143,6 +1144,37 @@ end
     @test actual == expected
 end
 
+"""Compare independent Julia transcript rendering and its native RPC to pinned DSH Markdown output."""
+function session_markdown_result(input)
+    messages = Message[Message(Symbol(item["role"]), item["content"], Symbol(get(item, "kind", "text"))) for item in input["messages"]]
+    title = get(input, "title", nothing)
+    source_path = get(input, "source_path", nothing)
+    session = Session(Kernel(); messages, owns_kernel=true)
+    rendered = JuliaForever2.session_markdown(session; title, source_path)
+    close(session)
+    api = JuliaForever2.SessionAPI()
+    opened = JuliaForever2.session_api_request!(api, "session/open", Dict("session" => "markdown"))
+    opened isa AbstractDict || error("Could not open native Markdown export session")
+    for message in messages
+        JuliaForever2.append_message!(api.sessions["markdown"], message)
+    end
+    params = Dict{String,Any}("session" => "markdown")
+    isnothing(title) || (params["title"] = title)
+    isnothing(source_path) || (params["sourcePath"] = source_path)
+    response = JuliaForever2.session_api_request!(api, "session/markdown", params)
+    any_history = Any[messages...]
+    any_session = Session(Kernel(); messages=any_history, owns_kernel=true)
+    api.sessions["any-markdown"] = any_session
+    @test JuliaForever2.session_markdown(messages; title, source_path) == rendered
+    @test JuliaForever2.session_markdown(any_history; title, source_path) == rendered
+    @test JuliaForever2.session_markdown(any_session; title, source_path) == rendered
+    @test JuliaForever2.session_api_request!(api, "session/markdown", merge(params, Dict("session" => "any-markdown"))) == response
+    close(api)
+    response isa AbstractDict && get(response, "markdown", nothing) == rendered ||
+        error("Native Markdown RPC differs from direct session export")
+    return rendered
+end
+
 """Compare native per-session turn admission and cancellation to the pinned ACP control projection."""
 function session_control_result(input)
     entered = Channel{Base.Event}(8)
@@ -1267,7 +1299,7 @@ end
 
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
-            ("session_query", session_query_result), ("session_control", session_control_result),
+            ("session_query", session_query_result), ("session_markdown", session_markdown_result), ("session_control", session_control_result),
             ("session_fork", session_fork_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
