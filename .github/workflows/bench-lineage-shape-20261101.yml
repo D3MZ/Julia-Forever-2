@@ -1,0 +1,257 @@
+name: Session lineage shape-check paired performance experiment
+on:
+  push:
+    branches:
+      - perf/lineage-shape-validation-20261101-01
+permissions:
+  contents: read
+jobs:
+  paired-benchmarks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: '621f3cffbf74d656b09a8e309b1bc42bd7f4a2fb'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Create exact committed baseline and capture environment
+        shell: bash
+        run: |
+          mkdir -p benchmark-evidence
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/lineage-baseline" "$BASELINE_SHA"
+          git rev-parse HEAD > benchmark-evidence/candidate-sha.txt
+          git -C "$RUNNER_TEMP/lineage-baseline" rev-parse HEAD > benchmark-evidence/baseline-sha.txt
+          julia --version | tee benchmark-evidence/julia-version.txt
+          lscpu > benchmark-evidence/runner-cpu.txt
+          uname -a > benchmark-evidence/runner-os.txt
+          env | grep -E '^(JULIA_|OPENBLAS_|GITHUB_RUN_ID=|RUNNER_OS=|RUNNER_ARCH=)' | sort > benchmark-evidence/relevant-env.txt
+          sha256sum Project.toml test/Project.toml benchmarks/Project.toml > benchmark-evidence/projects-sha256.txt
+          git diff "$BASELINE_SHA" HEAD -- src test > benchmark-evidence/source-test-diff.patch
+      - name: Instantiate identical Julia dependencies for source and test work
+        shell: bash
+        run: |
+          julia --project=benchmarks -e 'using Pkg; Pkg.instantiate(); Pkg.status()' > benchmark-evidence/benchmark-packages.txt
+          julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()' > benchmark-evidence/test-packages.txt
+      - name: Seven alternating warmed-up paired trials, CPU and allocation profiles
+        shell: bash
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/lineage-experiment.jl" <<'JULIA'
+          using JuliaForever2, JSON, Profile, Statistics, SHA, UUIDs
+
+          length(ARGS) == 2 || error("Expected exact baseline directory and evidence directory")
+          const baseline_directory = realpath(ARGS[1])
+          const evidence = abspath(ARGS[2])
+          mkpath(evidence)
+          module BaselineNamespace end
+          Base.include(BaselineNamespace, joinpath(baseline_directory, "src/JuliaForever2.jl"))
+          const Baseline = BaselineNamespace.JuliaForever2
+          const Candidate = JuliaForever2
+
+          const namespace = UUID("1f813360-7860-43ec-9bd3-02a6ec91ac36")
+          function persist_fixture(label, number_of_sessions, number_of_messages)
+              directory = joinpath(evidence, "fixture-" * label)
+              mkpath(directory)
+              ids = [uuid5(namespace, label * string(number)) for number in 1:number_of_sessions]
+              content = repeat("Julia history indexing and persisted tool results from a real transcript. ", 6)
+              for number in 1:number_of_sessions
+                  name = "session_" * lpad(number, 4, '0')
+                  parent = number == 1 ? nothing : string(ids[number - 1])
+                  lineage = Dict("id" => string(ids[number]), "parent_id" => parent,
+                      "root_id" => string(first(ids)))
+                  messages = [Dict("role" => (isodd(index) ? "user" : "assistant"),
+                      "kind" => "text", "content" => string(content, " message ", number,
+                          " / ", index, index % 17 == 0 ? " needle record" : ""))
+                      for index in 1:number_of_messages]
+                  record = Dict("format" => "JuliaForever2.session", "version" => 2,
+                      "name" => name, "working_directory" => directory,
+                      "messages" => messages, "lineage" => lineage)
+                  write(joinpath(directory, name * ".json"), JSON.json(record) * "\n")
+              end
+              return (directory=directory, root=first(ids), sessions=number_of_sessions,
+                  messages=number_of_messages)
+          end
+          const large = persist_fixture("large", 64, 256)
+          const small = persist_fixture("small", 64, 8)
+          const empty_directory = joinpath(evidence, "fixture-empty")
+          mkpath(empty_directory)
+
+          descendants(package, fixture) =
+              package.session_descendants(package.SessionStore(fixture.directory), fixture.root)
+          function lineage(package, fixture)
+              return package.session_lineage(package.SessionStore(fixture.directory), "session_0032")
+          end
+          function loaded_record(package, fixture)
+              record = package.saved_session_record(package.SessionStore(fixture.directory),
+                  "session_0032")
+              return (count=length(record.messages), lineage=record.lineage,
+                  first=first(record.messages).content)
+          end
+          function mixed_workflow(package, fixture)
+              return (descendants=descendants(package, fixture),
+                  record=loaded_record(package, fixture),
+                  matches=package.search_history(package.SessionStore(fixture.directory),
+                      "needle"; limit=10))
+          end
+          const workloads = [
+              ("integration/mixed-lineage-load-and-search", p -> mixed_workflow(p, small)),
+              ("integration/descendants-large", p -> descendants(p, large)),
+              ("integration/descendants-small", p -> descendants(p, small)),
+              ("integration/descendants-empty", p ->
+                  p.session_descendants(p.SessionStore(empty_directory), large.root)),
+              ("integration/history-search", p ->
+                  p.search_history(p.SessionStore(small.directory), "needle"; limit=20)),
+              ("integration/loaded-record", p -> loaded_record(p, large)),
+              ("lineage/large", p -> lineage(p, large)),
+              ("lineage/small", p -> lineage(p, small)),
+          ]
+
+          function trial(f)
+              GC.gc()
+              timings = Int[]
+              for _ in 1:9
+                  started = time_ns()
+                  f()
+                  push!(timings, time_ns() - started)
+              end
+              return (times_ns=timings, median_ns=median(timings),
+                  allocated_bytes=Base.@allocated(f()), allocation_count=Base.@allocations(f()))
+          end
+          function confidence_lower(values)
+              seed = UInt64(0x13c0ffee)
+              medians = Float64[]
+              for _ in 1:10000
+                  draw = Float64[]
+                  for _ in eachindex(values)
+                      seed = seed * UInt64(6364136223846793005) + UInt64(1442695040888963407)
+                      push!(draw, values[Int(mod(seed, UInt64(length(values)))) + 1])
+                  end
+                  push!(medians, median(draw))
+              end
+              return quantile(medians, 0.025)
+          end
+          function cpu_and_allocations(f, prefix)
+              f()
+              Profile.clear()
+              Profile.@profile begin
+                  stop = time_ns() + 350_000_000
+                  while time_ns() < stop
+                      f()
+                  end
+              end
+              open(joinpath(evidence, prefix * "-cpu.txt"), "w") do output
+                  Profile.print(output; format=:flat, sortedby=:count)
+              end
+              Profile.Allocs.clear()
+              Profile.Allocs.@profile sample_rate=0.05 f()
+              sites = Dict{String,Tuple{Int,Int}}()
+              for allocation in Profile.Allocs.fetch().allocs
+                  isempty(allocation.stacktrace) && continue
+                  frame = first(allocation.stacktrace)
+                  for location in allocation.stacktrace
+                      if occursin("session_store.jl", string(location.file))
+                          frame = location
+                          break
+                      end
+                  end
+                  label = string(frame.file, ":", frame.line, " ", frame.func)
+                  count, bytes = get(sites, label, (0, 0))
+                  sites[label] = (count + 1, bytes + allocation.size)
+              end
+              records = [(site=site, count=value[1], bytes=value[2]) for (site, value) in sites]
+              sort!(records; by=record -> record.bytes, rev=true)
+              write(joinpath(evidence, prefix * "-allocation-sites.json"),
+                  JSON.json((sample_rate=0.05, sites=records)))
+              Profile.Allocs.clear()
+          end
+
+          const metadata = (
+              baseline_sha=readchomp(`git -C $baseline_directory rev-parse HEAD`),
+              candidate_sha=readchomp(`git rev-parse HEAD`),
+              julia_version=string(VERSION), julia_threads=Threads.nthreads(),
+              cpu=Sys.CPU_NAME, cpu_threads=Sys.CPU_THREADS, os=string(Sys.KERNEL),
+              architecture=string(Sys.ARCH), json_version=string(Base.pkgversion(JSON)),
+              project_sha256=bytes2hex(sha256(read("benchmarks/Project.toml"))),
+              baseline_project_sha256=bytes2hex(sha256(read(joinpath(baseline_directory, "benchmarks/Project.toml")))),
+              fixtures=(large=large, small=small), pairs=7,
+              repetitions_per_side=9, warmups_per_side=6,
+              order="AB,BA,AB,BA,AB,BA,AB",
+              test="10,000 deterministic paired-median bootstrap draws, 2.5% quantile",
+              matched_environment="one Julia process, runner, files, Julia packages and one thread")
+          write(joinpath(evidence, "environment.json"), JSON.json(metadata))
+          results = Dict{String,Any}()
+          for (name, operation) in workloads
+              baseline = () -> operation(Baseline)
+              candidate = () -> operation(Candidate)
+              isequal(baseline(), candidate()) || error("Behavior difference on " * name)
+              for _ in 1:6
+                  baseline()
+                  candidate()
+              end
+              original_trials = Any[]
+              candidate_trials = Any[]
+              for pair in 1:7
+                  if isodd(pair)
+                      push!(original_trials, trial(baseline))
+                      push!(candidate_trials, trial(candidate))
+                  else
+                      push!(candidate_trials, trial(candidate))
+                      push!(original_trials, trial(baseline))
+                  end
+              end
+              improvements = [1 - candidate_trials[index].median_ns /
+                  original_trials[index].median_ns for index in 1:7]
+              result = (baseline=original_trials, candidate=candidate_trials,
+                  paired_improvements=improvements,
+                  median_improvement=median(improvements),
+                  confidence95_lower=confidence_lower(improvements),
+                  minimum_improvement=minimum(improvements),
+                  baseline_allocated_bytes=median(getproperty.(original_trials, :allocated_bytes)),
+                  candidate_allocated_bytes=median(getproperty.(candidate_trials, :allocated_bytes)),
+                  baseline_allocation_count=median(getproperty.(original_trials, :allocation_count)),
+                  candidate_allocation_count=median(getproperty.(candidate_trials, :allocation_count)))
+              results[name] = result
+              println(name, " median=", round(100 * result.median_improvement; digits=2),
+                  "% lower95=", round(100 * result.confidence95_lower; digits=2),
+                  "% min_pair=", round(100 * result.minimum_improvement; digits=2), "%")
+              flush(stdout)
+          end
+          write(joinpath(evidence, "raw-paired-results.json"), JSON.json((metadata=metadata, results=results)))
+          cpu_and_allocations(() -> descendants(Baseline, large), "baseline-integration")
+          cpu_and_allocations(() -> descendants(Candidate, large), "candidate-integration")
+          representative = results["integration/descendants-large"]
+          no_regressions = all(result -> result.median_improvement > -0.10, values(results))
+          passed = no_regressions && representative.median_improvement > 0.10 &&
+              representative.confidence95_lower > 0.10 &&
+              representative.minimum_improvement > 0.10
+          write(joinpath(evidence, "acceptance.json"),
+              JSON.json((passed=passed, no_regressions=no_regressions,
+                  improvement=representative.median_improvement,
+                  confidence95_lower=representative.confidence95_lower,
+                  minimum_improvement=representative.minimum_improvement)))
+          println("ACCEPTANCE_GATE=", passed ? "PASS" : "FAIL")
+          passed || error("Performance acceptance gate not met: do not open a PR")
+          JULIA
+          julia --project=benchmarks "$RUNNER_TEMP/lineage-experiment.jl" "$RUNNER_TEMP/lineage-baseline" "$GITHUB_WORKSPACE/benchmark-evidence" 2>&1 | tee benchmark-evidence/benchmark.log
+      - name: Focused agent correctness, repository lint, and Aqua
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl agent lint aqua 2>&1 | tee benchmark-evidence/verification.log
+      - name: Upload all raw timings, allocation and CPU profiles, checks and environment
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lineage-shape-validation-raw-profile-evidence
+          path: benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30
