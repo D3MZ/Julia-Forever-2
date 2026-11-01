@@ -806,6 +806,80 @@ function sessionQueryCase(input) {
   })) }
 }
 
+
+/** Exercise DSH's actual step-time tool admission service on scripted tools, without any agent/model runtime. */
+async function toolActivationCase(input) {
+  const { ToolsService, SystemPrompt } = await toolsReference()
+  const { context, scopes } = await scopeFixture(input, async target => {
+    await target.plugin(SystemPrompt)
+    await target.plugin(ToolsService)
+  }, ['tools', 'systemPrompt'])
+  const scopeOf = operation => scopes.get(operation.scope ?? input.scope ?? 'agent')
+  const registrations = new Map()
+  const toolSets = new Map()
+  const conditions = []
+  const results = []
+  let controller
+  function register(specification) {
+    const scope = scopeOf(specification)
+    const when = specification.when === undefined ? undefined : selection => {
+      conditions.push(specification.id)
+      if (specification.when === 'error') throw new Error('fixture condition failed')
+      if (specification.when === 'abort') controller.abort()
+      const enabled = specification.when === 'always' || specification.when === 'abort'
+        || ((specification.when === 'enabled' || specification.when === 'async-enabled')
+          && selection.modelSelection.enabled === true)
+      return specification.when.startsWith('async-') ? Promise.resolve(enabled) : enabled
+    }
+    const dispose = scope.ctx.tools.register({
+      name: specification.name, description: '', parameters: { type: 'object' },
+      output: { schema: {}, render: () => [] },
+      execute: async () => specification.value ?? null,
+    }, { when })
+    registrations.set(specification.id, dispose)
+  }
+  for (const specification of input.tools) register(specification)
+  for (const operation of input.operations) {
+    const scope = scopeOf(operation)
+    const selected = Object.hasOwn(operation, 'set') ? toolSets.get(operation.set) : undefined
+    if (operation.type === 'prepare') {
+      controller = new AbortController()
+      if (operation.cancel_before) controller.abort()
+      try {
+        const toolSet = await context.tools.resolve({
+          agent: scope.key, modelSelection: { enabled: operation.enabled === true }, signal: controller.signal,
+        })
+        toolSets.set(operation.id, toolSet)
+        results.push({ ok: true, names: [...toolSet.view(scope.key).keys()] })
+      } catch (failure) {
+        results.push({ ok: false, error: controller.signal.aborted ? 'aborted' : 'activation' })
+      }
+    } else if (operation.type === 'snapshot') {
+      results.push({ names: context.tools.definitions(scope.key, selected).map(tool => tool.name) })
+    } else if (operation.type === 'check') {
+      const executable = context.tools.executable(operation.name, scope.key, selected)
+      results.push({ allowed: executable !== undefined,
+        value: executable === undefined ? null : await executable.execute({}, {}) })
+    } else if (operation.type === 'register') {
+      register(operation.tool)
+    } else if (operation.type === 'remove') {
+      registrations.get(operation.id)()
+    } else if (operation.type === 'restrict') {
+      registrations.set(operation.id, scope.ctx.tools.restrict(operation.filter))
+    } else if (operation.type === 'close_set') {
+      toolSets.get(operation.id).dispose()
+    } else if (operation.type === 'close_scope') {
+      await scope.dispose()
+    } else if (operation.type === 'trace') {
+      results.push({ conditions: [...conditions] })
+    } else {
+      throw new Error('Unknown tool admission fixture operation: ' + operation.type)
+    }
+  }
+  await context.fiber.dispose()
+  return results
+}
+
 async function execute(input) {
   if (input.kind === 'tool_completion') return Promise.all(input.cases.map(toolCompletionCase))
   if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
@@ -824,6 +898,7 @@ async function execute(input) {
   if (input.kind === 'replacements') return Promise.all(input.cases.map(replacementCase))
   if (input.kind === 'events') return Promise.all(input.cases.map(eventCase))
   if (input.kind === 'tools') return Promise.all(input.cases.map(toolCase))
+  if (input.kind === 'tool_activation') return Promise.all(input.cases.map(toolActivationCase))
   if (input.kind === 'tool_batch') return Promise.all(input.cases.map(toolBatchCase))
   if (input.kind === 'tool_cancellation') return Promise.all(input.cases.map(toolCancellationCase))
   if (input.kind === 'final_response') return input.cases.map(input => finalResponse(input.events))
