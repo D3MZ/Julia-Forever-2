@@ -344,6 +344,41 @@ function native_workspace_comparison(reference, directory)
     return actual, expected
 end
 
+"""Compare native close-triggered durable resume with the pinned DSH SDK shutdown/resume trace."""
+function native_session_close_persistence_comparison(reference, directory, temporary)
+    store = JuliaForever2.SessionStore(joinpath(temporary, "close-durability"))
+    api = JuliaForever2.SessionAPI(; store)
+    name = "close-differential"
+    opened = JuliaForever2.session_api_request!(api, "session/open",
+        Dict("session" => name, "workingDirectory" => directory))
+    opened isa AbstractDict || error("Could not open the native close-durability fixture")
+    source = api.sessions[name]
+    JuliaForever2.append_message!(source, Message(:user, FIRST_PROMPT))
+    JuliaForever2.append_message!(source, Message(:assistant, LOCAL_RESPONSE))
+    closed = JuliaForever2.session_api_request!(api, "session/close", Dict("session" => name))
+    resumed = JuliaForever2.session_api_request!(api, "session/resume", Dict("session" => name))
+    actual = if resumed isa JuliaForever2.RpcError
+        Dict("closed" => closed isa AbstractDict && get(closed, "closed", false),
+            "resumable" => false, "identityRetained" => false, "directory" => nothing,
+            "history" => Any[])
+    else
+        restored = api.sessions[name]
+        JuliaForever2.append_message!(restored, Message(:user, RESUMED_PROMPT))
+        Dict("closed" => closed isa AbstractDict && get(closed, "closed", false),
+            "resumable" => true, "identityRetained" => resumed["id"] == opened["id"],
+            "directory" => JuliaForever2.working_directory(restored),
+            "history" => [Dict("role" => String(message.role), "text" => message.content)
+                for message in JuliaForever2.history_snapshot(restored).messages])
+    end
+    expected = Dict("closed" => true,
+        "resumable" => !isnothing(reference.reference["phases"][2]["restored"]),
+        "identityRetained" => true,
+        "directory" => reference.reference["phases"][1]["directory"],
+        "history" => reference.reference_requests[2]["history"])
+    close(api)
+    return actual, expected
+end
+
 function native_session_history(directory, temporary)
     registry = JuliaForever2.PluginRegistry()
     registered = JuliaForever2.register_plugin!(registry,
@@ -675,6 +710,10 @@ end
             compared = successful_turn_comparison(directory, temporary)
             @test compared.candidate == compared.reference
             @test compared.candidate_requests == compared.reference_requests
+            @testset "Native Julia close durability and inactive session resume" begin
+                actual, expected = native_session_close_persistence_comparison(compared, directory, temporary)
+                @test actual == expected
+            end
             @testset "Native Julia persisted session history" begin
                 resumed = native_session_history(directory, temporary)
                 expected = Dict("directory" => compared.reference["phases"][1]["directory"],
