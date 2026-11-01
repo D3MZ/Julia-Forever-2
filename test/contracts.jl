@@ -139,6 +139,26 @@ end
     @test_throws "Session query must contain non-whitespace text" JuliaForever2.HistoryQuery("   ")
     @test_throws TypeError JuliaForever2.HistoryQuery("needle"; limit=1.0)
     @test_throws TypeError JuliaForever2.HistoryQuery("needle"; limit=nothing)
+    @test_throws TypeError JuliaForever2.HistoryQuery("needle"; limit=missing)
+
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        index = JuliaForever2.SessionSearchIndex(store)
+        for source in (store, index, JuliaForever2.SessionQuery(store))
+            for value in (false, true)
+                @test_throws "Session query limit must be a non-Boolean integer" JuliaForever2.search_history(source, "needle"; limit=value)
+            end
+        end
+    end
+
+    session = Session(Kernel())
+    for value in (false, true)
+        @test_throws "Session query limit must be a non-Boolean integer" JuliaForever2.search_history(session, "needle"; limit=value)
+        response = JuliaForever2.api_search_parameters(Dict("text" => "needle", "limit" => value))
+        @test response isa JuliaForever2.RpcError
+        @test response.code == -32602
+    end
+    close(session)
 end
 
 struct UnreadResponse end
