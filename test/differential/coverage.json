@@ -2713,6 +2713,14 @@
   ],
   "native_capability_assessment": [
     {
+      "family": "web.request-authority-origin",
+      "status": "native-implementation-unverified",
+      "implementation": "Optional native Julia HTTP Web server rejects non-loopback Host authorities, malformed/foreign browser Origins, and explicit cross-site Fetch Metadata before launch-token redemption, bearer admission, cookie admission, or RPC dispatch. The request_trust callable is replaceable through native server and Web plugin constructors.",
+      "external_oracle": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447 (test-only Web profile)",
+      "differential": "test/dsh_runtime_differential.jl:native_web_request_trust_comparison; test/differential/web-request-trust.json (15 admission/denial cases)",
+      "limits": "Only loopback, Host, Origin and Fetch-Metadata admission. Pending final CI evidence; no complete browser peer authority, WebSocket, HTTPS, remote-host allowlist, UI or DSH API parity."
+    },
+    {
       "family": "web.authentication.launch",
       "status": "native-implementation-unverified",
       "implementation": "JuliaForever2HTTPExt supplies a browser launch URL, one-time redemption, HttpOnly/SameSite=Strict cookie, original bearer-mode handler compatibility, and a CSRF header for cookie-authorized mutations.",
