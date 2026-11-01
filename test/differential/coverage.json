@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native plugin profile activation and independently implemented seams have bounded differential evidence. Production no longer launches or wraps the DSH SDK/runtime/Web; test-only DSH client scenarios and DSH-specific utility launch comparisons do not establish native SDK or Web parity. Full feature superset remains unproven. Native live and persisted literal history search is compared with pinned DSH semantic-text predicates on bounded fixtures; indexed search, tracing and full DSH session-query behavior remain unverified.",
+  "assessment": "Native Julia session lineage and revision-invalidated indexed history search are implemented, with bounded DSH behavioral comparisons for text filtering. Parent/child lineage serialization and restoration are independent features without upstream child-lineage differential evidence. Native Web, SDK and broader feature parity remain unverified; no production DSH runtime dependency.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -372,7 +372,7 @@
     },
     {
       "kind": "session_query",
-      "case_count": 11,
+      "case_count": 16,
       "status": "required-differential-cases",
       "sources": [
         {
@@ -392,11 +392,13 @@
       "compares": [
         "literal, case-insensitive and whitespace-flexible search over conversation text",
         "literal handling of regex metacharacters and Unicode case folding",
-        "role predicates, multi-session ordering, bounded search and live snapshots"
+        "role predicates, multi-session ordering, bounded search and live snapshots",
+        "revision-invalidated native trigram index returns exact case-insensitive, substring, whitespace and role-filtered results in deterministic stored-session order"
       ],
       "limits": [
         "The reference receives simple semantic text documents; Julia searches user/assistant message text. Full DSH event extraction, index-backed ranking, lineage, other event types and complete session-query service parity are unverified.",
-        "Only the eleven pinned differential fixtures are checked."
+        "Only the eleven pinned differential fixtures are checked.",
+        "Index is an independent Julia implementation: current store writes invalidate it, while external file modifications require explicit refresh_index!; no DSH indexing algorithm equivalence is claimed."
       ]
     }
   ],

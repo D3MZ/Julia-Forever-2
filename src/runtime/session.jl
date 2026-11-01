@@ -1,3 +1,5 @@
+using UUIDs: UUID, uuid4
+
 struct TaskHandle{S,C}
     task::Task
     session::S
@@ -23,10 +25,14 @@ mutable struct SessionRuntime{E}
     owns_kernel::Bool
     shutdown_task::Union{Nothing,Task}
     working_directory::String
+    id::UUID
+    parent_id::Union{Nothing,UUID}
+    root_id::UUID
 end
 
-SessionRuntime(executor; owns_kernel=false, working_directory=pwd()) = SessionRuntime(executor, ReentrantLock(), ReentrantLock(),
-    TaskHandle[], AbstractSession[], false, false, owns_kernel, nothing, realpath(working_directory))
+SessionRuntime(executor; owns_kernel=false, working_directory=pwd(), id=uuid4(), parent_id=nothing, root_id=id) =
+    SessionRuntime(executor, ReentrantLock(), ReentrantLock(), TaskHandle[], AbstractSession[],
+        false, false, owns_kernel, nothing, realpath(working_directory), id, parent_id, root_id)
 
 mutable struct Session{C,R,D} <: AbstractSession
     kernel::Kernel
@@ -52,15 +58,18 @@ function initialize_executor!(executor::JuliaExecutor, session::Session)
 end
 
 function Session(kernel::Kernel; executor=JuliaExecutor(), messages=Message[], definition=nothing, owns_kernel=false,
-        working_directory=pwd())
+        working_directory=pwd(), id=uuid4(), parent_id=nothing, root_id=id)
     isdir(working_directory) || error("Session working directory is not a directory: $working_directory")
-    session = Session(kernel, Conversation(messages), SessionRuntime(executor; owns_kernel, working_directory), definition)
+    session = Session(kernel, Conversation(messages),
+        SessionRuntime(executor; owns_kernel, working_directory, id, parent_id, root_id), definition)
     initialize_executor!(executor, session)
     return session
 end
 
-Session(definition::AgentDefinition; messages=Message[], working_directory=pwd()) = Session(definition_kernel(definition);
-    executor=Base.invokelatest(definition.executor_factory), messages, definition, owns_kernel=true, working_directory)
+Session(definition::AgentDefinition; messages=Message[], working_directory=pwd(),
+        id=uuid4(), parent_id=nothing, root_id=id) = Session(definition_kernel(definition);
+    executor=Base.invokelatest(definition.executor_factory), messages, definition, owns_kernel=true,
+    working_directory, id, parent_id, root_id)
 
 const CONVERSATION_PROPERTIES = (:messages, :lock, :usage, :revision, :changes)
 const RUNTIME_PROPERTIES = (:executor, :execution_lock, :shutdown_lock, :handles, :children, :closed, :executor_closed)
@@ -91,6 +100,10 @@ record_usage!(session::Session, report) = record_usage!(session.conversation, re
 usage_label(session::Session) = usage_label(session.conversation)
 
 Base.isopen(session::Session) = lock(() -> !session.runtime.closed, session.conversation.lock)
+
+"""Read stable session identity and ancestry without retaining its parent runtime."""
+session_lineage(session::Session) = (id=session.runtime.id, parent_id=session.runtime.parent_id,
+    root_id=session.runtime.root_id)
 
 """Read the session's workspace independently of the process-wide working directory."""
 working_directory(session::Session) = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
