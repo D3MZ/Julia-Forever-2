@@ -496,6 +496,104 @@ function native_web_launch_comparison(reference)
     return actual, expected
 end
 
+
+"""Project pinned DSH SDK workspace behavior onto the native cookie-authenticated Web console."""
+function web_console_rpc(origin, cookie, method, params=Dict{String,Any}())
+    body = JSON.json(Dict("jsonrpc" => "2.0", "id" => 1, "method" => method, "params" => params))
+    headers = ["Cookie" => cookie, "Content-Type" => "application/json",
+        "X-JuliaForever2-Request" => "1"]
+    response = HTTP.request("POST", origin * "/api/rpc", headers, body; status_exception=false)
+    response.status == 200 || error("Native Web console RPC failed with HTTP $(response.status)")
+    JSON.parse(String(response.body))
+end
+
+function native_web_console_comparison(sdk_reference, web_reference, directory, temporary)
+    operations = Dict(entry["name"] => entry["result"] for entry in sdk_reference["operations"])
+    store = JuliaForever2.SessionStore(joinpath(temporary, "web-console-sessions"))
+    api = JuliaForever2.SessionAPI(; store)
+    server = JuliaForever2.start_web_server(api)
+    origin = JuliaForever2.web_url(server)
+    exchange = HTTP.request("GET", JuliaForever2.web_launch_url(server);
+        redirect=false, status_exception=false)
+    cookie = first(split(HTTP.header(exchange, "Set-Cookie"), ';'))
+    headers = ["Cookie" => cookie]
+    page = HTTP.request("GET", origin * "/", headers; status_exception=false)
+    script = HTTP.request("GET", origin * "/app.js", headers; status_exception=false)
+    style = HTTP.request("GET", origin * "/app.css", headers; status_exception=false)
+    anonymous_asset = HTTP.request("GET", origin * "/app.js"; status_exception=false)
+    html = String(page.body)
+    javascript = String(script.body)
+    opened = web_console_rpc(origin, cookie, "session/open",
+        Dict("session" => "console-scope", "workingDirectory" => directory))["result"]
+    listed = web_console_rpc(origin, cookie, "session/list")["result"]
+    initial = web_console_rpc(origin, cookie, "session/workspace/get",
+        Dict("session" => "console-scope"))["result"]
+    selected = web_console_rpc(origin, cookie, "session/workspace/set",
+        Dict("session" => "console-scope", "path" => "child"))
+    changed = web_console_rpc(origin, cookie, "session/workspace/get",
+        Dict("session" => "console-scope"))["result"]
+    invalid = web_console_rpc(origin, cookie, "session/workspace/set",
+        Dict("session" => "console-scope", "path" => "does-not-exist"))
+    retained = web_console_rpc(origin, cookie, "session/workspace/get",
+        Dict("session" => "console-scope"))["result"]
+    hostile_text = "<img src=x onerror=alert(1)>"
+    JuliaForever2.append_message!(api.sessions["console-scope"], Message(:assistant, hostile_text))
+    messages = web_console_rpc(origin, cookie, "session/messages",
+        Dict("session" => "console-scope"))["result"]
+    saved = web_console_rpc(origin, cookie, "session/save",
+        Dict("session" => "console-scope"))["result"]
+    closed = web_console_rpc(origin, cookie, "session/close",
+        Dict("session" => "console-scope"))["result"]
+    resumed = web_console_rpc(origin, cookie, "session/resume",
+        Dict("session" => "console-scope"))["result"]
+    restored = web_console_rpc(origin, cookie, "session/messages",
+        Dict("session" => "console-scope"))["result"]
+    actual = Dict(
+        "htmlApp" => page.status == 200 && occursin("id=\"composer\"", html) &&
+            occursin("src=\"/app.js\"", html) && occursin("id=\"sessions\"", html),
+        "assets" => script.status == 200 && style.status == 200 &&
+            startswith(HTTP.header(script, "Content-Type"), "text/javascript") &&
+            startswith(HTTP.header(style, "Content-Type"), "text/css"),
+        "assetsAuthenticated" => anonymous_asset.status == 401,
+        "safeRendering" => occursin("textContent", javascript) &&
+            !occursin("innerHTML", javascript),
+        "commands" => all(command -> occursin(command, javascript),
+            ("session/list", "session/open", "session/resume", "session/messages",
+                "session/turn", "session/wait", "session/save", "session/close")),
+        "initial" => initial["workingDirectory"],
+        "set" => haskey(selected, "result"),
+        "changed" => changed["workingDirectory"],
+        "missing" => haskey(invalid, "result"),
+        "retained" => retained["workingDirectory"],
+        "listed" => listed == ["console-scope"],
+        "history" => length(messages) == 1 && messages[1]["content"] == hostile_text,
+        "saved" => saved["saved"] && closed["closed"],
+        "resumedIdentity" => resumed["id"] == opened["id"],
+        "restoredHistory" => restored == messages,
+    )
+    expected = Dict(
+        "htmlApp" => web_reference["index"]["status"] == 200 &&
+            startswith(web_reference["index"]["contentType"], "text/html"),
+        "assets" => true,
+        "assetsAuthenticated" => true,
+        "safeRendering" => true,
+        "commands" => true,
+        "initial" => operations["working-directory-get"]["value"]["cwd"],
+        "set" => operations["working-directory-set"]["ok"],
+        "changed" => operations["working-directory-after-set"]["value"]["cwd"],
+        "missing" => operations["missing-directory"]["ok"],
+        "retained" => operations["directory-after-failure"]["value"]["cwd"],
+        "listed" => true,
+        "history" => true,
+        "saved" => true,
+        "resumedIdentity" => true,
+        "restoredHistory" => true,
+    )
+    close(server)
+    close(api)
+    actual, expected
+end
+
 """Compare the native Julia request admission fence with the pinned Web transport."""
 function native_web_request_trust_comparison(reference)
     api = JuliaForever2.SessionAPI()
@@ -516,6 +614,7 @@ function native_web_request_trust_comparison(reference)
 end
 
 @testset "Pinned DSH transport differentials using test-only protocol clients" begin
+    sdk_web_reference = Ref{Any}(nothing)
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
         directory = mkpath(joinpath(temporary, "workspace with spaces"))
@@ -526,6 +625,7 @@ end
         write(joinpath(directory, "child", "nested", "sibling.jl"), "(@__FILE__, 71)\n")
         @testset "SDK process: $name" for name in ("sdk", "sdk-minimal")
             reference = reference_result("sdk", directory, joinpath(temporary, "reference-$name"); profile=name)
+            name == "sdk" && (sdk_web_reference[] = reference)
             profile = runtime_profile(name, directory, joinpath(temporary, "native-$name"))
             candidate = sdk_result(profile, joinpath(temporary, "$name-sdk.stderr"))
             @test candidate == reference
@@ -561,6 +661,10 @@ end
             end
             @testset "Native Julia one-use browser launch and cookie authentication" begin
                 actual, expected = native_web_launch_comparison(reference)
+                @test actual == expected
+            end
+            @testset "Native Julia interactive Web console and persisted session controls" begin
+                actual, expected = native_web_console_comparison(sdk_web_reference[], reference, directory, temporary)
                 @test actual == expected
             end
         end
