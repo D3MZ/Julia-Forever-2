@@ -12,10 +12,9 @@ end
 function JuliaForever2.respond(provider::CompactionFixtureProvider, request::ModelRequest,
         context::ExecutionContext)
     push!(provider.requests, request)
-    if occursin("Summarize", request.instructions)
-        return JuliaForever2.ProviderResult(Reply(:answer, "Verified condensed history"), nothing)
-    end
-    return JuliaForever2.ProviderResult(Reply(:answer, "finished"), nothing)
+    message = occursin("Summarize", request.instructions) ?
+        "Verified condensed history" : "finished"
+    JuliaForever2.ProviderResult(Reply(:answer, message), nothing)
 end
 
 @testset "Pi model limits are metadata, never invented defaults" begin
