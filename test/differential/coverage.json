@@ -339,7 +339,7 @@
     },
     {
       "kind": "profile_groups",
-      "case_count": 5,
+      "case_count": 8,
       "status": "required-differential-cases",
       "sources": [
         {
@@ -360,10 +360,12 @@
         "last-group configuration precedence",
         "reused plugin identity",
         "Unicode plugin names",
-        "input data preservation"
+        "input data preservation",
+        "native named-profile JSON persistence and activation preserve the selected plugins and configuration projected by upstream composition"
       ],
       "limits": [
-        "Only the common observable projection of plugin identity, order, and whole plugin configuration replacement is compared; DSH bundle discovery, patch grammar, hot reload, service bindings, and native plugin lifecycle require separate evidence."
+        "Only the common observable projection of plugin identity, order, and whole plugin configuration replacement is compared; DSH bundle discovery, patch grammar, hot reload, service bindings, and native plugin lifecycle require separate evidence.",
+        "Saved-profile format, filesystem semantics and name resolution are native Julia design choices, not claimed to match DSH persistence implementation; reference covers the shared composition projection only."
       ]
     }
   ],
