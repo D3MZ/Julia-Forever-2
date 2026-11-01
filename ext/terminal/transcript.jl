@@ -64,24 +64,45 @@ function wrap_conversation_line(line::AbstractString, width::Int)
     return lines
 end
 
+"""Wrap printable ASCII spans by byte ranges; retain grapheme-aware fallback for all other text."""
 function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     lines = Vector{Tachikoma.Span}[]
     line = Tachikoma.Span[]
     columns = 0
     for span in spans
-        text = IOBuffer()
-        for grapheme in Base.Unicode.graphemes(span.content)
-            size = textwidth(grapheme)
-            if columns + size > width && columns > 0
-                position(text) > 0 && push!(line, Tachikoma.Span(String(take!(text)), span.style))
-                push!(lines, line)
-                line = Tachikoma.Span[]
-                columns = 0
+        content = span.content
+        if content isa Union{String,SubString{String}} &&
+                all(byte -> 0x20 <= byte <= 0x7e, codeunits(content))
+            # Printable ASCII graphemes each occupy one byte and one column.
+            # Preserve boundaries and styles when a span crosses display lines.
+            index = 1
+            stop = ncodeunits(content)
+            while index <= stop
+                if columns > 0 && columns >= width
+                    push!(lines, line)
+                    line = Tachikoma.Span[]
+                    columns = 0
+                end
+                count = min(stop - index + 1, max(1, width - columns))
+                push!(line, Tachikoma.Span(String(SubString(content, index, index + count - 1)), span.style))
+                columns += count
+                index += count
             end
-            print(text, grapheme)
-            columns += size
+        else
+            text = IOBuffer()
+            for grapheme in Base.Unicode.graphemes(content)
+                size = textwidth(grapheme)
+                if columns + size > width && columns > 0
+                    position(text) > 0 && push!(line, Tachikoma.Span(String(take!(text)), span.style))
+                    push!(lines, line)
+                    line = Tachikoma.Span[]
+                    columns = 0
+                end
+                print(text, grapheme)
+                columns += size
+            end
+            position(text) > 0 && push!(line, Tachikoma.Span(String(take!(text)), span.style))
         end
-        position(text) > 0 && push!(line, Tachikoma.Span(String(take!(text)), span.style))
     end
     push!(lines, line)
     return lines
