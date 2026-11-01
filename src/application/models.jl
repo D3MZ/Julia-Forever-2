@@ -149,13 +149,18 @@ model_context_window(::Nothing) = nothing
 model_output_limit(provider) = model_output_limit(selected_model(provider))
 model_output_limit(::Nothing) = nothing
 
+pi_catalog_provider(::Val{provider}) where {provider} = String(provider)
+pi_catalog_provider(::Val{:chatgpt}) = "openai-codex"
+pi_catalog_provider(::Val{:codex}) = "openai-codex"
+pi_catalog_provider(provider::Symbol) = pi_catalog_provider(Val(provider))
+
 """Explicitly refresh a named provider's metadata; invalid catalogs do not replace a good cache."""
 function refresh_pi_model_catalog!(registry::ProviderRegistry, provider::Symbol; fetcher=fetch_pi_catalog)
     descriptor = provider_descriptor(registry, provider)
     if isnothing(descriptor)
         (ok=false, reason="Unknown provider", count=0)
     else
-        url = "https://pi.dev/api/models/providers/" * String(provider)
+        url = "https://pi.dev/api/models/providers/" * pi_catalog_provider(provider)
         catalog = pi_model_catalog(Base.invokelatest(fetcher, url), provider)
         if isnothing(catalog)
             (ok=false, reason="Invalid model catalog", count=0)
