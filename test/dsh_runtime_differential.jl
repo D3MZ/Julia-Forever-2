@@ -572,7 +572,7 @@ function native_web_stop_comparison()
         javascript = String(script.body)
         actual = Dict("control" => observations, "stopUI" =>
             page.status == 200 && script.status == 200 &&
-            occursin("id=\\"stop\\"", html) &&
+            occursin("id=\"stop\"", html) &&
             occursin("session/cancel", javascript) &&
             occursin("runningSession", javascript))
         expected = Dict("control" => reference, "stopUI" => true)
