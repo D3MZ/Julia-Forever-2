@@ -48,11 +48,8 @@ footer_context_window(value::Integer) = 0 < value <= typemax(Int) ? Int(value) :
 footer_thinking(metadata) = nothing
 function footer_thinking(metadata::AbstractDict)
     level = get(metadata, "thinkingLevel", get(metadata, "reasoningEffort", nothing))
-    thinking = if level isa AbstractString && !isempty(level)
-        String(level)
-    else
-        get(metadata, "reasoning", false) === true ? "off" : nothing
-    end
+    # A model capability does not specify the backend's active thinking level.
+    thinking = level isa AbstractString && !isempty(level) ? String(level) : nothing
     return thinking
 end
 

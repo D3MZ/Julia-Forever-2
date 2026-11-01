@@ -969,6 +969,13 @@ end
         JuliaForever2.OpenRouterProvider("fixture", "test-model")).subscription
     @test JuliaForever2.provider_footer_status(
         JuliaForever2.OpenRouterProvider("fixture", "test-model")).context_window === nothing
+    unknown = JuliaForever2.ModelProvider(
+        JuliaForever2.ModelSpec(:synthetic, "unknown-thinking"; metadata=Dict("reasoning" => true)),
+        (args...) -> nothing)
+    @test isnothing(JuliaForever2.provider_footer_status(unknown).thinking)
+    @test !occursin("thinking off",
+        JuliaForever2.footer_model_label(JuliaForever2.provider_footer_status(unknown)))
+    @test JuliaForever2.footer_thinking(Dict("reasoning" => true, "thinkingLevel" => "off")) == "off"
     close(session)
 end
 
