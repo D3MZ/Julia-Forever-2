@@ -1,13 +1,11 @@
-mutable struct Usage
-    input_tokens::Int
-    output_tokens::Int
-    cost::Float64
-    reported::Bool
-    cost_known::Bool
-    partial::Bool
+Base.@kwdef mutable struct Usage
+    input_tokens::Int = 0
+    output_tokens::Int = 0
+    cost::Float64 = 0.0
+    reported::Bool = false
+    cost_known::Bool = true
+    partial::Bool = false
 end
-
-Usage() = Usage(0, 0, 0.0, false, true, false)
 
 usage_tokens(value) = nothing
 usage_tokens(::Bool) = nothing
