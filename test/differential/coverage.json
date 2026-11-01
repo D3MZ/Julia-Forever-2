@@ -2343,8 +2343,8 @@
   "runtime_evidence": {
     "runner": "../dsh_runtime_differential.jl",
     "reference_commit": "ce7073d51254c26cd63b22a60835b8f948deb447",
-    "scope": "Test-only DSH protocol clients exercise the native framework-neutral JSON-RPC transport and process lifecycle against a pinned upstream CLI. DSH SDK and Web behavior is delegated inside tests only; it does not establish native SDK, Web, or application feature parity.",
-    "required_comparisons": 12,
+    "scope": "Test-only DSH protocol clients exercise the framework-neutral JSON-RPC transport and process lifecycle against a pinned upstream CLI. A separate native Julia SessionStore comparison verifies persisted session history and workspace against actual upstream restart/resume observations. DSH SDK and Web behavior is delegated inside tests only; this does not establish native SDK, Web, or application feature parity.",
+    "required_comparisons": 13,
     "guards": [
       "The CLI must be built at apps/cli/lib/bin.js in an unmodified tracked source checkout at the pinned revision; the same-version published npm package is not accepted.",
       "Both SDK profiles must initialize, reject an uninitialized prompt, and validate session/query input. Unknown-method failures do not count as query support.",
@@ -2393,6 +2393,13 @@
         ],
         "comparisons": 2,
         "projection": "Actual upstream HarnessClient versus Julia helpers: successful prompt, wait, exact final response and finish reason; a fresh process resumes the persisted session despite a different initialization directory, then completes another turn. Compare ordered notification projections and complete model-request messages, model/output-cap/stream options, local server outcomes, and the restored user/assistant history."
+      },
+      {
+        "profiles": [
+          "sdk"
+        ],
+        "comparisons": 1,
+        "projection": "Native Julia plugin-provided SessionStore persists user and assistant messages, then resumes in a fresh session with the original working directory and prior history; the resulting continuation-history projection is compared against the pinned upstream SDK's actual resumed provider request. Julia does not invoke DSH for production persistence."
       }
     ],
     "normalization": [
@@ -2406,7 +2413,8 @@
       "External model responses, generated tool execution, approval and question interaction flows, other persistence histories and recovery/migration cases, jobs, goals, schedules, MCP and third-party package replacement behavior are not exercised by these runtime scenarios.",
       "Browser JavaScript interaction, WebSocket behavior, desktop behavior, TLS, remote deployments and ACP protocol conversations remain outside these comparisons.",
       "Native session working-directory comparisons cover directory state and path resolution, not integration into third-party tool filesystem behavior or full native SDK functionality.",
-      "No native DSH SDK/application/Web implementation is supplied by the test-only DSH protocol adapters. Their successful forwarding and server startup are reference-only and do not establish product parity."
+      "No native DSH SDK/application/Web implementation is supplied by the test-only DSH protocol adapters. Their successful forwarding and server startup are reference-only and do not establish product parity.",
+      "Native session snapshots persist message roles, text and kinds plus working directory, not arbitrary message metadata, token accounting, in-flight operations, tool resources, or the complete DSH on-disk session format."
     ],
     "included_in_native_case_counts": false
   },
