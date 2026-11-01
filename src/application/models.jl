@@ -32,9 +32,11 @@ catalog_models(factory) = ModelSpec[]
 
 """Read last-known model metadata; catalog callbacks must not perform network or authentication work."""
 function provider_models(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY; provider=nothing, kind=:chat)
-    descriptors = provider_descriptors(registry)
+    descriptors = isnothing(provider) ? provider_descriptors(registry) :
+        (provider_descriptor(registry, Symbol(provider)),)
     result = ModelSpec[]
     for descriptor in descriptors
+        isnothing(descriptor) && continue
         if isnothing(provider) || descriptor.id == Symbol(provider)
             for model in catalog_models(descriptor.create)
                 if kind == :all || model.kind == kind
