@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
-const { filterSessionEventDocuments } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
+const { filterSessionEventDocuments, filterSessionResults } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
 const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
 const { ApprovalReference } = await importSource('packages/core/tools/src/pipeline.ts', source => {
@@ -783,7 +783,10 @@ async function toolCase(input) {
 
 
 function sessionQueryCase(input) {
-  const documents = input.sessions.flatMap(session => session.messages.map((message, index) => ({
+  const sessions = input.selected_sessions === undefined ? input.sessions
+    : filterSessionResults(input.sessions.map(session => ({ header: { id: session.name }, session })),
+      [{ kind: 'id', values: input.selected_sessions }]).map(record => record.session)
+  const documents = sessions.flatMap(session => session.messages.map((message, index) => ({
     sessionId: session.name,
     seq: index,
     type: `${message.role}/message`,
@@ -796,6 +799,11 @@ function sessionQueryCase(input) {
   const filters = [{ kind: 'text', text: input.text }]
   if (input.roles !== undefined) filters.push({ kind: 'type',
     values: input.roles.map(role => `${role}/message`) })
+  if (input.from_index !== undefined || input.to_index !== undefined) {
+    filters.push({ kind: 'seq',
+      ...input.from_index === undefined ? {} : { from: input.from_index - 1 },
+      ...input.to_index === undefined ? {} : { to: input.to_index - 1 } })
+  }
   const selected = filterSessionEventDocuments(documents, filters)
   return { ok: true, hits: selected.slice(0, input.limit ?? selected.length).map(document => ({
     session: input.source === 'live' ? null : document.sessionId,
