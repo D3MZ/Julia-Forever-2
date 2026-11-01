@@ -14,8 +14,6 @@ jobs:
     timeout-minutes: 30
     env:
       JULIA_NUM_THREADS: '2'
-      PI_REFERENCE: ${{ runner.temp }}/pi-reference
-      PI_PARITY_REPORT: ${{ runner.temp }}/pi-parity.json
     steps:
       - uses: actions/checkout@v4
       - name: Read reviewed Pi pin
@@ -28,7 +26,10 @@ jobs:
           path: .pi-reference
           persist-credentials: false
       - name: Keep oracle outside package and lint trees
-        run: mv .pi-reference "$PI_REFERENCE"
+        run: |
+          echo "PI_REFERENCE=$RUNNER_TEMP/pi-reference" >> "$GITHUB_ENV"
+          echo "PI_PARITY_REPORT=$RUNNER_TEMP/pi-parity.json" >> "$GITHUB_ENV"
+          mv .pi-reference "$RUNNER_TEMP/pi-reference"
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
