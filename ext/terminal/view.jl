@@ -20,6 +20,30 @@ function drawline!(buffer, x, y, width, text, style=:text)
         Tachikoma.set_string!(buffer, x, y, text, pi_style(style); max_x=x + width - 1)
     end
 end
+
+const WORKING_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+"""Select the working indicator frame at an 80 millisecond interval."""
+working_spinner(ticks::Integer) = WORKING_SPINNER_FRAMES[mod(fld(ticks, 80_000_000), length(WORKING_SPINNER_FRAMES)) + 1]
+
+"""Show active operation status inside the editor border without changing input layout."""
+function draw_input_border!(buffer, x, y, width, app::App; ticks::Integer=time_ns())
+    drawline!(buffer, x, y, width, repeat("─", width), :border)
+    if app.busy && !isnothing(app.operations.active) && !app.operations.closing[]
+        spinner = working_spinner(ticks)
+        label = string(spinner, ' ', app.status)
+        label_width = textwidth(label)
+        if label_width + 5 <= width
+            drawline!(buffer, x + 2, y, 1, " ", :border)
+            drawline!(buffer, x + 3, y, label_width, label, :accent)
+            drawline!(buffer, x + 3 + label_width, y, 1, " ", :border)
+        elseif width >= 5
+            drawline!(buffer, x + 3, y, 1, spinner, :accent)
+        end
+    end
+    return nothing
+end
+
 function draw_conversation_line!(buffer, x, y, width, line::AbstractString, style)
     if style in (:user_message, :code_result)
         color = style == :user_message ? Tachikoma.ColorRGB(33, 59, 73) : Tachikoma.ColorRGB(37, 65, 49)
@@ -60,7 +84,7 @@ function page_view!(app::App, page::Val, frame::Frame)
         line, style = index <= length(lines) ? lines[index] : preview[index - length(lines)]
         draw_conversation_line!(buf, x, y + i - 1, w, line, style)
     end
-    drawline!(buf, x, border, w, repeat("─", w), :border)
+    draw_input_border!(buf, x, border, w, app)
     Tachikoma.render(app.input, Rect(x, border + 1, w, 1), buf)
     drawline!(buf, x, border + 2, w, repeat("─", w), :border)
     for offset in 0:(count - 1)
