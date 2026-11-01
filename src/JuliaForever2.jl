@@ -21,7 +21,7 @@ public ResponseProgress, protocol_progress, emit_protocol_progress!, operation_i
 public usage_snapshot, model_request, own_resource!
 public AgentDecision, agent_decision, action_content, action_kind, action_payload
 public BoundComponent, bind_component, bound_dependency, fork_kernel
-public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, compose_profiles
+public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileStore, compose_profiles, save_profile!, load_profile, profile_names
 public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
 public ToolSpec, ToolCall, ToolExecutor, register_tool!, restrict_tools!, tools_snapshot, tool, invoke_tool!
@@ -33,6 +33,7 @@ public runtime_transport_plugin, process_launcher_plugin
 include("kernel.jl")
 include("agent.jl")
 include("core/plugins.jl")
+include("core/profile_store.jl")
 include("core/extensions.jl")
 include("core/event_context.jl")
 include("features/code_mode/streaming.jl")

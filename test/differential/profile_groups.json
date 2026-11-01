@@ -116,5 +116,74 @@
         }
       }
     ]
+  },
+  {
+    "name": "empty stored profile",
+    "stored": true,
+    "profiles": []
+  },
+  {
+    "name": "persisted profile groups retain ordered configuration overrides",
+    "stored": true,
+    "profiles": [
+      {
+        "plugins": [
+          "model",
+          "tools"
+        ],
+        "config": {
+          "model": {
+            "provider": "demo"
+          },
+          "tools": {
+            "budget": 10
+          }
+        }
+      },
+      {
+        "plugins": [
+          "tools",
+          "telemetry"
+        ],
+        "config": {
+          "tools": {
+            "budget": 3
+          },
+          "telemetry": {
+            "enabled": true
+          }
+        }
+      }
+    ]
+  },
+  {
+    "name": "persisted Unicode profile and plugin identity",
+    "stored": true,
+    "storage_name": "作業プロファイル",
+    "profiles": [
+      {
+        "plugins": [
+          "日本語",
+          "alpha"
+        ],
+        "config": {
+          "日本語": {
+            "language": "ja",
+            "weight": 2
+          }
+        }
+      },
+      {
+        "plugins": [
+          "alpha",
+          "日本語"
+        ],
+        "config": {
+          "日本語": {
+            "language": "ja"
+          }
+        }
+      }
+    ]
   }
 ]

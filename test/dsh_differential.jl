@@ -554,10 +554,48 @@ function profile_group_result(input)
     original = deepcopy(input["profiles"])
     layers = [JuliaForever2.Profile(:layer, Symbol.(layer["plugins"]);
         config=get(layer, "config", Dict())) for layer in input["profiles"]]
-    profile = JuliaForever2.compose_profiles(:composed, layers...)
-    return normalize(Dict("plugins" => String.(profile.plugins),
-        "config" => Dict(String(plugin) => value for (plugin, value) in profile.config),
-        "originalProfiles" => original))
+    if !get(input, "stored", false)
+        profile = JuliaForever2.compose_profiles(:composed, layers...)
+        return normalize(Dict("plugins" => String.(profile.plugins),
+            "config" => Dict(String(plugin) => value for (plugin, value) in profile.config),
+            "originalProfiles" => original))
+    end
+    return mktempdir() do directory
+        store = JuliaForever2.ProfileStore(directory)
+        for (index, layer) in enumerate(layers)
+            named = JuliaForever2.Profile(Symbol("layer_$index"), layer.plugins;
+                config=layer.config, bindings=layer.bindings)
+            saved = JuliaForever2.save_profile!(store, named)
+            saved.ok || error(saved.reason)
+        end
+        restored = [JuliaForever2.load_profile(store, Symbol("layer_$index")) for index in eachindex(layers)]
+        identity = Symbol(get(input, "storage_name", "composed"))
+        composed = JuliaForever2.compose_profiles(identity, restored...)
+        saved = JuliaForever2.save_profile!(store, composed)
+        saved.ok || error(saved.reason)
+        identity in JuliaForever2.profile_names(store) || error("Named profile was not discoverable")
+        observed = Dict{String,Any}()
+        registry = JuliaForever2.PluginRegistry()
+        for plugin in composed.plugins
+            setup = let plugin = plugin
+                context -> begin
+                    haskey(composed.config, plugin) && (observed[String(plugin)] = context.config)
+                    nothing
+                end
+            end
+            JuliaForever2.register_plugin!(registry, JuliaForever2.PluginSpec(plugin, setup))
+        end
+        kernel = Kernel()
+        host = JuliaForever2.PluginHost(kernel; registry)
+        activated = JuliaForever2.activate!(host, store, identity)
+        activated.ok || error(activated.reason)
+        snapshot = JuliaForever2.plugin_snapshot(host)
+        output = Dict("plugins" => String.(snapshot.active), "config" => observed,
+            "originalProfiles" => original)
+        close(host)
+        close(kernel)
+        return normalize(output)
+    end
 end
 
 final_response_result(input) = dsh_final_response(input["events"])
