@@ -36,7 +36,6 @@ struct ToolApprovalRequest <: AbstractToolApprovalRequest
     reason::Union{Nothing,String}
 end
 
-ToolApprovalRequest(reason::AbstractString) = ToolApprovalRequest(String(reason))
 ToolApprovalRequest() = ToolApprovalRequest(nothing)
 
 struct ToolRestriction
