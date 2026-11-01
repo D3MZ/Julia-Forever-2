@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native plugin profile activation and independently implemented seams have bounded differential evidence. Production no longer launches or wraps the DSH SDK/runtime/Web; test-only DSH client scenarios and DSH-specific utility launch comparisons do not establish native SDK or Web parity. Full feature superset remains unproven. Native live and persisted literal history search is compared with pinned DSH semantic-text predicates on bounded fixtures; indexed search, tracing and full DSH session-query behavior remain unverified.",
+  "assessment": "Native plugin profile activation and independently implemented seams have bounded differential evidence. Production no longer launches or wraps the DSH SDK/runtime/Web; test-only DSH client scenarios and DSH-specific utility launch comparisons do not establish native SDK or Web parity. Full feature superset remains unproven. Native live and persisted literal history search is compared with pinned DSH semantic-text predicates on bounded fixtures; indexed search, tracing and full DSH session-query behavior remain unverified. Opt-in checked JSON Schema arguments now have a bounded native differential comparison; full tool-executor parity remains unverified.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -368,6 +368,29 @@
       "limits": [
         "Only the common observable projection of plugin identity, order, and whole plugin configuration replacement is compared; DSH bundle discovery, patch grammar, hot reload, service bindings, and native plugin lifecycle require separate evidence.",
         "Saved-profile format, filesystem semantics and name resolution are native Julia design choices, not claimed to match DSH persistence implementation; reference covers the shared composition projection only."
+      ]
+    },
+    {
+      "kind": "tool_arguments",
+      "case_count": 31,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/json-schema.ts",
+          "symbols": [
+            "assertSupportedJsonSchema",
+            "validateJsonSchemaValue"
+          ]
+        }
+      ],
+      "compares": [
+        "schema-enforced object, array, scalar, enum, const and exact-one union argument admission",
+        "path-qualified missing, type, closed-object and union diagnostics on pinned JSON fixtures",
+        "native ToolExecutor blocks rejected arguments before a user callback and exposes the underlying schema"
+      ],
+      "limits": [
+        "Only 31 JSON-compatible fixtures against the original pinned validator; unsupported-schema diagnostics, unbounded nesting, non-JSON objects, batch execution and every other DSH tool-executor behavior remain unverified.",
+        "Validation is opt-in via CheckedJSONSchema; existing opaque ToolSpec schemas remain caller-defined. This does not establish native parity for DSH tool approval, scheduling, cancellation, or output validation."
       ]
     },
     {
@@ -931,7 +954,8 @@
       "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [
         "tools",
-        "events"
+        "events",
+        "tool_arguments"
       ],
       "packages": [
         {
