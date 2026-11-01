@@ -14,6 +14,7 @@ mutable struct SessionTitleService{S}
     max_words::Int
     fallback_max_bytes::Int
     max_bytes::Int
+    closed::Bool
 end
 
 title_positive(name, value::Integer) = value isa Bool || value < 1 || value > typemax(Int) ?
@@ -26,7 +27,7 @@ function SessionTitleService(; store=nothing, max_words::Integer=8,
     maximum = title_positive("max_bytes", max_bytes)
     fallback <= maximum || error("fallback_max_bytes cannot exceed max_bytes")
     SessionTitleService(store, ReentrantLock(), Dict{UUID,SessionTitleRecord}(),
-        words, fallback, maximum)
+        words, fallback, maximum, false)
 end
 
 """Skip a terminal control sequence without rendering its hidden contents."""
@@ -212,20 +213,24 @@ end
 function session_title(service::SessionTitleService, session::Session)
     identity = session_lineage(session).id
     lock(service.lock) do
-        record = get(service.records, identity, nothing)
-        if isnothing(record)
-            record = load_title_record(service.store, identity)
-        end
-        if isnothing(record)
-            title = first_session_title(service, session)
-            if !isnothing(title)
-                record = SessionTitleRecord(title, :fallback)
-                remember_title!(service, identity, record)
-            end
+        if service.closed
+            nothing
         else
-            service.records[identity] = record
+            record = get(service.records, identity, nothing)
+            if isnothing(record)
+                record = load_title_record(service.store, identity)
+            end
+            if isnothing(record)
+                title = first_session_title(service, session)
+                if !isnothing(title)
+                    record = SessionTitleRecord(title, :fallback)
+                    remember_title!(service, identity, record)
+                end
+            else
+                service.records[identity] = record
+            end
+            isnothing(record) ? nothing : record.text
         end
-        isnothing(record) ? nothing : record.text
     end
 end
 
@@ -237,8 +242,9 @@ function rename_session_title!(service::SessionTitleService, session::Session,
         nothing
     else
         lock(service.lock) do
-            remember_title!(service, session_lineage(session).id,
-                SessionTitleRecord(title, :user))
+            service.closed ? nothing :
+                remember_title!(service, session_lineage(session).id,
+                    SessionTitleRecord(title, :user))
         end
     end
 end
@@ -249,14 +255,18 @@ function refresh_session_title!(service::SessionTitleService, session::Session)
         nothing
     else
         lock(service.lock) do
-            identity = session_lineage(session).id
-            title = first_session_title(service, session)
-            if isnothing(title)
-                delete_title_record!(service.store, identity)
-                delete!(service.records, identity)
+            if service.closed
                 nothing
             else
-                remember_title!(service, identity, SessionTitleRecord(title, :fallback))
+                identity = session_lineage(session).id
+                title = first_session_title(service, session)
+                if isnothing(title)
+                    delete_title_record!(service.store, identity)
+                    delete!(service.records, identity)
+                    nothing
+                else
+                    remember_title!(service, identity, SessionTitleRecord(title, :fallback))
+                end
             end
         end
     end
@@ -267,7 +277,7 @@ function inherit_session_title!(service::SessionTitleService, source::Session, c
     session_title(service, source)
     lock(service.lock) do
         record = get(service.records, session_lineage(source).id, nothing)
-        isnothing(record) ? nothing :
+        service.closed || isnothing(record) ? nothing :
             remember_title!(service, session_lineage(child).id, record)
     end
 end
@@ -275,6 +285,7 @@ end
 inherit_session_title!(service, source::Session, child::Session) = nothing
 
 Base.close(service::SessionTitleService) = lock(service.lock) do
+    service.closed = true
     empty!(service.records)
     nothing
 end
