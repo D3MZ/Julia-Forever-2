@@ -1,9 +1,14 @@
-function default_evaluate!(session::Session, action)
-    executor = session.runtime.executor
-    context = current_execution_context()
+function execute_session_action(executor, session, action, context)
     return applicable(execute!, executor, action, context) ?
         Base.invokelatest(execute!, executor, action, context) :
         Base.invokelatest(execute!, executor, session, action, context)
+end
+
+execute_session_action(executor::JuliaExecutor, session, action, context) =
+    Base.invokelatest(execute!, executor, session, action, context)
+
+function default_evaluate!(session::Session, action)
+    return execute_session_action(session.runtime.executor, session, action, current_execution_context())
 end
 
 """Preserve existing callable and four-argument providers at the compatibility boundary."""
