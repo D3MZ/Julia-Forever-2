@@ -53,3 +53,10 @@ jobs:
           name: coverage-lcov
           path: lcov.info
           if-no-files-found: error
+      - name: Upload coverage report to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.info
+          disable_search: true
+          fail_ci_if_error: true
