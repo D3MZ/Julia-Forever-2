@@ -105,6 +105,16 @@ function session_trigrams(text::AbstractString)
         for index in 1:max(0, length(characters) - 2)]
 end
 
+"""Index ASCII trigrams without per-gram copied strings and a transient deduplication Set."""
+function append_ascii_session_postings!(postings::Dict{String,BitSet}, text::String, document_id::Int)
+    lowercase_text = lowercase(text)
+    for offset in 1:max(0, ncodeunits(lowercase_text) - 2)
+        gram = SubString(lowercase_text, offset, offset + 2)
+        push!(get!(BitSet, postings, gram), document_id)
+    end
+    return nothing
+end
+
 function SessionSearchIndex(store::SessionStore)
     index = SessionSearchIndex(store, ReentrantLock(), typemax(UInt64),
         SessionSearchHit[], Dict{String,BitSet}(), BitSet())
@@ -126,9 +136,7 @@ function refresh_index!(index::SessionSearchIndex)
                     push!(documents, SessionSearchHit((name, position, message.role, message.kind, message.content)))
                     document_id = length(documents)
                     if isascii(message.content)
-                        for gram in Set(session_trigrams(message.content))
-                            push!(get!(BitSet, postings, gram), document_id)
-                        end
+                        append_ascii_session_postings!(postings, message.content, document_id)
                     else
                         push!(unicode_documents, document_id)
                     end
@@ -153,9 +161,21 @@ function indexed_session_candidates(index::SessionSearchIndex, text::AbstractStr
     end
     unique!(grams)
     isempty(grams) && return 1:length(index.documents)
-    candidates = copy(get(index.postings, first(grams), BitSet()))
+    seed = get(index.postings, first(grams), nothing)
+    isnothing(seed) && return copy(index.unicode_documents)
+    smallest = length(seed)
     for gram in Iterators.drop(grams, 1)
-        intersect!(candidates, get(index.postings, gram, BitSet()))
+        posting = get(index.postings, gram, nothing)
+        isnothing(posting) && return copy(index.unicode_documents)
+        count = length(posting)
+        if count < smallest
+            seed, smallest = posting, count
+        end
+    end
+    candidates = copy(seed)
+    for gram in grams
+        posting = index.postings[gram]
+        posting === seed || intersect!(candidates, posting)
         isempty(candidates) && break
     end
     union!(candidates, index.unicode_documents)

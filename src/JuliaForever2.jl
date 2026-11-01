@@ -28,8 +28,8 @@ public BoundComponent, bind_component, bound_dependency, fork_kernel
 public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileStore, compose_profiles, save_profile!, load_profile, profile_names
 public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
-public ToolSpec, ToolCall, ToolExecutor, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!
-public CheckedJSONSchema, tool_argument_violations, tool_schema_definition
+public ToolSpec, ToolCall, ToolExecutor, ToolBatch, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!, invoke_tool_batch!, tool_concurrency_safe
+public CheckedJSONSchema, tool_argument_violations, tool_output_violations, tool_schema_definition
 public RpcError, RpcResult, JsonRpcPeer, request!, notify!, feed!, start!, drain!
 public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!, start_runtime, finish_runtime!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
@@ -48,6 +48,7 @@ include("core/session_query.jl")
 include("core/session_api.jl")
 include("core/tool_schemas.jl")
 include("core/extensions.jl")
+include("core/tool_batch.jl")
 include("core/event_context.jl")
 include("features/code_mode/streaming.jl")
 include("infrastructure/infrastructure.jl")

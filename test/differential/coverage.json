@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified.",
+  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; approvals, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -422,7 +422,54 @@
       ],
       "limits": [
         "Only 31 JSON-compatible fixtures against the original pinned validator; unsupported-schema diagnostics, unbounded nesting, non-JSON objects, batch execution and every other DSH tool-executor behavior remain unverified.",
-        "Validation is opt-in via CheckedJSONSchema; existing opaque ToolSpec schemas remain caller-defined. This does not establish native parity for DSH tool approval, scheduling, cancellation, or output validation."
+        "Argument validation is opt-in via CheckedJSONSchema; existing opaque ToolSpec input schemas remain caller-defined. Separately checked outputs have only bounded schema-level evidence; approval, scheduling, cancellation, and complete tool-result rendering/presentation remain unverified."
+      ]
+    },
+    {
+      "kind": "tool_outputs",
+      "case_count": 31,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/json-schema.ts",
+          "symbols": [
+            "assertSupportedJsonSchema",
+            "validateJsonSchemaValue"
+          ]
+        }
+      ],
+      "compares": [
+        "opt-in Julia tool-output admission after callbacks, against the pinned upstream JSON Schema validator",
+        "object, array, scalar, enum, const and exact-one union validation with result-relative diagnostics",
+        "valid results preserve their value, invalid outputs cannot escape through ExecutionResult.value, and output schema stays separate from model-visible input schema"
+      ],
+      "limits": [
+        "31 bounded JSON-compatible cases against original DSH schema validation, not the complete DSH output rendering or presentation pipeline.",
+        "Julia output checks are optional and replaceable through tool_output_violations multiple dispatch; approval, batching, cancellation, and tool-output presentation parity remain unverified."
+      ]
+    },
+    {
+      "kind": "tool_batch",
+      "case_count": 10,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/batch.ts",
+          "symbols": [
+            "executeToolBatch"
+          ]
+        }
+      ],
+      "compares": [
+        "Input-ordered call/results under overlapping dispatch",
+        "Exclusive barriers and bounded opt-in parallel dispatch",
+        "Per-call failures for unavailable or guard-denied tools",
+        "Aborted-before-start and mid-batch cancellation",
+        "Native Session ToolExecutor action execution"
+      ],
+      "limits": [
+        "The test invokes the unchanged pinned DSH scheduling function with an injected deterministic pipeline. The unexercised model-message factory is omitted only in this no-log test loader; no DSH runtime is loaded in production.",
+        "This is a bounded behavioral projection. Approval/policy preparation timing, complete tool result rendering, deferrable context, durable DSH session logging, argument parsing and cancellation races are not proven equivalent."
       ]
     }
   ],

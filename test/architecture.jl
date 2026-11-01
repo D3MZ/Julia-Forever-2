@@ -475,3 +475,80 @@ end
     @test JuliaForever2.dispatch_event!(scope, :observed, 99) === nothing
     @test seen == [7, 13]
 end
+
+@testset "Session index candidate allocations ignore common-first query order" begin
+    mktempdir() do directory
+        index = JuliaForever2.SessionSearchIndex(JuliaForever2.SessionStore(directory))
+        ordinary = JuliaForever2.SessionSearchHit(("synthetic", 1, :user, :text, "aaa"))
+        index.documents = JuliaForever2.SessionSearchHit[ordinary for _ in 1:65_536]
+        index.documents[73] = JuliaForever2.SessionSearchHit(("synthetic", 73, :user, :text, "aaa bbb"))
+        index.documents[99] = JuliaForever2.SessionSearchHit(("synthetic", 99, :user, :text, "Ä aaa bbb"))
+        common = BitSet(1:65_536)
+        delete!(common, 99)
+        index.postings = Dict("aaa" => common, "bbb" => BitSet([73]))
+        index.unicode_documents = BitSet([99])
+
+        function candidate_count(text, repetitions)
+            count = 0
+            for _ in 1:repetitions
+                count += length(JuliaForever2.indexed_session_candidates(index, text))
+            end
+            return count
+        end
+
+        repetitions = 100
+        for _ in 1:6
+            @test candidate_count("aaa bbb", repetitions) == 2 * repetitions
+            @test candidate_count("bbb aaa", repetitions) == 2 * repetitions
+        end
+        @test collect(JuliaForever2.indexed_session_candidates(index, "aaa bbb")) == [73, 99]
+        @test collect(JuliaForever2.indexed_session_candidates(index, "bbb aaa")) == [73, 99]
+        @test collect(JuliaForever2.indexed_session_candidates(index, "aaa ccc")) == [99]
+        @test collect(JuliaForever2.indexed_session_candidates(index, "ccc aaa")) == [99]
+        @test [hit.index for hit in JuliaForever2.search_history(index, "aaa bbb")] == [73, 99]
+        @test isempty(JuliaForever2.search_history(index, "aaa ccc"))
+
+        GC.gc()
+        sparse_first_bytes = @allocated candidate_count("bbb aaa", repetitions)
+        GC.gc()
+        common_first_bytes = @allocated candidate_count("aaa bbb", repetitions)
+        println("Session index candidate allocations across ", repetitions,
+            " warmed searches (65536 documents): rare-first=", sparse_first_bytes,
+            " bytes, common-first=", common_first_bytes,
+            " bytes; target common-first growth <= 32768 bytes")
+        @test common_first_bytes <= sparse_first_bytes + 32_768
+    end
+end
+
+
+@testset "ASCII session trigram index preserves postings and Unicode fallback" begin
+    samples = ["AaAaAa", "abcABCabc", "Julia julia JULIA", "AB", "", "A a A a", "needle token"]
+    expected, observed = Dict{String,BitSet}(), Dict{String,BitSet}()
+    for (id, message) in enumerate(samples)
+        for gram in Set(JuliaForever2.session_trigrams(message))
+            push!(get!(BitSet, expected, gram), id)
+        end
+        JuliaForever2.append_ascii_session_postings!(observed, message, id)
+    end
+    @test observed == expected
+    @test observed["aaa"] == BitSet([1])
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        for (name, value) in [("one", "ABABA needle token"), ("two", "café needle token"),
+                ("three", "aaaa aaaa AaAa"), ("four", "中文 язык"), ("five", "ABC xyz")]
+            session = Session(Kernel())
+            append_message!(session.conversation, Message(:user, value, :text))
+            @test JuliaForever2.save_session!(store, name, session).ok
+            close(session)
+        end
+        index = JuliaForever2.SessionSearchIndex(store)
+        @test index.postings["aba"] == BitSet([findfirst(hit -> hit.session == "one", index.documents)])
+        @test 2 in index.unicode_documents
+        for term in ("aba", "AAAA", "needle token", "café", "xyz", "zzzzz", "a", " NEEdle   token ")
+            @test JuliaForever2.search_history(index, term) ==
+                JuliaForever2.search_history(store, term)
+            @test JuliaForever2.search_history(index, term; roles=[:assistant], limit=2) ==
+                JuliaForever2.search_history(store, term; roles=[:assistant], limit=2)
+        end
+    end
+end
