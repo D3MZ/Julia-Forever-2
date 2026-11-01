@@ -14,9 +14,13 @@ function session_file(store::SessionStore, name::Union{Symbol,AbstractString})
 end
 function session_record(session::Session)
     return lock(session.runtime.execution_lock) do
+        snapshot = lock(session.conversation.lock) do
+            (messages=copy(session.messages), compaction=session.conversation.compaction)
+        end
         messages = [Dict("role" => String(message.role), "content" => message.content,
-            "kind" => String(message.kind)) for message in history_snapshot(session).messages]
-        return (messages=messages, directory=working_directory(session), lineage=session_lineage(session))
+            "kind" => String(message.kind)) for message in snapshot.messages]
+        return (messages=messages, compaction=snapshot.compaction,
+            directory=working_directory(session), lineage=session_lineage(session))
     end
 end
 
@@ -29,7 +33,7 @@ function persist!(store::SessionStore, name, session::Session, path::AbstractStr
     lineage = record.lineage
     data = Dict("format" => "JuliaForever2.session", "version" => 2, "name" => String(name),
         "working_directory" => record.directory, "messages" => record.messages,
-        "lineage" => Dict("id" => string(lineage.id),
+        "compaction" => saved_compaction(record.compaction), "lineage" => Dict("id" => string(lineage.id),
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
     serialized = JSON.json(data) * "\n"
@@ -75,9 +79,29 @@ function validate(::Type{SessionRecord}, data, name::String)
     nothing
 end
 
+saved_compaction(::Nothing) = nothing
+saved_compaction(entry::CompactionEntry) =
+    Dict("summary" => entry.summary, "first_kept" => entry.first_kept)
+
+restored_compaction(::Nothing, messages) = nothing
+function restored_compaction(data::AbstractDict, messages)
+    summary = get(data, "summary", nothing)
+    first_kept = get(data, "first_kept", nothing)
+    if !(summary isa AbstractString && !isempty(strip(summary)) &&
+            first_kept isa Integer && !(first_kept isa Bool) &&
+            1 <= first_kept <= length(messages))
+        error("Invalid saved compaction entry")
+    end
+    return CompactionEntry(String(summary), Int(first_kept))
+end
+restored_compaction(data, messages) = error("Invalid saved compaction entry")
+
 function session_record(record::SessionRecord)
-    messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"])) for entry in record.data["messages"]]
-    (messages, directory=String(record.data["working_directory"]), lineage=session_lineage(record))
+    messages = Message[Message(Symbol(entry["role"]), String(entry["content"]),
+        Symbol(entry["kind"])) for entry in record.data["messages"]]
+    compaction = restored_compaction(get(record.data, "compaction", nothing), messages)
+    (messages, compaction, directory=String(record.data["working_directory"]),
+        lineage=session_lineage(record))
 end
 
 function session_lineage(record::SessionRecord)
@@ -168,7 +192,10 @@ function load_session(store::SessionStore, name::Union{Symbol,AbstractString}, t
     isnothing(record) ? nothing : Session(target, record; kwargs...)
 end
 
-Session(target::Union{Kernel,AgentDefinition}, record::NamedTuple; kwargs...) = Session(target; messages=record.messages, working_directory=record.directory, id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
+Session(target::Union{Kernel,AgentDefinition}, record::NamedTuple; kwargs...) =
+    Session(target; messages=record.messages, compaction_entry=record.compaction,
+        working_directory=record.directory, id=record.lineage.id,
+        parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
 """Publish replaceable native session persistence as an ordinary Julia plugin service."""
 function session_store_plugin(directory; name=:session_store, service_name=:session_store, factory=SessionStore)
     contract = Symbol(service_name)
