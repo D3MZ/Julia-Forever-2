@@ -24,6 +24,16 @@ mutable struct SettingsState
 end
 SettingsState(directory::AbstractString, registry::ProviderRegistry) = SettingsState(String(directory), registry, ProviderDescriptor[], String[], nothing, nothing, "", :none)
 
+mutable struct UpdateState
+    automatic::Bool
+    latest::Union{UpdateCheck,Nothing}
+    checking::Bool
+    installing::Bool
+    requested_install::Bool
+    monitor::Union{Task,Nothing}
+end
+UpdateState(directory::AbstractString) = UpdateState(auto_updates_enabled(directory), nothing, false, false, false, nothing)
+
 mutable struct TranscriptState
     width::Int
     revision::UInt
@@ -63,6 +73,7 @@ mutable struct App{S<:Session} <: Model
     commands::Vector{CommandSpec}
     event_handlers::Dict{Symbol,Vector{EventHandler}}
     settings::SettingsState
+    updates::UpdateState
     transcript::TranscriptState
     operations::OperationState
 end
