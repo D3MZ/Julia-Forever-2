@@ -535,57 +535,53 @@ function native_web_stop_comparison()
     server = JuliaForever2.start_web_server(api)
     origin = JuliaForever2.web_url(server)
     released = Base.Event[]
-    observed = try
-        exchange = HTTP.request("GET", JuliaForever2.web_launch_url(server);
-            redirect=false, status_exception=false)
-        cookie = first(split(HTTP.header(exchange, "Set-Cookie"), ';'))
-        web_console_rpc(origin, cookie, "session/open", Dict("session" => "controlled"))
-        observations = Any[]
-        function submit()
-            reply = web_console_rpc(origin, cookie, "session/turn",
-                Dict("session" => "controlled", "prompt" => "scripted"))
-            Dict("accepted" => haskey(reply, "result") &&
-                get(reply["result"], "accepted", false))
-        end
-        push!(observations, submit())
-        timedwait(() -> isready(entered), 5; pollint=0.01) === :ok ||
-            error("First local Julia turn did not start")
-        first_release = take!(entered)
-        push!(released, first_release)
-        push!(observations, submit())
-        cancelled = web_console_rpc(origin, cookie, "session/cancel", Dict("session" => "controlled"))
-        push!(observations, Dict("cancelled" => cancelled["result"]["cancelled"]))
-        notify(first_release)
-        waited = web_console_rpc(origin, cookie, "session/wait", Dict("session" => "controlled"))["result"]
-        push!(observations, Dict("cancelled" => !waited["ok"]))
-        push!(observations, submit())
-        timedwait(() -> isready(entered), 5; pollint=0.01) === :ok ||
-            error("Second local Julia turn did not start")
-        second_release = take!(entered)
-        push!(released, second_release)
-        notify(second_release)
-        continued = web_console_rpc(origin, cookie, "session/wait", Dict("session" => "controlled"))["result"]
-        push!(observations, Dict("cancelled" => !continued["ok"]))
-        page = HTTP.request("GET", origin * "/", ["Cookie" => cookie]; status_exception=false)
-        script = HTTP.request("GET", origin * "/app.js", ["Cookie" => cookie]; status_exception=false)
-        html = String(page.body)
-        javascript = String(script.body)
-        actual = Dict("control" => observations, "stopUI" =>
-            page.status == 200 && script.status == 200 &&
-            occursin("id=\"stop\"", html) &&
-            occursin("session/cancel", javascript) &&
-            occursin("runningSession", javascript))
-        expected = Dict("control" => reference, "stopUI" => true)
-        (actual, expected)
-    finally
-        foreach(notify, released)
-        while isready(entered)
-            notify(take!(entered))
-        end
-        close(server)
-        close(api)
+    exchange = HTTP.request("GET", JuliaForever2.web_launch_url(server);
+        redirect=false, status_exception=false)
+    cookie = first(split(HTTP.header(exchange, "Set-Cookie"), ';'))
+    web_console_rpc(origin, cookie, "session/open", Dict("session" => "controlled"))
+    observations = Any[]
+    function submit()
+        reply = web_console_rpc(origin, cookie, "session/turn",
+            Dict("session" => "controlled", "prompt" => "scripted"))
+        Dict("accepted" => haskey(reply, "result") &&
+            get(reply["result"], "accepted", false))
     end
-    observed
+    push!(observations, submit())
+    timedwait(() -> isready(entered), 5; pollint=0.01) === :ok ||
+        error("First local Julia turn did not start")
+    first_release = take!(entered)
+    push!(released, first_release)
+    push!(observations, submit())
+    cancelled = web_console_rpc(origin, cookie, "session/cancel", Dict("session" => "controlled"))
+    push!(observations, Dict("cancelled" => cancelled["result"]["cancelled"]))
+    notify(first_release)
+    waited = web_console_rpc(origin, cookie, "session/wait", Dict("session" => "controlled"))["result"]
+    push!(observations, Dict("cancelled" => !waited["ok"]))
+    push!(observations, submit())
+    timedwait(() -> isready(entered), 5; pollint=0.01) === :ok ||
+        error("Second local Julia turn did not start")
+    second_release = take!(entered)
+    push!(released, second_release)
+    notify(second_release)
+    continued = web_console_rpc(origin, cookie, "session/wait", Dict("session" => "controlled"))["result"]
+    push!(observations, Dict("cancelled" => !continued["ok"]))
+    page = HTTP.request("GET", origin * "/", ["Cookie" => cookie]; status_exception=false)
+    script = HTTP.request("GET", origin * "/app.js", ["Cookie" => cookie]; status_exception=false)
+    html = String(page.body)
+    javascript = String(script.body)
+    actual = Dict("control" => observations, "stopUI" =>
+        page.status == 200 && script.status == 200 &&
+        occursin("id=\"stop\"", html) &&
+        occursin("session/cancel", javascript) &&
+        occursin("runningSession", javascript))
+    expected = Dict("control" => reference, "stopUI" => true)
+    foreach(notify, released)
+    while isready(entered)
+        notify(take!(entered))
+    end
+    close(server)
+    close(api)
+    actual, expected
 end
 
 function native_web_console_comparison(sdk_reference, web_reference, directory, temporary)
