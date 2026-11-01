@@ -1,0 +1,55 @@
+name: Unobserved extension dispatch paired performance experiment
+on:
+  push:
+    branches:
+      - perf/extension-empty-event-dispatch-20261101t0341
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: 'f84bfd5d2869dac3c2f4faf427294f523b615349'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Record runner and prepare exact baseline worktree
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/extension-dispatch-evidence"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/extension-dispatch-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/extension-dispatch-baseline" >> "$GITHUB_ENV"
+          julia --version | tee "$RUNNER_TEMP/extension-dispatch-evidence/julia-version.txt"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/extension-dispatch-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/extension-dispatch-baseline" rev-parse HEAD | tee "$RUNNER_TEMP/extension-dispatch-evidence/baseline-sha.txt"
+          lscpu > "$RUNNER_TEMP/extension-dispatch-evidence/runner-cpu.txt"
+          uname -a > "$RUNNER_TEMP/extension-dispatch-evidence/runner-os.txt"
+      - name: Instantiate one pinned Julia test environment
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()'
+      - name: Profile and benchmark seven alternating warmed-up pairs
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test benchmarks/extension_dispatch_experiment.jl "$BASELINE_DIR" "$RUNNER_TEMP/extension-dispatch-evidence" 2>&1 | tee "$RUNNER_TEMP/extension-dispatch-evidence/benchmark.log"
+      - name: Focused architecture and agent correctness, lint and Aqua
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl core lint aqua 2>&1 | tee "$RUNNER_TEMP/extension-dispatch-evidence/verification.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: extension-dispatch-raw-timings-profiles-and-gate
+          path: ${{ runner.temp }}/extension-dispatch-evidence/
+          if-no-files-found: warn
+          retention-days: 30

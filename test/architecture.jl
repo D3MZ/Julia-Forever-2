@@ -454,3 +454,24 @@ end
     @test JuliaForever2.tool(child, :shared) === inherited
     close(root)
 end
+
+
+@testset "Unobserved extension dispatch preserves modes and continuation" begin
+    scope = JuliaForever2.ExtensionScope()
+    for mode in (:emit, :bail, :serial, :parallel)
+        @test JuliaForever2.dispatch_event!(scope, :unobserved, 42; mode) === nothing
+    end
+    invoked = Ref(0)
+    continuation = () -> (invoked[] += 1; :finished)
+    @test JuliaForever2.dispatch_event!(scope, :unobserved, continuation; mode=:waterfall) === :finished
+    @test invoked[] == 1
+
+    seen = Int[]
+    JuliaForever2.on!(value -> (push!(seen, value); nothing), scope, :observed)
+    @test JuliaForever2.dispatch_event!(scope, :observed, 7) === nothing
+    @test JuliaForever2.dispatch_event!(scope, :observed, 13; mode=:serial) === nothing
+    @test seen == [7, 13]
+    close(scope)
+    @test JuliaForever2.dispatch_event!(scope, :observed, 99) === nothing
+    @test seen == [7, 13]
+end
