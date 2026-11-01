@@ -210,5 +210,134 @@
         ]
       }
     ]
+  },
+  {
+    "name": "indexed-repeated-trigrams",
+    "text": "mississippi",
+    "sessions": [
+      {
+        "name": "index",
+        "messages": [
+          {
+            "role": "user",
+            "content": "MISSISSIPPI river"
+          },
+          {
+            "role": "assistant",
+            "content": "Mississippi"
+          },
+          {
+            "role": "user",
+            "content": "something else"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "indexed-ascii-with-unicode-document",
+    "text": "matrix",
+    "sessions": [
+      {
+        "name": "zeta",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "MATriX ✓"
+          },
+          {
+            "role": "user",
+            "content": "matrix"
+          }
+        ]
+      },
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "user",
+            "content": "matrix"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "indexed-multiterm-substrings",
+    "text": "alpha beta",
+    "sessions": [
+      {
+        "name": "one",
+        "messages": [
+          {
+            "role": "user",
+            "content": "xxalpha \n Betazzz"
+          },
+          {
+            "role": "assistant",
+            "content": "alpha and beta"
+          },
+          {
+            "role": "user",
+            "content": "alphabetacademy"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "indexed-nonmatching-fragments",
+    "text": "saltwater",
+    "sessions": [
+      {
+        "name": "one",
+        "messages": [
+          {
+            "role": "user",
+            "content": "salt; fresh water"
+          },
+          {
+            "role": "assistant",
+            "content": "saltwater lake"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "indexed-single-character-fallback",
+    "text": "x",
+    "roles": [
+      "user"
+    ],
+    "limit": 2,
+    "sessions": [
+      {
+        "name": "z",
+        "messages": [
+          {
+            "role": "user",
+            "content": "xylophone"
+          },
+          {
+            "role": "assistant",
+            "content": "x"
+          }
+        ]
+      },
+      {
+        "name": "a",
+        "messages": [
+          {
+            "role": "user",
+            "content": "X"
+          },
+          {
+            "role": "user",
+            "content": "xx"
+          }
+        ]
+      }
+    ]
   }
 ]
