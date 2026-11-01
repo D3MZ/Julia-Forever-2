@@ -73,10 +73,12 @@ end
 
 monotonic_seconds() = time_ns() / 1.0e9
 
-function ExecutionContext(; timeout::Real=Inf, emit=Returns(nothing), event_sink=emit, parent=nothing)
+execution_event_sink(sink, ::Nothing) = sink
+
+function ExecutionContext(; timeout::Real=Inf, emit=Returns(nothing), event_sink=emit, event_scope=nothing, parent=nothing)
     deadline = monotonic_seconds() + max(0.0, Float64(timeout))
     isnothing(parent) || (deadline = min(deadline, parent.deadline))
-    context = ExecutionContext(Threads.Atomic{Bool}(false), deadline, Base.Event(), event_sink, nothing,
+    context = ExecutionContext(Threads.Atomic{Bool}(false), deadline, Base.Event(), execution_event_sink(event_sink, event_scope), nothing,
         ReentrantLock(), Base.Event[], parent, ResourceRegistration[], false, false, next_operation_id(), ())
     isnothing(parent) || register_cancellation!(parent, context.interrupt; owned=false)
     if isfinite(deadline)

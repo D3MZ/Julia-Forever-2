@@ -1,0 +1,6252 @@
+{
+  "patches": [
+    {
+      "name": "null patches",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": null
+    },
+    {
+      "name": "empty patches",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": []
+    },
+    {
+      "name": "replace configuration",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "config": {
+            "after": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "nested group lookup",
+      "entries": [
+        {
+          "id": "group",
+          "name": "group",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            },
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "nongroup children excluded",
+      "entries": [
+        {
+          "id": "group",
+          "name": "group",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            },
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "last duplicate id wins",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        },
+        {
+          "id": "a",
+          "name": "beta",
+          "disabled": false
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "insert then configure",
+      "entries": [],
+      "patches": [
+        {
+          "insert": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "a",
+          "config": {
+            "after": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "insert then disable",
+      "entries": [],
+      "patches": [
+        {
+          "insert": [
+            {
+              "id": "group",
+              "name": "group",
+              "group": true,
+              "config": [
+                {
+                  "id": "a",
+                  "name": "alpha",
+                  "config": {
+                    "before": 1,
+                    "nested": {
+                      "keep": true
+                    }
+                  }
+                },
+                {
+                  "id": "b",
+                  "name": "beta",
+                  "disabled": false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "insert nested group",
+      "entries": [
+        {
+          "id": "group",
+          "name": "group",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            },
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "group",
+          "insert": [
+            {
+              "id": "c",
+              "name": "gamma"
+            }
+          ]
+        },
+        {
+          "id": "c",
+          "config": {}
+        }
+      ]
+    },
+    {
+      "name": "insert replaces nongroup config",
+      "entries": [
+        {
+          "id": "group",
+          "name": "group",
+          "group": true,
+          "config": {
+            "field": 1
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "group",
+          "insert": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "insert absent group",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "missing",
+          "insert": [
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "insert into nongroup",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "insert": [
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "missing id",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "absent target",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "missing",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "matching name guard",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "mismatching name guard",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "name": "replacement",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "empty name guard",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "name": "",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "missing target name",
+      "entries": [
+        {
+          "id": "a"
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "all extension fields",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "inject": [
+            "other"
+          ],
+          "intercept": {
+            "other": {
+              "value": 3
+            }
+          },
+          "isolate": [
+            "other"
+          ],
+          "disabled": null,
+          "custom": {
+            "opaque": [
+              1,
+              2
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "replace group retains index",
+      "entries": [
+        {
+          "id": "group",
+          "name": "group",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            },
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "group",
+          "config": []
+        },
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "insert ignores name guard",
+      "entries": [
+        {
+          "id": "group",
+          "name": "group",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            },
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "group",
+          "name": "wrong",
+          "insert": [
+            {
+              "id": "c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "empty insert is truthy",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "insert": []
+        }
+      ]
+    },
+    {
+      "name": "empty group insert is truthy",
+      "entries": [
+        {
+          "id": "group",
+          "name": "group",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            },
+            {
+              "id": "b",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "group",
+          "insert": []
+        }
+      ]
+    },
+    {
+      "name": "null insert is false",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "insert": null,
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "false insert is false",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "insert": false,
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "id empty string is absent",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "id": "",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "inserted duplicate wins",
+      "entries": [
+        {
+          "id": "a",
+          "name": "alpha",
+          "config": {
+            "before": 1,
+            "nested": {
+              "keep": true
+            }
+          }
+        }
+      ],
+      "patches": [
+        {
+          "insert": [
+            {
+              "id": "a",
+              "name": "beta",
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "insert two sequential layers",
+      "entries": [],
+      "patches": [
+        {
+          "insert": [
+            {
+              "id": "group",
+              "name": "group",
+              "group": true,
+              "config": [
+                {
+                  "id": "a",
+                  "name": "alpha",
+                  "config": {
+                    "before": 1,
+                    "nested": {
+                      "keep": true
+                    }
+                  }
+                },
+                {
+                  "id": "b",
+                  "name": "beta",
+                  "disabled": false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "group",
+          "insert": [
+            {
+              "id": "c",
+              "name": "gamma"
+            }
+          ]
+        },
+        {
+          "id": "c",
+          "name": "gamma",
+          "config": {
+            "value": 42
+          }
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=False guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=False guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=False guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=False guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=True guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=True guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=True guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=True guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=None guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=None guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=None guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=False disabled=None guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": false,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=False guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=False guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=False guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=False guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=True guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=True guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=True guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=True guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=None guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=None guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=None guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=True disabled=None guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": true,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=False guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=False guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=False guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=False guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": false,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=True guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=True guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=True guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=True guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": true,
+          "name": ""
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=None guard=None",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=None guard='alpha'",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": "alpha"
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=None guard='wrong'",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": "wrong"
+        }
+      ]
+    },
+    {
+      "name": "cross group=None disabled=None guard=''",
+      "entries": [
+        {
+          "id": "root",
+          "group": null,
+          "config": [
+            {
+              "id": "a",
+              "name": "alpha",
+              "config": {
+                "before": 1,
+                "nested": {
+                  "keep": true
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "patches": [
+        {
+          "id": "a",
+          "disabled": null,
+          "name": ""
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "name": "empty",
+      "layers": []
+    },
+    {
+      "name": "insert then disable",
+      "layers": [
+        [
+          {
+            "insert": [
+              {
+                "id": "a",
+                "name": "alpha",
+                "config": {
+                  "before": 1,
+                  "nested": {
+                    "keep": true
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "id": "a",
+            "disabled": true
+          }
+        ]
+      ]
+    },
+    {
+      "name": "group child override",
+      "layers": [
+        [
+          {
+            "insert": [
+              {
+                "id": "group",
+                "name": "group",
+                "group": true,
+                "config": [
+                  {
+                    "id": "a",
+                    "name": "alpha",
+                    "config": {
+                      "before": 1,
+                      "nested": {
+                        "keep": true
+                      }
+                    }
+                  },
+                  {
+                    "id": "b",
+                    "name": "beta",
+                    "disabled": false
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "id": "a",
+            "config": {
+              "after": 42
+            }
+          }
+        ]
+      ]
+    },
+    {
+      "name": "stale child lookup across layers",
+      "layers": [
+        [
+          {
+            "insert": [
+              {
+                "id": "group",
+                "name": "group",
+                "group": true,
+                "config": [
+                  {
+                    "id": "a",
+                    "name": "alpha",
+                    "config": {
+                      "before": 1,
+                      "nested": {
+                        "keep": true
+                      }
+                    }
+                  },
+                  {
+                    "id": "b",
+                    "name": "beta",
+                    "disabled": false
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "id": "group",
+            "config": []
+          }
+        ],
+        [
+          {
+            "id": "a",
+            "disabled": true
+          }
+        ]
+      ]
+    },
+    {
+      "name": "layer diagnostics",
+      "layers": [
+        [
+          {
+            "insert": [
+              {
+                "id": "a",
+                "name": "alpha",
+                "config": {
+                  "before": 1,
+                  "nested": {
+                    "keep": true
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        [
+          {
+            "id": "none",
+            "disabled": true
+          },
+          {
+            "id": "a",
+            "name": "wrong",
+            "disabled": true
+          }
+        ]
+      ]
+    }
+  ],
+  "transport": [
+    {
+      "name": "request 'request' params {'nested': {'value': 42}}",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiJyZXF1ZXN0IiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7Im5lc3RlZCI6eyJ2YWx1ZSI6NDJ9fX0K"
+      ]
+    },
+    {
+      "name": "request 'request' params []",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiJyZXF1ZXN0IiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjpbXX0K"
+      ]
+    },
+    {
+      "name": "request 'request' params None",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiJyZXF1ZXN0IiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjpudWxsfQo="
+      ]
+    },
+    {
+      "name": "request 'request' params 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiJyZXF1ZXN0IiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjoxN30K"
+      ]
+    },
+    {
+      "name": "request 'request' params 'scalar'",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiJyZXF1ZXN0IiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjoic2NhbGFyIn0K"
+      ]
+    },
+    {
+      "name": "request 0 params {'nested': {'value': 42}}",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjAsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJuZXN0ZWQiOnsidmFsdWUiOjQyfX19Cg=="
+      ]
+    },
+    {
+      "name": "request 0 params []",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjAsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6W119Cg=="
+      ]
+    },
+    {
+      "name": "request 0 params None",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjAsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6bnVsbH0K"
+      ]
+    },
+    {
+      "name": "request 0 params 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjAsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6MTd9Cg=="
+      ]
+    },
+    {
+      "name": "request 0 params 'scalar'",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjAsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6InNjYWxhciJ9Cg=="
+      ]
+    },
+    {
+      "name": "request 42 params {'nested': {'value': 42}}",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjQyLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsibmVzdGVkIjp7InZhbHVlIjo0Mn19fQo="
+      ]
+    },
+    {
+      "name": "request 42 params []",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjQyLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOltdfQo="
+      ]
+    },
+    {
+      "name": "request 42 params None",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjQyLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOm51bGx9Cg=="
+      ]
+    },
+    {
+      "name": "request 42 params 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjQyLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOjE3fQo="
+      ]
+    },
+    {
+      "name": "request 42 params 'scalar'",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjQyLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOiJzY2FsYXIifQo="
+      ]
+    },
+    {
+      "name": "request 1.5 params {'nested': {'value': 42}}",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjEuNSwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7Im5lc3RlZCI6eyJ2YWx1ZSI6NDJ9fX0K"
+      ]
+    },
+    {
+      "name": "request 1.5 params []",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjEuNSwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjpbXX0K"
+      ]
+    },
+    {
+      "name": "request 1.5 params None",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjEuNSwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjpudWxsfQo="
+      ]
+    },
+    {
+      "name": "request 1.5 params 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjEuNSwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjoxN30K"
+      ]
+    },
+    {
+      "name": "request 1.5 params 'scalar'",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOjEuNSwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjoic2NhbGFyIn0K"
+      ]
+    },
+    {
+      "name": "request '' params {'nested': {'value': 42}}",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiIiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsibmVzdGVkIjp7InZhbHVlIjo0Mn19fQo="
+      ]
+    },
+    {
+      "name": "request '' params []",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiIiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOltdfQo="
+      ]
+    },
+    {
+      "name": "request '' params None",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiIiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOm51bGx9Cg=="
+      ]
+    },
+    {
+      "name": "request '' params 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiIiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOjE3fQo="
+      ]
+    },
+    {
+      "name": "request '' params 'scalar'",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOiIiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOiJzY2FsYXIifQo="
+      ]
+    },
+    {
+      "name": "request True params {'nested': {'value': 42}}",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOnRydWUsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJuZXN0ZWQiOnsidmFsdWUiOjQyfX19Cg=="
+      ]
+    },
+    {
+      "name": "request True params []",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOnRydWUsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6W119Cg=="
+      ]
+    },
+    {
+      "name": "request True params None",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOnRydWUsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6bnVsbH0K"
+      ]
+    },
+    {
+      "name": "request True params 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOnRydWUsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6MTd9Cg=="
+      ]
+    },
+    {
+      "name": "request True params 'scalar'",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOnRydWUsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6InNjYWxhciJ9Cg=="
+      ]
+    },
+    {
+      "name": "request None params {'nested': {'value': 42}}",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOm51bGwsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJuZXN0ZWQiOnsidmFsdWUiOjQyfX19Cg=="
+      ]
+    },
+    {
+      "name": "request None params []",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOm51bGwsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6W119Cg=="
+      ]
+    },
+    {
+      "name": "request None params None",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOm51bGwsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6bnVsbH0K"
+      ]
+    },
+    {
+      "name": "request None params 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOm51bGwsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6MTd9Cg=="
+      ]
+    },
+    {
+      "name": "request None params 'scalar'",
+      "handler": "echo",
+      "chunks": [
+        "eyJqc29ucnBjIjoiMi4wIiwiaWQiOm51bGwsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6InNjYWxhciJ9Cg=="
+      ]
+    },
+    {
+      "name": "missing handler",
+      "handler": "none",
+      "chunks": [
+        "eyJpZCI6InVua25vd24iLCJtZXRob2QiOiJtaXNzaW5nIiwicGFyYW1zIjp7ImEiOjF9fQo="
+      ]
+    },
+    {
+      "name": "handler failure",
+      "handler": "failure",
+      "chunks": [
+        "eyJpZCI6ImZhaWx1cmUiLCJtZXRob2QiOiJmaXh0dXJlL2ZhaWwifQo="
+      ]
+    },
+    {
+      "name": "notifications",
+      "handler": "echo",
+      "chunks": [
+        "eyJtZXRob2QiOiJldmVudCIsInBhcmFtcyI6eyJraW5kIjoidG9rZW4iLCJ0ZXh0Ijoiz4Dwn6aRIn19CnsibWV0aG9kIjoiZW1wdHkiLCJwYXJhbXMiOltdfQo="
+      ]
+    },
+    {
+      "name": "malformed ignored",
+      "handler": "echo",
+      "chunks": [
+        "Cg0Kbm90LWpzb24Ke10KbnVsbApmYWxzZQo0MgpbXQp7fQp7ImlkIjoidmFsaWQiLCJtZXRob2QiOiJuZXh0IiwicGFyYW1zIjp7fX0K"
+      ]
+    },
+    {
+      "name": "invalid method ignored",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVua25vd24tcmVzcG9uc2UiLCJtZXRob2QiOjE3LCJyZXN1bHQiOnt9fQo="
+      ]
+    },
+    {
+      "name": "notification invalid id",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6e30sIm1ldGhvZCI6ImV2ZW50IiwicGFyYW1zIjp7ImRhdGEiOjR9fQo="
+      ]
+    },
+    {
+      "name": "missing jsonrpc accepted",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6MSwibWV0aG9kIjoiZml4dHVyZS9lY2hvIn0K"
+      ]
+    },
+    {
+      "name": "unterminated ignored",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6IDEsICJtZXRob2QiOiAiZml4dHVyZS9lY2hvIn0="
+      ]
+    },
+    {
+      "name": "crlf tolerated",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6MSwibWV0aG9kIjoiZml4dHVyZS9lY2hvIn0NCg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 1",
+      "handler": "echo",
+      "chunks": [
+        "ew==",
+        "ImlkIjoidW5pY29kZSIsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 2",
+      "handler": "echo",
+      "chunks": [
+        "eyI=",
+        "aWQiOiJ1bmljb2RlIiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 3",
+      "handler": "echo",
+      "chunks": [
+        "eyJp",
+        "ZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 4",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZA==",
+        "IjoidW5pY29kZSIsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 5",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI=",
+        "OiJ1bmljb2RlIiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 6",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6",
+        "InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 7",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6Ig==",
+        "dW5pY29kZSIsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 8",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InU=",
+        "bmljb2RlIiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 9",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVu",
+        "aWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 10",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaQ==",
+        "Y29kZSIsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 11",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWM=",
+        "b2RlIiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 12",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNv",
+        "ZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 13",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZA==",
+        "ZSIsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 14",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGU=",
+        "IiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 15",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUi",
+        "LCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 16",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLA==",
+        "Im1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 17",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCI=",
+        "bWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 18",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJt",
+        "ZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 19",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZQ==",
+        "dGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 20",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXQ=",
+        "aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 21",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRo",
+        "b2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 22",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRobw==",
+        "ZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 23",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2Q=",
+        "IjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 24",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2Qi",
+        "OiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 25",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOg==",
+        "ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 26",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiI=",
+        "Zml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 27",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJm",
+        "aXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 28",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaQ==",
+        "eHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 29",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXg=",
+        "dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 30",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0",
+        "dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 31",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dQ==",
+        "cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 32",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXI=",
+        "ZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 33",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJl",
+        "L2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 34",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlLw==",
+        "ZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 35",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2U=",
+        "Y2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 36",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2Vj",
+        "aG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 37",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaA==",
+        "byIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 38",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8=",
+        "IiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 39",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8i",
+        "LCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 40",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLA==",
+        "InBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 41",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCI=",
+        "cGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 42",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJw",
+        "YXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 43",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYQ==",
+        "cmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 44",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXI=",
+        "YW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 45",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJh",
+        "bXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 46",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbQ==",
+        "cyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 47",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXM=",
+        "Ijp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 48",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMi",
+        "OnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 49",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOg==",
+        "eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 50",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOns=",
+        "InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 51",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsi",
+        "dGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 52",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidA==",
+        "ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 53",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGU=",
+        "eHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 54",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4",
+        "dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 55",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dA==",
+        "IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 56",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI=",
+        "OiJoZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 57",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6",
+        "ImhlbGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 58",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6Ig==",
+        "aGVsbG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 59",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6Img=",
+        "ZWxsbyDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 60",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6Imhl",
+        "bGxvIM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 61",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbA==",
+        "bG8gz4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 62",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGw=",
+        "byDPgCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 63",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxv",
+        "IM+AIOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 64",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIA==",
+        "z4Ag6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 65",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM8=",
+        "gCDpm6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 66",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+A",
+        "IOmbqiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 67",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIA==",
+        "6ZuqIPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 68",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOk=",
+        "m6og8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 69",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmb",
+        "qiDwn6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 70",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqg==",
+        "IPCfppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 71",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiA=",
+        "8J+mkSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 72",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDw",
+        "n6aRIn19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 73",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwnw==",
+        "ppEifX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 74",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6Y=",
+        "kSJ9fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 75",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aR",
+        "In19Cg=="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 76",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIg==",
+        "fX0K"
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 77",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn0=",
+        "fQo="
+      ]
+    },
+    {
+      "name": "UTF-8 split at byte 78",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19",
+        "Cg=="
+      ]
+    },
+    {
+      "name": "bytewise UTF-8",
+      "handler": "echo",
+      "chunks": [
+        "ew==",
+        "Ig==",
+        "aQ==",
+        "ZA==",
+        "Ig==",
+        "Og==",
+        "Ig==",
+        "dQ==",
+        "bg==",
+        "aQ==",
+        "Yw==",
+        "bw==",
+        "ZA==",
+        "ZQ==",
+        "Ig==",
+        "LA==",
+        "Ig==",
+        "bQ==",
+        "ZQ==",
+        "dA==",
+        "aA==",
+        "bw==",
+        "ZA==",
+        "Ig==",
+        "Og==",
+        "Ig==",
+        "Zg==",
+        "aQ==",
+        "eA==",
+        "dA==",
+        "dQ==",
+        "cg==",
+        "ZQ==",
+        "Lw==",
+        "ZQ==",
+        "Yw==",
+        "aA==",
+        "bw==",
+        "Ig==",
+        "LA==",
+        "Ig==",
+        "cA==",
+        "YQ==",
+        "cg==",
+        "YQ==",
+        "bQ==",
+        "cw==",
+        "Ig==",
+        "Og==",
+        "ew==",
+        "Ig==",
+        "dA==",
+        "ZQ==",
+        "eA==",
+        "dA==",
+        "Ig==",
+        "Og==",
+        "Ig==",
+        "aA==",
+        "ZQ==",
+        "bA==",
+        "bA==",
+        "bw==",
+        "IA==",
+        "zw==",
+        "gA==",
+        "IA==",
+        "6Q==",
+        "mw==",
+        "qg==",
+        "IA==",
+        "8A==",
+        "nw==",
+        "pg==",
+        "kQ==",
+        "Ig==",
+        "fQ==",
+        "fQ==",
+        "Cg=="
+      ]
+    },
+    {
+      "name": "many frames",
+      "handler": "echo",
+      "chunks": [
+        "eyJpZCI6InVuaWNvZGUiLCJtZXRob2QiOiJmaXh0dXJlL2VjaG8iLCJwYXJhbXMiOnsidGV4dCI6ImhlbGxvIM+AIOmbqiDwn6aRIn19CnsiaWQiOiJ1bmljb2RlIiwibWV0aG9kIjoiZml4dHVyZS9lY2hvIiwicGFyYW1zIjp7InRleHQiOiJoZWxsbyDPgCDpm6og8J+mkSJ9fQp7ImlkIjoidW5pY29kZSIsIm1ldGhvZCI6ImZpeHR1cmUvZWNobyIsInBhcmFtcyI6eyJ0ZXh0IjoiaGVsbG8gz4Ag6ZuqIPCfppEifX0KeyJtZXRob2QiOiJzdGF0dXMiLCJwYXJhbXMiOnsic3RhdGUiOiJkb25lIn19Cg=="
+      ]
+    },
+    {
+      "name": "request notification callback order",
+      "handler": "echo",
+      "trace": true,
+      "chunks": [
+        "eyJpZCI6InIxIiwibWV0aG9kIjoiZmlyc3QiLCJwYXJhbXMiOnt9fQp7Im1ldGhvZCI6Im5vdGljZSIsInBhcmFtcyI6e319CnsiaWQiOiJyMiIsIm1ldGhvZCI6InNlY29uZCIsInBhcmFtcyI6e319Cg=="
+      ]
+    }
+  ],
+  "outgoing": [
+    {
+      "name": "result {'nested': [1, None, False]}",
+      "method": "fixture/outgoing",
+      "params": {
+        "value": 1
+      },
+      "response": {
+        "result": {
+          "nested": [
+            1,
+            null,
+            false
+          ]
+        }
+      }
+    },
+    {
+      "name": "result 0",
+      "method": "fixture/outgoing",
+      "params": {
+        "value": 1
+      },
+      "response": {
+        "result": 0
+      }
+    },
+    {
+      "name": "result False",
+      "method": "fixture/outgoing",
+      "params": {
+        "value": 1
+      },
+      "response": {
+        "result": false
+      }
+    },
+    {
+      "name": "result None",
+      "method": "fixture/outgoing",
+      "params": {
+        "value": 1
+      },
+      "response": {
+        "result": null
+      }
+    },
+    {
+      "name": "result 'π雪'",
+      "method": "fixture/outgoing",
+      "params": {
+        "value": 1
+      },
+      "response": {
+        "result": "π雪"
+      }
+    },
+    {
+      "name": "error with data",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": {
+          "code": -32001,
+          "message": "rejected",
+          "data": {
+            "detail": "value"
+          }
+        }
+      }
+    },
+    {
+      "name": "error defaults",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": {}
+      }
+    },
+    {
+      "name": "error malformed fields",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": {
+          "code": "oops",
+          "message": 42,
+          "data": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "name": "nonrecord error []",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": [],
+        "result": "fallback"
+      }
+    },
+    {
+      "name": "nonrecord error [1]",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": [
+          1
+        ],
+        "result": "fallback"
+      }
+    },
+    {
+      "name": "nonrecord error True",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": true,
+        "result": "fallback"
+      }
+    },
+    {
+      "name": "nonrecord error False",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": false,
+        "result": "fallback"
+      }
+    },
+    {
+      "name": "nonrecord error 'oops'",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": "oops",
+        "result": "fallback"
+      }
+    },
+    {
+      "name": "nonrecord error None",
+      "method": "fixture/outgoing",
+      "params": {},
+      "response": {
+        "error": null,
+        "result": "fallback"
+      }
+    }
+  ],
+  "lifecycle": [
+    {
+      "name": "empty",
+      "plugins": [],
+      "services": []
+    },
+    {
+      "name": "single service",
+      "plugins": [
+        {
+          "name": "provider",
+          "provides": {
+            "value": 42
+          }
+        }
+      ],
+      "services": [
+        "value",
+        "absent"
+      ]
+    },
+    {
+      "name": "reverse effects",
+      "plugins": [
+        {
+          "name": "provider",
+          "provides": {
+            "value": 42
+          },
+          "effects": [
+            "first",
+            "second",
+            "third"
+          ]
+        }
+      ],
+      "services": [
+        "value"
+      ]
+    },
+    {
+      "name": "dependency ordering",
+      "plugins": [
+        {
+          "name": "consumer",
+          "requires": [
+            "value"
+          ],
+          "provides": {
+            "answer": 42
+          },
+          "effects": [
+            "one",
+            "two"
+          ]
+        },
+        {
+          "name": "provider",
+          "provides": {
+            "value": 21
+          },
+          "effects": [
+            "first",
+            "last"
+          ]
+        }
+      ],
+      "services": [
+        "value",
+        "answer"
+      ]
+    },
+    {
+      "name": "transitive dependencies",
+      "plugins": [
+        {
+          "name": "consumer",
+          "requires": [
+            "middle"
+          ],
+          "provides": {
+            "result": 3
+          },
+          "effects": [
+            "consumer"
+          ]
+        },
+        {
+          "name": "middle",
+          "requires": [
+            "source"
+          ],
+          "provides": {
+            "middle": 2
+          },
+          "effects": [
+            "middle"
+          ]
+        },
+        {
+          "name": "source",
+          "provides": {
+            "source": 1
+          },
+          "effects": [
+            "source"
+          ]
+        }
+      ],
+      "services": [
+        "source",
+        "middle",
+        "result"
+      ]
+    },
+    {
+      "name": "asynchronous setup and effect cleanup settle across dependency generations",
+      "services": [
+        "alpha",
+        "beta"
+      ],
+      "plugins": [
+        {
+          "name": "provider",
+          "provides": {
+            "alpha": 7
+          },
+          "effects": [
+            "one",
+            "two"
+          ],
+          "async_setup": true,
+          "async_cleanup": true
+        },
+        {
+          "name": "consumer",
+          "requires": [
+            "alpha"
+          ],
+          "provides": {
+            "beta": 9
+          },
+          "effects": [
+            "three",
+            "four"
+          ],
+          "async_setup": true,
+          "async_cleanup": true
+        }
+      ]
+    },
+    {
+      "name": "released ownership tokens disappear while owner remains live",
+      "ownership": true,
+      "owners": [
+        "plugin",
+        "scope"
+      ],
+      "operations": [
+        {
+          "type": "snapshot"
+        },
+        {
+          "type": "register",
+          "id": "one"
+        },
+        {
+          "type": "register",
+          "id": "two"
+        },
+        {
+          "type": "register",
+          "id": "three"
+        },
+        {
+          "type": "snapshot"
+        },
+        {
+          "type": "release",
+          "id": "two"
+        },
+        {
+          "type": "snapshot"
+        },
+        {
+          "type": "release",
+          "id": "two"
+        },
+        {
+          "type": "snapshot"
+        },
+        {
+          "type": "register",
+          "id": "four"
+        },
+        {
+          "type": "snapshot"
+        },
+        {
+          "type": "release",
+          "id": "one"
+        },
+        {
+          "type": "snapshot"
+        },
+        {
+          "type": "close"
+        },
+        {
+          "type": "snapshot"
+        },
+        {
+          "type": "close"
+        },
+        {
+          "type": "snapshot"
+        }
+      ]
+    }
+  ],
+  "recovery": [
+    {
+      "name": "one failed write then recovered request",
+      "failures": 1,
+      "result": {
+        "recovered": 42
+      }
+    },
+    {
+      "name": "three failed writes then recovered request",
+      "failures": 3,
+      "result": [
+        "ready"
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "emit routing to root",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "root",
+          "mode": "emit",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bail routing to root",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "root",
+          "mode": "bail",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "serial routing to root",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "root",
+          "mode": "serial",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallel routing to root",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "root",
+          "mode": "parallel",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "emit routing to parent",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "parent",
+          "mode": "emit",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bail routing to parent",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "parent",
+          "mode": "bail",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "serial routing to parent",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "parent",
+          "mode": "serial",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallel routing to parent",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "parent",
+          "mode": "parallel",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "emit routing to child",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "child",
+          "mode": "emit",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bail routing to child",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "child",
+          "mode": "bail",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "serial routing to child",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "child",
+          "mode": "serial",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallel routing to child",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "child",
+          "mode": "parallel",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "emit routing to sibling",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "sibling",
+          "mode": "emit",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bail routing to sibling",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "sibling",
+          "mode": "bail",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "serial routing to sibling",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "sibling",
+          "mode": "serial",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "parallel routing to sibling",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "scope": "sibling",
+          "mode": "parallel",
+          "arguments": [
+            42
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bail bail value 0",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": 0
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "bail"
+        }
+      ]
+    },
+    {
+      "name": "bail bail value ''",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": ""
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "bail"
+        }
+      ]
+    },
+    {
+      "name": "bail bail value False",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": false
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "bail"
+        }
+      ]
+    },
+    {
+      "name": "bail bail value None",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": null
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "bail"
+        }
+      ]
+    },
+    {
+      "name": "bail bail value []",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": []
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "bail"
+        }
+      ]
+    },
+    {
+      "name": "bail bail value {}",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": {}
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "bail"
+        }
+      ]
+    },
+    {
+      "name": "bail bail value 'stop'",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": "stop"
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "bail"
+        }
+      ]
+    },
+    {
+      "name": "serial bail value 0",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": 0
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "serial"
+        }
+      ]
+    },
+    {
+      "name": "serial bail value ''",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": ""
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "serial"
+        }
+      ]
+    },
+    {
+      "name": "serial bail value False",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": false
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "serial"
+        }
+      ]
+    },
+    {
+      "name": "serial bail value None",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": null
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "serial"
+        }
+      ]
+    },
+    {
+      "name": "serial bail value []",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": []
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "serial"
+        }
+      ]
+    },
+    {
+      "name": "serial bail value {}",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": {}
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "serial"
+        }
+      ]
+    },
+    {
+      "name": "serial bail value 'stop'",
+      "listeners": [
+        {
+          "id": "first",
+          "result": false
+        },
+        {
+          "id": "candidate",
+          "result": "stop"
+        },
+        {
+          "id": "last",
+          "result": "last"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "serial"
+        }
+      ]
+    },
+    {
+      "name": "prepend once and explicit disposal",
+      "listeners": [
+        {
+          "id": "normal"
+        },
+        {
+          "id": "once",
+          "once": true,
+          "prepend": true
+        },
+        {
+          "id": "removed"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispose",
+          "listener": "removed"
+        },
+        {
+          "type": "dispatch",
+          "mode": "emit"
+        },
+        {
+          "type": "dispatch",
+          "mode": "emit"
+        }
+      ]
+    },
+    {
+      "name": "scope closure removes owned listeners",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        },
+        {
+          "id": "global-sibling",
+          "scope": "sibling",
+          "global": true
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "emit",
+          "scope": "child"
+        },
+        {
+          "type": "close",
+          "scope": "parent"
+        },
+        {
+          "type": "dispatch",
+          "mode": "emit",
+          "scope": "child"
+        }
+      ]
+    },
+    {
+      "name": "waterfall veto=False",
+      "listeners": [
+        {
+          "id": "outer",
+          "waterfall": true,
+          "suffix": ":outer"
+        },
+        {
+          "id": "inner",
+          "waterfall": true,
+          "suffix": ":inner",
+          "veto": false,
+          "result": "veto"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "waterfall",
+          "arguments": [
+            7
+          ],
+          "inner": "base"
+        }
+      ]
+    },
+    {
+      "name": "waterfall veto=True",
+      "listeners": [
+        {
+          "id": "outer",
+          "waterfall": true,
+          "suffix": ":outer"
+        },
+        {
+          "id": "inner",
+          "waterfall": true,
+          "suffix": ":inner",
+          "veto": true,
+          "result": "veto"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "waterfall",
+          "arguments": [
+            7
+          ],
+          "inner": "base"
+        }
+      ]
+    },
+    {
+      "name": "ExecutionContext emits into root",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "emit",
+          "scope": "root",
+          "execution_context": true,
+          "arguments": [
+            {
+              "token": "π",
+              "count": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ExecutionContext emits into parent",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "emit",
+          "scope": "parent",
+          "execution_context": true,
+          "arguments": [
+            {
+              "token": "π",
+              "count": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ExecutionContext emits into child",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "emit",
+          "scope": "child",
+          "execution_context": true,
+          "arguments": [
+            {
+              "token": "π",
+              "count": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ExecutionContext emits into sibling",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "listeners": [
+        {
+          "id": "root"
+        },
+        {
+          "id": "parent",
+          "scope": "parent"
+        },
+        {
+          "id": "child",
+          "scope": "child"
+        },
+        {
+          "id": "sibling",
+          "scope": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "dispatch",
+          "mode": "emit",
+          "scope": "sibling",
+          "execution_context": true,
+          "arguments": [
+            {
+              "token": "π",
+              "count": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "completed outer waterfall task retains gated downstream continuation resources",
+      "retained_waterfall": true,
+      "outer": "outer-value",
+      "inner": "inner-value"
+    }
+  ],
+  "final_response": [
+    {
+      "name": "empty events",
+      "events": []
+    },
+    {
+      "name": "no assistant",
+      "events": [
+        {
+          "type": "user/message",
+          "data": {
+            "content": [
+              {
+                "type": "text",
+                "text": "prompt"
+              }
+            ]
+          }
+        },
+        {
+          "type": "turn/end",
+          "data": {
+            "reason": "complete"
+          }
+        }
+      ]
+    },
+    {
+      "name": "one assistant",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "answer"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "concatenate text blocks",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "first"
+                },
+                {
+                  "type": "text",
+                  "text": "second"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "last assistant wins",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "before"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "turn/end",
+          "data": {
+            "reason": "complete"
+          }
+        },
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "after"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "turn/end",
+          "data": {
+            "reason": "complete"
+          }
+        }
+      ]
+    },
+    {
+      "name": "empty final assistant replaces prior",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "before"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "nontext blocks ignored",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "reasoning",
+                  "text": "private"
+                },
+                {
+                  "type": "text",
+                  "text": "answer"
+                },
+                {
+                  "type": "tool_call",
+                  "id": "call",
+                  "name": "read",
+                  "arguments": {}
+                },
+                {
+                  "type": "text",
+                  "text": " end"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unicode final output",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "π"
+                },
+                {
+                  "type": "text",
+                  "text": "雪"
+                },
+                {
+                  "type": "text",
+                  "text": "🦑"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "only nontext content",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "reasoning",
+                  "text": "thinking"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "empty text preserved",
+      "events": [
+        {
+          "type": "assistant/message",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": ""
+                },
+                {
+                  "type": "text",
+                  "text": " "
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "launch": [
+    {
+      "name": "explicit executable profile 'sdk'",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "profile": "sdk",
+        "env": {}
+      }
+    },
+    {
+      "name": "explicit executable profile 'sdk-minimal'",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "profile": "sdk-minimal",
+        "env": {}
+      }
+    },
+    {
+      "name": "explicit executable profile 'web'",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "profile": "web",
+        "env": {}
+      }
+    },
+    {
+      "name": "explicit executable profile 'headless'",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "profile": "headless",
+        "env": {}
+      }
+    },
+    {
+      "name": "explicit executable profile 'acp'",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "profile": "acp",
+        "env": {}
+      }
+    },
+    {
+      "name": "explicit executable profile 'third party profile'",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "profile": "third party profile",
+        "env": {}
+      }
+    },
+    {
+      "name": "explicit executable profile ''",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "profile": "",
+        "env": {}
+      }
+    },
+    {
+      "name": "default profile",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "env": {}
+      }
+    },
+    {
+      "name": "ordered patches",
+      "options": {
+        "dshBin": "folder/../bin/dsh.js",
+        "patches": [
+          "one.yml",
+          "space dir/two.yml",
+          "one.yml"
+        ],
+        "env": {}
+      }
+    },
+    {
+      "name": "working directory lexical resolution",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "processCwd": "other/../work",
+        "patches": [
+          "relative.yml"
+        ],
+        "env": {}
+      }
+    },
+    {
+      "name": "home and environment overrides",
+      "options": {
+        "dshBin": "bin/dsh.js",
+        "dshHome": "home folder",
+        "env": {
+          "FIXTURE": "a=b",
+          "DSH_HOME": "ignored"
+        }
+      }
+    },
+    {
+      "name": "absolute paths",
+      "options": {
+        "dshBin": "/fixture/bin/dsh.js",
+        "processCwd": "/fixture/work",
+        "dshHome": "/fixture/home",
+        "patches": [
+          "/fixture/a.yml",
+          "/fixture/b.yml"
+        ],
+        "env": {
+          "FIXTURE": "value"
+        }
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "global insertion order and callback dispatch",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "snapshot",
+          "scope": "root"
+        },
+        {
+          "type": "invoke",
+          "name": "read",
+          "scope": "root",
+          "arguments": {
+            "value": 1
+          }
+        },
+        {
+          "type": "invoke",
+          "name": "missing",
+          "scope": "root",
+          "arguments": {
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "schema preserved",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "custom",
+          "scope": "root",
+          "id": "root:custom",
+          "description": "root custom",
+          "value": "root:custom",
+          "schema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "snapshot",
+          "scope": "root"
+        }
+      ]
+    },
+    {
+      "name": "nearest scoped shadow",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "parent",
+          "id": "parent:read",
+          "description": "parent read",
+          "value": "parent:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "child",
+          "id": "child:read",
+          "description": "child read",
+          "value": "child:read"
+        },
+        {
+          "type": "snapshot",
+          "scope": "root"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "snapshot",
+          "scope": "sibling"
+        },
+        {
+          "type": "invoke",
+          "name": "read",
+          "scope": "child",
+          "arguments": {
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "removing shadow reveals ancestor",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "parent",
+          "id": "parent:read",
+          "description": "parent read",
+          "value": "parent:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "child",
+          "id": "child:read",
+          "description": "child read",
+          "value": "child:read"
+        },
+        {
+          "type": "dispose",
+          "id": "child:read"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "dispose",
+          "id": "parent:read"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "invoke",
+          "name": "read",
+          "scope": "child",
+          "arguments": {
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "duplicate rejected within scope",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "duplicate",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "parent",
+          "id": "parent:read",
+          "description": "parent read",
+          "value": "parent:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "parent",
+          "id": "duplicate-parent",
+          "description": "parent read",
+          "value": "parent:read"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        }
+      ]
+    },
+    {
+      "name": "allow inherited subset",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "allow": [
+              "read"
+            ]
+          },
+          "id": "restriction"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "snapshot",
+          "scope": "sibling"
+        }
+      ]
+    },
+    {
+      "name": "deny inherited subset",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "deny": [
+              "write"
+            ]
+          },
+          "id": "restriction"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "invoke",
+          "name": "write",
+          "scope": "child",
+          "arguments": {
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "empty allow masks inherited",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "allow": []
+          },
+          "id": "restriction"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        }
+      ]
+    },
+    {
+      "name": "own registrations exempt",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "deny": [
+              "write"
+            ]
+          },
+          "id": "restriction"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "parent",
+          "id": "parent:write",
+          "description": "parent write",
+          "value": "parent:write"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "child",
+          "id": "child:write",
+          "description": "child write",
+          "value": "child:write"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        }
+      ]
+    },
+    {
+      "name": "nested restrictions intersect",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "register",
+          "name": "search",
+          "scope": "root",
+          "id": "root:search",
+          "description": "root search",
+          "value": "root:search"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "allow": [
+              "read",
+              "write"
+            ]
+          },
+          "id": "first"
+        },
+        {
+          "type": "restrict",
+          "scope": "child",
+          "filter": {
+            "deny": [
+              "write"
+            ]
+          },
+          "id": "second"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "dispose",
+          "id": "first"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        },
+        {
+          "type": "dispose",
+          "id": "second"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        }
+      ]
+    },
+    {
+      "name": "restrict inherited parent local tool",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "custom",
+          "scope": "parent",
+          "id": "parent:custom",
+          "description": "parent custom",
+          "value": "parent:custom"
+        },
+        {
+          "type": "restrict",
+          "scope": "child",
+          "filter": {
+            "deny": [
+              "custom"
+            ]
+          },
+          "id": "restriction"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        }
+      ]
+    },
+    {
+      "name": "restriction invalid inputs",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "local",
+          "scope": "parent",
+          "id": "parent:local",
+          "description": "parent local",
+          "value": "parent:local"
+        },
+        {
+          "type": "restrict",
+          "scope": "root",
+          "filter": {
+            "deny": [
+              "read"
+            ]
+          },
+          "id": "root-mask"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {},
+          "id": "empty-mask"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "deny": [
+              "unknown"
+            ]
+          },
+          "id": "unknown-mask"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "deny": [
+              "local"
+            ]
+          },
+          "id": "own-mask"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        }
+      ]
+    },
+    {
+      "name": "restriction disposal idempotent",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "restrict",
+          "scope": "parent",
+          "filter": {
+            "deny": [
+              "write"
+            ]
+          },
+          "id": "restriction"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        },
+        {
+          "type": "dispose",
+          "id": "restriction"
+        },
+        {
+          "type": "dispose",
+          "id": "restriction"
+        },
+        {
+          "type": "snapshot",
+          "scope": "parent"
+        }
+      ]
+    },
+    {
+      "name": "registration disposal idempotent",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "dispose",
+          "id": "root:read"
+        },
+        {
+          "type": "dispose",
+          "id": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "replacement",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "snapshot",
+          "scope": "root"
+        },
+        {
+          "type": "invoke",
+          "name": "read",
+          "scope": "root",
+          "arguments": {
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "owned scope teardown preserves global",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "parent",
+          "id": "parent:read",
+          "description": "parent read",
+          "value": "parent:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "child",
+          "id": "child:write",
+          "description": "child write",
+          "value": "child:write"
+        },
+        {
+          "type": "close",
+          "scope": "parent"
+        },
+        {
+          "type": "snapshot",
+          "scope": "root"
+        },
+        {
+          "type": "snapshot",
+          "scope": "sibling"
+        }
+      ]
+    },
+    {
+      "name": "removed and readded insertion order",
+      "scopes": [
+        {
+          "name": "parent"
+        },
+        {
+          "name": "child",
+          "parent": "parent"
+        },
+        {
+          "name": "sibling"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "root:read",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "write",
+          "scope": "root",
+          "id": "root:write",
+          "description": "root write",
+          "value": "root:write"
+        },
+        {
+          "type": "dispose",
+          "id": "root:read"
+        },
+        {
+          "type": "register",
+          "name": "read",
+          "scope": "root",
+          "id": "replacement",
+          "description": "root read",
+          "value": "root:read"
+        },
+        {
+          "type": "snapshot",
+          "scope": "root"
+        }
+      ]
+    },
+    {
+      "name": "native Session ToolExecutor executes selected definition",
+      "scopes": [
+        {
+          "name": "child"
+        }
+      ],
+      "operations": [
+        {
+          "type": "register",
+          "id": "root-read",
+          "name": "read",
+          "value": "root",
+          "description": "root read"
+        },
+        {
+          "type": "register",
+          "id": "child-read",
+          "scope": "child",
+          "name": "read",
+          "value": {
+            "answer": 42
+          },
+          "description": "child read"
+        },
+        {
+          "type": "invoke",
+          "scope": "child",
+          "name": "read",
+          "session": true,
+          "arguments": {}
+        },
+        {
+          "type": "invoke",
+          "scope": "root",
+          "name": "read",
+          "session": true,
+          "arguments": {}
+        },
+        {
+          "type": "invoke",
+          "scope": "child",
+          "name": "absent",
+          "session": true,
+          "arguments": {}
+        },
+        {
+          "type": "snapshot",
+          "scope": "child"
+        }
+      ]
+    }
+  ],
+  "replacements": [
+    {
+      "name": "replace one service while preserving sibling service",
+      "kind": "service",
+      "service": "alpha",
+      "services": [
+        "alpha",
+        "beta"
+      ],
+      "initial": {
+        "name": "base",
+        "generation": "base",
+        "provides": {
+          "alpha": 1,
+          "beta": 2
+        },
+        "effects": [
+          "base"
+        ]
+      },
+      "replacement": {
+        "name": "override",
+        "generation": "override",
+        "provides": {
+          "alpha": 42
+        },
+        "requires": [
+          "beta"
+        ],
+        "effects": [
+          "override"
+        ]
+      }
+    },
+    {
+      "name": "stage and publish complete plugin replacement",
+      "kind": "plugin",
+      "services": [
+        "alpha",
+        "beta"
+      ],
+      "initial": {
+        "name": "feature",
+        "generation": "old",
+        "provides": {
+          "alpha": 1,
+          "beta": 2
+        },
+        "effects": [
+          "one",
+          "two"
+        ]
+      },
+      "replacement": {
+        "name": "feature",
+        "generation": "new",
+        "provides": {
+          "alpha": 3,
+          "beta": 4
+        },
+        "effects": [
+          "three",
+          "four"
+        ]
+      }
+    },
+    {
+      "name": "failed staging cleans effects and preserves current plugin",
+      "kind": "plugin",
+      "services": [
+        "alpha",
+        "beta"
+      ],
+      "initial": {
+        "name": "feature",
+        "generation": "old",
+        "provides": {
+          "alpha": 1,
+          "beta": 2
+        },
+        "effects": [
+          "old"
+        ]
+      },
+      "replacement": {
+        "name": "feature",
+        "generation": "failed",
+        "provides": {
+          "alpha": 3,
+          "beta": 4
+        },
+        "effects": [
+          "one",
+          "two"
+        ],
+        "fail": true
+      }
+    },
+    {
+      "name": "retained session keeps plugin-owned tool and event callbacks through profile replacement",
+      "kind": "retained",
+      "initial": {
+        "name": "feature",
+        "generation": "old",
+        "value": {
+          "version": 1
+        }
+      },
+      "replacement": {
+        "name": "feature",
+        "generation": "new",
+        "value": {
+          "version": 2
+        }
+      },
+      "arguments": {
+        "input": "retained"
+      },
+      "event": {
+        "phase": "after-switch"
+      }
+    },
+    {
+      "name": "asynchronous service callback retains its generation until returned task settles",
+      "kind": "async_binding",
+      "service": "alpha",
+      "initial": {
+        "name": "feature",
+        "generation": "old",
+        "provides": {
+          "alpha": {
+            "version": 1
+          }
+        },
+        "effects": [
+          "resource"
+        ]
+      },
+      "replacement": {
+        "name": "feature",
+        "generation": "new",
+        "provides": {
+          "alpha": {
+            "version": 2
+          }
+        },
+        "effects": [
+          "resource"
+        ]
+      }
+    }
+  ],
+  "callback_close": [
+    {
+      "name": "owned runtime closes from its notification callback without waiting on itself",
+      "method": "fixture/close",
+      "params": {
+        "value": 42
+      }
+    },
+    {
+      "name": "notification callback can await another request before closing its runtime",
+      "method": "fixture/roundtrip",
+      "params": {
+        "phase": "begin"
+      },
+      "followup": {
+        "method": "fixture/respond",
+        "params": {
+          "value": 73
+        }
+      }
+    }
+  ]
+}
