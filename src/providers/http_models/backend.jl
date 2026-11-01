@@ -42,7 +42,7 @@ mutable struct ModelStreamState{M,C}
     context::C
     message::Dict{String,Any}
     blocks::Dict{Any,Int}
-    arguments::Dict{Int,String}
+    arguments::Dict{Int,IOBuffer}
     text_buffers::Dict{Int,IOBuffer}
     closed_blocks::Set{Int}
     received_start::Bool
@@ -52,7 +52,7 @@ mutable struct ModelStreamState{M,C}
     error::String
     started_at::UInt64
 end
-ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns())
+ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,IOBuffer}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns())
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -160,6 +160,21 @@ function parse_model_tool_arguments(text::AbstractString)
     return isnothing(parsed) ? parse_json(repair_model_json(text)) : parsed
 end
 
+"""Read accumulated streamed tool arguments without resetting the append position."""
+function model_tool_argument_text(buffer::IOBuffer)
+    seekstart(buffer)
+    text = read(buffer, String)
+    seekend(buffer)
+    text
+end
+
+"""Accumulate fragments in linear time; parse only at a possible object boundary."""
+function append_model_tool_arguments!(state::ModelStreamState, index::Int, fragment::AbstractString)
+    buffer = state.arguments[index]
+    write(buffer, fragment)
+    possible_tool_object(String(fragment)) ? parse_json(model_tool_argument_text(buffer)) : nothing
+end
+
 function finish_model_block!(state::ModelStreamState, index::Int)
     if !(index in state.closed_blocks)
         complete!(state, index)
@@ -172,8 +187,8 @@ function complete!(state::ModelStreamState, index::Int)
     block = state.message["content"][index]
     kind = block["type"]
     if kind == "toolCall"
-        if haskey(state.arguments, index) && !isempty(state.arguments[index])
-            arguments = parse_model_tool_arguments(state.arguments[index])
+        if haskey(state.arguments, index) && position(state.arguments[index]) > 0
+            arguments = parse_model_tool_arguments(model_tool_argument_text(state.arguments[index]))
             arguments isa AbstractDict && (block["arguments"] = arguments)
         end
         model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))

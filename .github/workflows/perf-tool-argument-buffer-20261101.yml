@@ -1,0 +1,80 @@
+name: Streamed tool argument buffer performance experiment
+on:
+  push:
+    branches:
+      - perf/model-tool-argument-buffer-20261101-2242z
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      JULIA_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: '22b1f02a417f3f5c4087799848806a24897b43d4'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Prepare exact baseline worktree and environment evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tool-argument-evidence"
+          echo "EVIDENCE_DIR=$RUNNER_TEMP/tool-argument-evidence" >> "$GITHUB_ENV"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/tool-argument-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/tool-argument-baseline" >> "$GITHUB_ENV"
+          git rev-parse HEAD | tee "$RUNNER_TEMP/tool-argument-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/tool-argument-baseline" rev-parse HEAD | tee "$RUNNER_TEMP/tool-argument-evidence/baseline-sha.txt"
+          julia --version | tee "$RUNNER_TEMP/tool-argument-evidence/julia-version.txt"
+          lscpu > "$RUNNER_TEMP/tool-argument-evidence/cpu.txt"
+          env | sort | grep -v -Ei 'TOKEN|SECRET|PASSWORD|KEY|CREDENTIAL' > "$RUNNER_TEMP/tool-argument-evidence/runner-env.txt"
+          sha256sum Project.toml benchmarks/Project.toml "$RUNNER_TEMP/tool-argument-baseline/Project.toml" "$RUNNER_TEMP/tool-argument-baseline/benchmarks/Project.toml" > "$RUNNER_TEMP/tool-argument-evidence/project-hashes.txt"
+      - name: Instantiate shared Julia benchmarking dependencies
+        id: dependencies
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          julia --project="$BASELINE_DIR/benchmarks" -e 'using Pkg; Pkg.instantiate(); Pkg.status()' 2>&1 | tee "$EVIDENCE_DIR/baseline-dependencies.log"
+          julia --project=benchmarks -e 'using Pkg; Pkg.instantiate(); Pkg.status()' 2>&1 | tee "$EVIDENCE_DIR/candidate-dependencies.log"
+      - name: Focused correctness, syntax lint, Aqua
+        id: quality
+        if: steps.dependencies.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          julia --project=test -e 'using Pkg; Pkg.instantiate()' 2>&1 | tee "$EVIDENCE_DIR/test-dependencies.log"
+          julia --project=test test/runtests.jl providers lint aqua 2>&1 | tee "$EVIDENCE_DIR/correctness-lint-aqua.log"
+      - name: Alternating paired integration benchmarks, CPU and allocation profiles
+        id: measurements
+        if: steps.dependencies.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 benchmarks/tool_argument_buffer_gate.py 2>&1 | tee "$EVIDENCE_DIR/benchmark-gate.log"
+      - name: Upload all raw evidence even if the gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-arguments-buffer-paired-benchmarks-profiles
+          path: ${{ runner.temp }}/tool-argument-evidence/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Enforce quality and performance gates
+        if: always()
+        shell: bash
+        run: |
+          test '${{ steps.dependencies.outcome }}' = 'success'
+          test '${{ steps.quality.outcome }}' = 'success'
+          test '${{ steps.measurements.outcome }}' = 'success'
