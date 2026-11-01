@@ -2,24 +2,27 @@ abstract type AbstractEventListener end
 abstract type AbstractToolEntry end
 abstract type AbstractToolGuard end
 
-struct ToolSpec{S,F,O,P}
+struct ToolSpec{S,F,O,P,R}
     name::Symbol
     schema::S
     call::F
     description::String
     output_schema::O
     concurrency_policy::P
+    output_renderer::R
 end
 
 """Describe a tool independently of its executor, provider schema, or presentation protocol."""
-ToolSpec(name, schema, callback; description="", output_schema=nothing, concurrency_safe=false) =
-    ToolSpec(Symbol(name), schema, callback, String(description), output_schema, concurrency_safe)
+ToolSpec(name, schema, callback; description="", output_schema=nothing, concurrency_safe=false, render_output=nothing) =
+    ToolSpec(Symbol(name), schema, callback, String(description), output_schema, concurrency_safe, render_output)
 ToolSpec(name::Symbol, schema, callback, description::AbstractString) =
-    ToolSpec(name, schema, callback, String(description), nothing, false)
+    ToolSpec(name, schema, callback, String(description), nothing, false, nothing)
 ToolSpec(name::Symbol, schema, callback, description::String, output_schema) =
-    ToolSpec(name, schema, callback, description, output_schema, false)
-ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, concurrency_safe=false) =
-    ToolSpec(name, schema, callback; description, output_schema, concurrency_safe)
+    ToolSpec(name, schema, callback, description, output_schema, false, nothing)
+ToolSpec(name::Symbol, schema, callback, description::String, output_schema, concurrency_policy) =
+    ToolSpec(name, schema, callback, description, output_schema, concurrency_policy, nothing)
+ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, concurrency_safe=false, render_output=nothing) =
+    ToolSpec(name, schema, callback; description, output_schema, concurrency_safe, render_output)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}, schema; kwargs...) = ToolSpec(name, schema, callback; kwargs...)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}; kwargs...) = ToolSpec(name, callback; kwargs...)
 
@@ -736,13 +739,29 @@ apply_tool_completion(decision::ToolResultText, result::ExecutionResult) =
 apply_tool_completion(decision, result::ExecutionResult) =
     ExecutionResult(false, "Unsupported tool completion decision")
 
-"""Validate successful tool results without changing callers that omit an output schema."""
-function checked_tool_result(spec::ToolSpec, returned)
+"""Render model-visible tool text independently of the validated canonical value."""
+tool_output_text(renderer, arguments, value) = Base.invokelatest(renderer, arguments, value)
+
+"""A renderer is opt-in; its failure must not expose an otherwise valid tool value."""
+function present_tool_result(spec::ToolSpec, arguments, result::ExecutionResult)
+    isnothing(spec.output_renderer) && return result
+    worker = spawn_scoped(() -> Base.invokelatest(tool_output_text,
+        spec.output_renderer, arguments, result.value))
+    wait(worker; throw=false)
+    istaskfailed(worker) && return ExecutionResult(false, "Tool output renderer failed")
+    text = fetch(worker)
+    text isa AbstractString || return ExecutionResult(false, "Tool output renderer must return text")
+    return ExecutionResult(true, String(text), result.value)
+end
+
+"""Validate successful canonical values before rendering them for the model."""
+function checked_tool_result(spec::ToolSpec, arguments, returned)
     result = tool_result(returned)
     result.ok || return result
     violations = tool_output_violations(spec.output_schema, result.value)
-    isempty(violations) && return result
-    return ExecutionResult(false, string("Invalid tool result: ", join(violations, "; ")))
+    isempty(violations) || return ExecutionResult(false,
+        string("Invalid tool result: ", join(violations, "; ")))
+    return present_tool_result(spec, arguments, result)
 end
 
 """Evaluate admission and argument checks before starting the Julia-owned tool callback."""
@@ -754,7 +773,7 @@ function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, a
     isempty(violations) || return ExecutionResult(false, join(violations, "; "))
     cancelled(context) && return ExecutionResult(false, "Tool call aborted before dispatch")
     returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
-    return checked_tool_result(invocation.listener.spec, returned)
+    return checked_tool_result(invocation.listener.spec, call.arguments, returned)
 end
 
 """Complete an admitted tool result using an independently replaceable Julia policy."""

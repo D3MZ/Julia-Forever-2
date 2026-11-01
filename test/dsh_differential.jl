@@ -12,6 +12,7 @@ CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "prof
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
+CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
 CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
 CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
@@ -696,6 +697,36 @@ function tool_outputs_result(input)
         "schema" => JuliaForever2.tool_schema_definition(schema)))
 end
 
+"""Use Julia tool output renderers without converting canonical values to display text."""
+function tool_output_projection_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    invoked = Ref(0)
+    rendered = Ref(0)
+    function renderer(arguments, value)
+        rendered[] += 1
+        format = input["format"]
+        format == "label" && return string(get(arguments, "prefix", ""), value["label"])
+        format == "joined" && return join(value["lines"], "|")
+        format == "summary" && return string(value["label"], " (", value["count"], ")")
+        format == "silent" && return ""
+        format == "scalar" && return string(value)
+        error("Unknown fixture presentation")
+    end
+    specification = JuliaForever2.ToolSpec(:projection, Dict("type" => "object"),
+        arguments -> begin
+            invoked[] += 1
+            return deepcopy(input["value"])
+        end; output_schema=JuliaForever2.CheckedJSONSchema(input["schema"]), render_output=renderer)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    result = JuliaForever2.invoke_tool!(scope, :projection, input["arguments"])
+    result.ok || isnothing(result.value) || error("Tool failure exposed the canonical value")
+    close(scope)
+    return normalize(Dict("accepted" => result.ok, "invoked" => invoked[],
+        "rendered" => rendered[], "display" => result.ok ? result.text : nothing,
+        "value" => result.ok ? result.value : nothing))
+end
+
 """Compare post-tool acceptance, blocking, and presentation with the pinned DSH policy stage."""
 function tool_completion_result(input)
     root = JuliaForever2.ExtensionScope()
@@ -959,6 +990,7 @@ end
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
+            ("tool_output_projection", tool_output_projection_result),
             ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
             ("tool_approval", tool_approval_result), ("tool_completion", tool_completion_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
