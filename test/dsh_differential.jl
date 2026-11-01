@@ -13,6 +13,7 @@ CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "sessi
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
 CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
+CASES["tool_activation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_activation.json"), String))
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
 CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
 CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
@@ -917,6 +918,91 @@ function tool_batch_result(input)
     ))
 end
 
+
+"""Evaluate scoped per-step tool admission against pinned upstream registry decisions."""
+function tool_activation_result(input)
+    root = ExtensionScope()
+    scopes = Dict{String,ExtensionScope}("root" => root)
+    for specification in get(input, "scopes", [])
+        scopes[specification["name"]] = ExtensionScope(scopes[get(specification, "parent", "root")])
+    end
+    scope_of(specification) = scopes[get(specification, "scope", get(input, "scope",
+        haskey(scopes, "agent") ? "agent" : "root"))]
+    registrations = Dict{String,Any}()
+    admitted = Dict{String,Any}()
+    conditions = String[]
+    outcomes = Any[]
+    active_context = Ref{Any}(nothing)
+
+    function register(specification)
+        category = get(specification, "when", nothing)
+        predicate = isnothing(category) ? nothing : activation -> begin
+            push!(conditions, specification["id"])
+            category == "error" && error("fixture condition failed")
+            category == "abort" && cancel!(active_context[])
+            enabled = category in ("always", "abort") ||
+                (category in ("enabled", "async-enabled") &&
+                    get(activation.model_selection, "enabled", false) === true)
+            return startswith(category, "async-") ? Threads.@spawn(enabled) : enabled
+        end
+        tool = ToolSpec(Symbol(specification["name"]), Dict("type" => "object"),
+            arguments -> get(specification, "value", nothing); when=predicate)
+        registration = register_tool!(scope_of(specification), tool)
+        registration.ok || error(registration.reason)
+        registrations[specification["id"]] = registration.registration
+    end
+    for specification in input["tools"]
+        register(specification)
+    end
+    for operation in input["operations"]
+        scope = scope_of(operation)
+        kind = operation["type"]
+        selected = get(admitted, get(operation, "set", ""), nothing)
+        if kind == "prepare"
+            context = ExecutionContext()
+            get(operation, "cancel_before", false) && cancel!(context)
+            active_context[] = context
+            result = JuliaForever2.resolve_tool_set(scope; context,
+                model_selection=Dict("enabled" => get(operation, "enabled", false)))
+            if result.ok
+                admitted[operation["id"]] = result.tool_set
+                names = [String(item.name) for item in tools_snapshot(scope; tool_set=result.tool_set)]
+                push!(outcomes, Dict("ok" => true, "names" => names))
+            else
+                push!(outcomes, Dict("ok" => false,
+                    "error" => cancelled(context) ? "aborted" : "activation"))
+            end
+            close(context)
+        elseif kind == "snapshot"
+            push!(outcomes, Dict("names" => [String(item.name)
+                for item in tools_snapshot(scope; tool_set=selected)]))
+        elseif kind == "check"
+            result = invoke_tool!(scope, Symbol(operation["name"]), Dict{String,Any}(); tool_set=selected)
+            push!(outcomes, Dict("allowed" => result.ok, "value" => result.ok ? result.value : nothing))
+        elseif kind == "register"
+            register(operation["tool"])
+        elseif kind == "remove"
+            JuliaForever2.release!(registrations[operation["id"]])
+        elseif kind == "restrict"
+            filter = operation["filter"]
+            restriction = restrict_tools!(scope; allow=get(filter, "allow", nothing),
+                deny=get(filter, "deny", nothing))
+            restriction.ok || error(restriction.reason)
+            registrations[operation["id"]] = restriction.registration
+        elseif kind == "close_set"
+            close(admitted[operation["id"]])
+        elseif kind == "close_scope"
+            close(scope)
+        elseif kind == "trace"
+            push!(outcomes, Dict("conditions" => copy(conditions)))
+        else
+            error("Unknown tool admission fixture operation: $kind")
+        end
+    end
+    close(root)
+    return normalize(outcomes)
+end
+
 function session_query_result(input)
     return mktempdir() do directory
         matches = if get(input, "source", "stored") == "live"
@@ -1012,7 +1098,7 @@ end
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
-            ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
+            ("tool_activation", tool_activation_result), ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
             ("tool_approval", tool_approval_result), ("tool_completion", tool_completion_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),

@@ -10,8 +10,11 @@ ToolBatch(calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4) =
 batch_aborted_result() = ExecutionResult(false, "Tool call aborted before dispatch")
 
 """Unknown, withdrawn, or invalid concurrency declarations are exclusive."""
-function tool_batch_parallel(scope::ExtensionScope, call::ToolCall)
-    specification = tool(scope, call.name)
+function tool_batch_parallel(scope::ExtensionScope, call::ToolCall; tool_set=nothing)
+    specification = lock(scope.lock) do
+        entry = admitted_tool_entry(scope, call.name, tool_set)
+        isnothing(entry) ? nothing : entry.spec
+    end
     isnothing(specification) && return false
     worker = spawn_scoped(() -> Base.invokelatest(tool_concurrency_safe, specification, call.arguments))
     wait(worker; throw=false)
@@ -30,9 +33,9 @@ end
 
 """Start a call and always report its settlement, including an unexpected worker failure."""
 function start_tool_batch!(pending::Dict{Int,Task}, completed::Channel{Int},
-        scope::ExtensionScope, call::ToolCall, index::Int, context::ExecutionContext)
+        scope::ExtensionScope, call::ToolCall, index::Int, context::ExecutionContext, tool_set)
     worker = spawn_scoped(() -> cancelled(context) ? batch_aborted_result() :
-        invoke_tool!(scope, call.name, call.arguments; context))
+        invoke_tool!(scope, call.name, call.arguments; context, tool_set))
     pending[index] = worker
     spawn_scoped() do
         wait(worker; throw=false)
@@ -48,7 +51,7 @@ explicitly declares concurrency safety; started calls always drain on cancellati
 Each tool retains its own guard, schema, and plugin-lifetime handling.
 """
 function invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolCall};
-        max_parallel::Integer=4, context=current_execution_context())
+        max_parallel::Integer=4, context=current_execution_context(), tool_set=nothing)
     max_parallel >= 1 || error("max_parallel must be a positive integer")
     actions = collect(calls)
     results = Vector{ExecutionResult}(undef, length(actions))
@@ -64,17 +67,17 @@ function invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolC
             break
         end
         call = actions[index]
-        if !tool_batch_parallel(scope, call)
+        if !tool_batch_parallel(scope, call; tool_set)
             while !isempty(pending)
                 collect_tool_batch!(pending, completed, results)
             end
             cancelled(execution) && continue
-            results[index] = invoke_tool!(scope, call.name, call.arguments; context=execution)
+            results[index] = invoke_tool!(scope, call.name, call.arguments; context=execution, tool_set)
             index += 1
         elseif length(pending) >= max_parallel
             collect_tool_batch!(pending, completed, results)
         else
-            start_tool_batch!(pending, completed, scope, call, index, execution)
+            start_tool_batch!(pending, completed, scope, call, index, execution, tool_set)
             index += 1
         end
     end

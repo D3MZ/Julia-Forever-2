@@ -1,0 +1,643 @@
+[
+  {
+    "name": "step gates conditional registrations",
+    "tools": [
+      {
+        "id": "base",
+        "name": "base",
+        "value": "always"
+      },
+      {
+        "id": "enabled",
+        "name": "enabled",
+        "when": "enabled",
+        "value": "conditional"
+      },
+      {
+        "id": "never",
+        "name": "never",
+        "when": "never",
+        "value": "not run"
+      }
+    ],
+    "operations": [
+      {
+        "type": "check",
+        "name": "base"
+      },
+      {
+        "type": "check",
+        "name": "enabled"
+      },
+      {
+        "type": "snapshot"
+      },
+      {
+        "type": "prepare",
+        "id": "first",
+        "enabled": true
+      },
+      {
+        "type": "snapshot",
+        "set": "first"
+      },
+      {
+        "type": "check",
+        "name": "enabled",
+        "set": "first"
+      },
+      {
+        "type": "check",
+        "name": "never",
+        "set": "first"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "disabled selection with fallback unconditional",
+    "tools": [
+      {
+        "id": "base",
+        "name": "base",
+        "value": "base"
+      },
+      {
+        "id": "enabled",
+        "name": "enabled",
+        "when": "enabled",
+        "value": "conditional"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "first",
+        "enabled": false
+      },
+      {
+        "type": "snapshot",
+        "set": "first"
+      },
+      {
+        "type": "check",
+        "name": "base",
+        "set": "first"
+      },
+      {
+        "type": "check",
+        "name": "enabled",
+        "set": "first"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "fresh selection for every step",
+    "tools": [
+      {
+        "id": "enabled",
+        "name": "enabled",
+        "when": "enabled",
+        "value": "yes"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "off",
+        "enabled": false
+      },
+      {
+        "type": "prepare",
+        "id": "on",
+        "enabled": true
+      },
+      {
+        "type": "check",
+        "name": "enabled",
+        "set": "off"
+      },
+      {
+        "type": "check",
+        "name": "enabled",
+        "set": "on"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "asynchronous activation",
+    "tools": [
+      {
+        "id": "future",
+        "name": "future",
+        "when": "async-enabled",
+        "value": "future"
+      },
+      {
+        "id": "hidden",
+        "name": "hidden",
+        "when": "async-never",
+        "value": "hidden"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "one",
+        "enabled": true
+      },
+      {
+        "type": "snapshot",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "future",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "hidden",
+        "set": "one"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "predicate failure publishes no partial step",
+    "tools": [
+      {
+        "id": "base",
+        "name": "base",
+        "value": "base"
+      },
+      {
+        "id": "on",
+        "name": "on",
+        "when": "always",
+        "value": "on"
+      },
+      {
+        "id": "bad",
+        "name": "bad",
+        "when": "error",
+        "value": "bad"
+      },
+      {
+        "id": "after",
+        "name": "after",
+        "when": "always",
+        "value": "after"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "badstep"
+      },
+      {
+        "type": "check",
+        "name": "on"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "cancelled preparation skips predicates",
+    "tools": [
+      {
+        "id": "always",
+        "name": "always",
+        "value": "plain"
+      },
+      {
+        "id": "conditional",
+        "name": "conditional",
+        "when": "always",
+        "value": "condition"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "stop",
+        "cancel_before": true
+      },
+      {
+        "type": "check",
+        "name": "conditional"
+      },
+      {
+        "type": "check",
+        "name": "always"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "mid-preparation cancellation short circuits",
+    "tools": [
+      {
+        "id": "first",
+        "name": "first",
+        "when": "always",
+        "value": "first"
+      },
+      {
+        "id": "abort",
+        "name": "abort",
+        "when": "abort",
+        "value": "abort"
+      },
+      {
+        "id": "late",
+        "name": "late",
+        "when": "always",
+        "value": "late"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "stopped"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "disposed generation cannot return through old step",
+    "tools": [
+      {
+        "id": "old",
+        "name": "version",
+        "when": "enabled",
+        "value": "old"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "first",
+        "enabled": true
+      },
+      {
+        "type": "check",
+        "name": "version",
+        "set": "first"
+      },
+      {
+        "type": "remove",
+        "id": "old"
+      },
+      {
+        "type": "check",
+        "name": "version",
+        "set": "first"
+      },
+      {
+        "type": "register",
+        "tool": {
+          "id": "new",
+          "name": "version",
+          "when": "enabled",
+          "value": "new"
+        }
+      },
+      {
+        "type": "check",
+        "name": "version",
+        "set": "first"
+      },
+      {
+        "type": "prepare",
+        "id": "second",
+        "enabled": true
+      },
+      {
+        "type": "check",
+        "name": "version",
+        "set": "second"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "live scope restrictions invalidate admission",
+    "tools": [
+      {
+        "id": "root",
+        "name": "available",
+        "when": "enabled",
+        "value": "root",
+        "scope": "root"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "step",
+        "enabled": true
+      },
+      {
+        "type": "check",
+        "name": "available",
+        "set": "step"
+      },
+      {
+        "type": "restrict",
+        "id": "mask",
+        "filter": {
+          "deny": [
+            "available"
+          ]
+        }
+      },
+      {
+        "type": "check",
+        "name": "available",
+        "set": "step"
+      },
+      {
+        "type": "remove",
+        "id": "mask"
+      },
+      {
+        "type": "check",
+        "name": "available",
+        "set": "step"
+      }
+    ],
+    "scopes": [
+      {
+        "name": "agent"
+      }
+    ]
+  },
+  {
+    "name": "agent-local shadow overrides conditional inherited tool",
+    "scopes": [
+      {
+        "name": "agent"
+      },
+      {
+        "name": "other"
+      }
+    ],
+    "tools": [
+      {
+        "id": "inherited",
+        "name": "choice",
+        "when": "enabled",
+        "value": "parent",
+        "scope": "root"
+      },
+      {
+        "id": "local",
+        "name": "choice",
+        "scope": "agent",
+        "value": "child"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "one",
+        "enabled": false
+      },
+      {
+        "type": "snapshot",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "choice",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "choice",
+        "set": "one",
+        "scope": "other"
+      },
+      {
+        "type": "check",
+        "name": "choice",
+        "scope": "other"
+      },
+      {
+        "type": "trace"
+      }
+    ]
+  },
+  {
+    "name": "disposed tool set denies all tools",
+    "tools": [
+      {
+        "id": "base",
+        "name": "base",
+        "value": "base"
+      },
+      {
+        "id": "on",
+        "name": "conditional",
+        "when": "always",
+        "value": "yes"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "one"
+      },
+      {
+        "type": "check",
+        "name": "base",
+        "set": "one"
+      },
+      {
+        "type": "close_set",
+        "id": "one"
+      },
+      {
+        "type": "snapshot",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "base",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "conditional",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "base"
+      }
+    ]
+  },
+  {
+    "name": "new registration stays outside an existing selection",
+    "tools": [
+      {
+        "id": "base",
+        "name": "base",
+        "value": "base"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "one"
+      },
+      {
+        "type": "register",
+        "tool": {
+          "id": "late",
+          "name": "late",
+          "value": "late"
+        }
+      },
+      {
+        "type": "snapshot",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "late",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "late"
+      },
+      {
+        "type": "prepare",
+        "id": "two"
+      },
+      {
+        "type": "check",
+        "name": "late",
+        "set": "two"
+      }
+    ]
+  },
+  {
+    "name": "step admission never crosses agent scopes",
+    "scopes": [
+      {
+        "name": "agent"
+      },
+      {
+        "name": "other"
+      }
+    ],
+    "tools": [
+      {
+        "id": "global",
+        "name": "global",
+        "value": "global",
+        "scope": "root"
+      },
+      {
+        "id": "condition",
+        "name": "condition",
+        "when": "always",
+        "value": "conditional",
+        "scope": "root"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "one"
+      },
+      {
+        "type": "snapshot",
+        "set": "one",
+        "scope": "other"
+      },
+      {
+        "type": "check",
+        "name": "global",
+        "set": "one",
+        "scope": "other"
+      },
+      {
+        "type": "check",
+        "name": "condition",
+        "set": "one",
+        "scope": "other"
+      },
+      {
+        "type": "check",
+        "name": "global",
+        "scope": "other"
+      },
+      {
+        "type": "check",
+        "name": "condition",
+        "scope": "other"
+      }
+    ]
+  },
+  {
+    "name": "retired agent scope invalidates selection",
+    "tools": [
+      {
+        "id": "tool",
+        "name": "tool",
+        "when": "always",
+        "value": "yes"
+      }
+    ],
+    "operations": [
+      {
+        "type": "prepare",
+        "id": "one"
+      },
+      {
+        "type": "check",
+        "name": "tool",
+        "set": "one"
+      },
+      {
+        "type": "close_scope"
+      },
+      {
+        "type": "snapshot",
+        "set": "one"
+      },
+      {
+        "type": "check",
+        "name": "tool",
+        "set": "one"
+      }
+    ],
+    "scopes": [
+      {
+        "name": "agent"
+      }
+    ]
+  }
+]

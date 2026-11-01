@@ -9,7 +9,7 @@
   "inventory_complete": false,
   "verified_source_families": [],
   "proof_rule": "superset_proven requires an exhaustive DSH source-family inventory, native Julia implementations with executable differential evidence for every material family, no outstanding unverified families or runtime delegation, and passing required regression, lint, quality and CI checks. Reference-only cases never count.",
-  "assessment": "An isolated pinned-upstream policy differential now compares native post-tool canonical value replacement, checked output-schema rejection, rerendering, and failure preservation alongside existing block/text decisions. The tool result value replacement is independently implemented in Julia; it does not establish DSH's entire execution pipeline, content-block model, deferred contexts, or agent approval/order semantics. A red-green-refactor cycle now targets native post-tool completion decisions against the exact pinned DSH policy stage. This remains an isolated projection: complete tool pipeline ordering and full result presentation are not proven. Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity. Opt-in Julia tool output renderers now preserve validated typed values while independently producing model-facing text; 15 pinned-DSH registry/renderer projections cover bounded text and schema behavior. This does not establish parity with DSH's final content blocks, UI presenters, post-policy stages, or deferred contexts.",
+  "assessment": "Native step-scoped conditional tool admission is under differential review. The isolated pinned DSH tool registry oracle checks per-step selection, errors, cancellation, retirement, scope isolation, and current visibility; this does not establish agent-loop integration or complete DSH tool pipeline parity. An isolated pinned-upstream policy differential now compares native post-tool canonical value replacement, checked output-schema rejection, rerendering, and failure preservation alongside existing block/text decisions. The tool result value replacement is independently implemented in Julia; it does not establish DSH's entire execution pipeline, content-block model, deferred contexts, or agent approval/order semantics. A red-green-refactor cycle now targets native post-tool completion decisions against the exact pinned DSH policy stage. This remains an isolated projection: complete tool pipeline ordering and full result presentation are not proven. Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity. Opt-in Julia tool output renderers now preserve validated typed values while independently producing model-facing text; 15 pinned-DSH registry/renderer projections cover bounded text and schema behavior. This does not establish parity with DSH's final content blocks, UI presenters, post-policy stages, or deferred contexts.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -579,6 +579,38 @@
         "The oracle invokes the original hash-pinned DSH post-execute method in isolation with fixed success and failure results, not a complete upstream agent or policy pipeline.",
         "Deferred contexts, complete post-policy value normalization, rich multimodal output rendering, finalization, audit events and full cross-stage ordering remain unverified.",
         "The pinned policy method receives an injected deterministic output contract; its value-replacement branch and actual upstream JSON Schema validator are exercised, but its full private normalization pipeline is not."
+      ]
+    },
+    {
+      "kind": "tool_activation",
+      "case_count": 14,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/index.ts",
+          "symbols": [
+            "ToolsService.resolve",
+            "ToolsService.executable",
+            "ToolsService.definitions"
+          ]
+        },
+        {
+          "path": "packages/core/tools/src/contracts.ts",
+          "symbols": [
+            "ToolRegistrationOptions",
+            "ResolvedToolSet"
+          ]
+        }
+      ],
+      "compares": [
+        "Conditional and unconditional tool visibility versus executable admission",
+        "Per-step context evaluation including asynchronous decisions, failures and cancellation",
+        "Live invalidation on scope restrictions, registration retirement and same-name replacement",
+        "Agent scope isolation, locally shadowed implementations, explicit admission disposal and no retroactive registration"
+      ],
+      "limits": [
+        "Tests invoke original hash-pinned DSH ToolsService rather than an agent/model runtime. Julia uses independent named service/step selection APIs and no DSH runtime in production.",
+        "Only bounded scripted predicate outcomes and direct tool invocations; full agent/step integration, policy pipeline and cross-service event order are unverified."
       ]
     }
   ],
