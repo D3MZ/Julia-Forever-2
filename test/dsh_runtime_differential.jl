@@ -6,6 +6,9 @@ using JuliaForever2
 using Downloads
 using SHA
 
+include("differential/dsh_reference_profiles.jl")
+include("differential/dsh_reference_runtime.jl")
+
 const RUNTIME_ORACLE = joinpath(@__DIR__, "differential", "runtime-oracle.mjs")
 const RUNTIME_BINARY = get(ENV, "DSH_BIN", "")
 const NODE_EXECUTABLE = get(ENV, "DSH_NODE", "node")
@@ -37,7 +40,7 @@ function runtime_profile(name, directory, home; arguments=String[], model_url=no
     end
     executable = setenv(Cmd([NODE_EXECUTABLE, "--disable-warning=ExperimentalWarning", RUNTIME_BINARY]),
         values)
-    return JuliaForever2.DSHProfile(name; command=executable, directory, home, arguments)
+    return DSHProfile(name; command=executable, directory, home, arguments)
 end
 
 function reference_result(kind, directory, home; profile="sdk", model_url=nothing)
@@ -80,30 +83,30 @@ function observe_sdk(profile, diagnostics, backend)
         record_operation!(operations, "prompt-before-initialize", before)
         return started
     end
-    connected = JuliaForever2.connect_dsh(profile; backend_factory=factory, on_notification=observer,
+    connected = connect_dsh(profile; backend_factory=factory, on_notification=observer,
         initialize=Dict("provider" => "deepseek-official", "model" => "deepseek-flash"),
         timeout=30, stderr=diagnostics)
     connected.ok || error("Native SDK connection failed: $(connected.error.message)")
     client = connected.value
     record_operation!(operations, "initialize", JuliaForever2.RpcResult(Dict("serverInfo" => client.server_info)))
-    session = JuliaForever2.DSHSession(client; id="differential-idle")
-    record_operation!(operations, "working-directory-get", JuliaForever2.dsh_working_directory(session; timeout=30))
-    record_operation!(operations, "working-directory-set", JuliaForever2.dsh_working_directory!(session, "child"; timeout=30))
-    record_operation!(operations, "working-directory-after-set", JuliaForever2.dsh_working_directory(session; timeout=30))
-    record_operation!(operations, "wait-idle", JuliaForever2.dsh_wait!(session; timeout=30))
-    record_operation!(operations, "empty-query", JuliaForever2.dsh_query!(session, Any[]; timeout=30))
-    record_operation!(operations, "blank-query", JuliaForever2.dsh_query!(session, " \n "; timeout=30))
-    record_operation!(operations, "missing-directory", JuliaForever2.dsh_working_directory!(session, "does-not-exist"; timeout=30))
-    record_operation!(operations, "directory-after-failure", JuliaForever2.dsh_working_directory(session; timeout=30))
-    absent = JuliaForever2.DSHSession(client; id="differential-absent")
-    record_operation!(operations, "missing-session-resume", JuliaForever2.dsh_resume!(absent; timeout=30))
+    session = DSHSession(client; id="differential-idle")
+    record_operation!(operations, "working-directory-get", dsh_working_directory(session; timeout=30))
+    record_operation!(operations, "working-directory-set", dsh_working_directory!(session, "child"; timeout=30))
+    record_operation!(operations, "working-directory-after-set", dsh_working_directory(session; timeout=30))
+    record_operation!(operations, "wait-idle", dsh_wait!(session; timeout=30))
+    record_operation!(operations, "empty-query", dsh_query!(session, Any[]; timeout=30))
+    record_operation!(operations, "blank-query", dsh_query!(session, " \n "; timeout=30))
+    record_operation!(operations, "missing-directory", dsh_working_directory!(session, "does-not-exist"; timeout=30))
+    record_operation!(operations, "directory-after-failure", dsh_working_directory(session; timeout=30))
+    absent = DSHSession(client; id="differential-absent")
+    record_operation!(operations, "missing-session-resume", dsh_resume!(absent; timeout=30))
     record_operation!(operations, "unknown-method", JuliaForever2.runtime_request!(client, "differential/unknown", Dict(); timeout=30))
     record_operation!(operations, "shutdown", JuliaForever2.runtime_request!(client, "shutdown", Dict(); timeout=30))
     process = client.backend.process
     timedwait(() -> !process_running(process), 10) === :ok || error("Native SDK runtime did not terminate after shutdown")
     wait(process)
-    return normalize(Dict("release" => JuliaForever2.DSH_REFERENCE_VERSION,
-        "referenceCommit" => JuliaForever2.DSH_REFERENCE_COMMIT, "operations" => operations,
+    return normalize(Dict("release" => DSH_REFERENCE_VERSION,
+        "referenceCommit" => DSH_REFERENCE_COMMIT, "operations" => operations,
         "events" => lock(() -> copy(events), events_lock), "exit" => process.exitcode))
 end
 
@@ -125,7 +128,7 @@ function configuration_result(name, directory, home, temporary)
     diagnostics_path = joinpath(temporary, "$name.stderr")
     code = open(output_path, "w") do output
         open(diagnostics_path, "w") do diagnostics
-            JuliaForever2.register_plugin!(registry, JuliaForever2.dsh_frontend_plugin(:dsh_configuration;
+            JuliaForever2.register_plugin!(registry, dsh_frontend_plugin(:dsh_configuration;
                 profile, stdout=output, stderr=diagnostics))
             base = Kernel()
             host = JuliaForever2.PluginHost(base; registry)
@@ -190,7 +193,7 @@ function observe_web(feature, home, output_path, diagnostics_path)
     index = http_observation(origin * "/"; headers=["cookie" => cookie], replacements=[home => "<home>", origin => "<origin>"])
     asset = http_observation(origin * "/favicon.svg")
     cached = http_observation(origin * "/favicon.svg"; headers=["if-none-match" => asset.observation["etag"]])
-    return Dict("release" => JuliaForever2.DSH_REFERENCE_VERSION, "referenceCommit" => JuliaForever2.DSH_REFERENCE_COMMIT,
+    return Dict("release" => DSH_REFERENCE_VERSION, "referenceCommit" => DSH_REFERENCE_COMMIT,
         "responses" => responses, "authentication" => authentication,
         "index" => index.observation, "asset" => asset.observation, "cached" => cached.observation)
 end
@@ -203,7 +206,7 @@ function web_result(directory, home, temporary)
     diagnostics_path = joinpath(temporary, "web.stderr")
     return open(output_path, "w") do output
         open(diagnostics_path, "w") do diagnostics
-            JuliaForever2.register_plugin!(registry, JuliaForever2.dsh_frontend_plugin(:dsh_web;
+            JuliaForever2.register_plugin!(registry, dsh_frontend_plugin(:dsh_web;
                 profile, stdout=output, stderr=diagnostics))
             base = Kernel()
             host = JuliaForever2.PluginHost(base; registry)
@@ -241,21 +244,21 @@ function successful_turn(profile, resume, diagnostics)
         nothing
     end
     initialized_directory = resume ? joinpath(profile.directory, "child") : profile.directory
-    client = require_result(JuliaForever2.connect_dsh(profile; on_notification=observer, timeout=30, stderr=diagnostics,
+    client = require_result(connect_dsh(profile; on_notification=observer, timeout=30, stderr=diagnostics,
         initialize=Dict("cwd" => initialized_directory, "provider" => "deepseek-official",
             "model" => "deepseek-v4-flash", "maxTokens" => 128)))
     worker = Threads.@spawn begin
-        session = JuliaForever2.DSHSession(client; id="differential-persisted")
-        restored = resume ? require_result(JuliaForever2.dsh_resume!(session; timeout=30)) : nothing
-        directory = require_result(JuliaForever2.dsh_working_directory(session; timeout=30))["cwd"]
-        receipt = require_result(JuliaForever2.dsh_prompt!(session, resume ? RESUMED_PROMPT : FIRST_PROMPT; timeout=30))
-        waited = require_result(JuliaForever2.dsh_wait!(session; timeout=30))
+        session = DSHSession(client; id="differential-persisted")
+        restored = resume ? require_result(dsh_resume!(session; timeout=30)) : nothing
+        directory = require_result(dsh_working_directory(session; timeout=30))["cwd"]
+        receipt = require_result(dsh_prompt!(session, resume ? RESUMED_PROMPT : FIRST_PROMPT; timeout=30))
+        waited = require_result(dsh_wait!(session; timeout=30))
         snapshot = lock(() -> deepcopy(events), event_lock)
         last_end = findlast(event -> event["type"] == "turn/end", snapshot)
         reason = isnothing(last_end) ? nothing : snapshot[last_end]["data"]["reason"]["kind"]
         return Dict("initialized" => client.server_info, "restored" => restored, "directory" => directory,
             "receipt" => get(receipt, "messageId", nothing) isa String && !isempty(receipt["messageId"]),
-            "waited" => waited, "finalResponse" => JuliaForever2.dsh_final_response(snapshot), "finishReason" => reason,
+            "waited" => waited, "finalResponse" => dsh_final_response(snapshot), "finishReason" => reason,
             "notifications" => lock(() -> deepcopy(notifications), event_lock))
     end
     wait(worker; throw=false)
@@ -266,8 +269,8 @@ end
 function successful_turns(profile, diagnostics_path)
     return open(diagnostics_path, "w") do diagnostics
         phases = [successful_turn(profile, resume, diagnostics) for resume in (false, true)]
-        normalize(Dict("release" => JuliaForever2.DSH_REFERENCE_VERSION,
-            "referenceCommit" => JuliaForever2.DSH_REFERENCE_COMMIT, "phases" => phases))
+        normalize(Dict("release" => DSH_REFERENCE_VERSION,
+            "referenceCommit" => DSH_REFERENCE_COMMIT, "phases" => phases))
     end
 end
 
@@ -304,7 +307,7 @@ function successful_turn_comparison(directory, temporary)
     end
 end
 
-@testset "Pinned DSH runtime forwarding differentials" begin
+@testset "Pinned DSH transport differentials using test-only protocol clients" begin
     isempty(RUNTIME_BINARY) && error("differential-runtime requires DSH_BIN pointing to the pinned DSH CLI JavaScript executable")
     mktempdir(pwd(); prefix="dsh-runtime-parity-") do temporary
         directory = mkpath(joinpath(temporary, "workspace with spaces"))
@@ -316,7 +319,7 @@ end
             @test candidate == reference
         end
         reference = reference_result("configuration", directory, joinpath(temporary, "reference-configurations"))
-        length(reference["profiles"]) == length(JuliaForever2.DSH_SHIPPED_PROFILES) || error("Reference omitted a shipped DSH profile")
+        length(reference["profiles"]) == length(DSH_SHIPPED_PROFILES) || error("Reference omitted a shipped DSH profile")
         @testset "Profile configuration: $(entry["profile"])" for entry in reference["profiles"]
             name = entry["profile"]
             candidate = configuration_result(name, directory, joinpath(temporary, "native-configurations", name), temporary)

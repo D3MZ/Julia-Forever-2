@@ -54,6 +54,23 @@ Profile(name, plugins; config=Dict(), bindings=Dict()) = Profile(Symbol(name),
 copy_profile(profile::Profile) = Profile(profile.name, copy(profile.plugins);
     config=deepcopy(profile.config), bindings=copy(profile.bindings))
 
+"""Compose reusable plugin groups; later groups replace plugin configuration and service bindings."""
+function compose_profiles(name, profiles::Profile...)
+    plugins = Symbol[]
+    config = Dict{Symbol,Any}()
+    bindings = Dict{Symbol,Symbol}()
+    for profile in profiles
+        for plugin in profile.plugins
+            plugin in plugins || push!(plugins, plugin)
+        end
+        for (plugin, value) in profile.config
+            config[plugin] = deepcopy(value)
+        end
+        merge!(bindings, profile.bindings)
+    end
+    return Profile(name, plugins; config, bindings)
+end
+
 mutable struct PluginContext{C}
     kernel::Kernel
     name::Symbol

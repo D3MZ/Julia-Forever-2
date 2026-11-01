@@ -69,7 +69,7 @@ function override_patch_entry!(index, patch, identity, warn)
     return nothing
 end
 
-"""Apply ordered DSH entry patches, preserving its inserted-object aliases and skipped-patch diagnostics."""
+"""Apply ordered entry patches with explicit skipped-patch diagnostics."""
 function apply_entry_patches(entries::AbstractVector, patches; warn=Returns(nothing))
     if isnothing(patches) || ismissing(patches) || isempty(patches)
         return copy(entries)
@@ -99,7 +99,7 @@ function format_entry_patch_warning(message, arguments)
     end)
 end
 
-"""Compose ordered DSH bundle, profile, home and command-line patch layers without mutating them."""
+"""Compose ordered entry patch layers without mutating the input."""
 function compose_entry_layers(layers; warn=Returns(nothing))
     patches = entry_patch_copy(Any[patch for layer in layers for patch in layer])
     diagnostics = (message, arguments...) -> warn(format_entry_patch_warning(message, arguments))

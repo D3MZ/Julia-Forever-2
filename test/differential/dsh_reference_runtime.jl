@@ -1,36 +1,7 @@
-using UUIDs: uuid4
-
-const DSH_REFERENCE_COMMIT = "ce7073d51254c26cd63b22a60835b8f948deb447"
-const DSH_REFERENCE_VERSION = "0.2.2-alpha.2"
-const DSH_SHIPPED_PROFILES = ("web", "headless", "sdk", "sdk-minimal", "acp")
-
-struct DSHProfile
-    name::String
-    command::Cmd
-    patches::Vector{String}
-    arguments::Vector{String}
-    directory::String
-    environment::Dict{String,String}
-end
-
-"""Describe an optional DSH composition, including third-party profiles, ordered overlays and app arguments."""
-function DSHProfile(name::AbstractString="sdk"; command=`dsh`, patches=String[], arguments=String[],
-        directory=pwd(), environment=Dict{String,String}(), home=nothing)
-    values = Dict{String,String}(String(key) => String(value) for (key, value) in pairs(environment))
-    isnothing(home) || (values["DSH_HOME"] = abspath(home))
-    return DSHProfile(String(name), command, abspath.(String.(patches)), String.(arguments),
-        abspath(directory), values)
-end
-
-"""Construct argv without a shell, preserving profile patch order and all application arguments."""
-function dsh_command(profile::DSHProfile)
-    overlays = String[]
-    for patch in profile.patches
-        append!(overlays, ["--patch", patch])
-    end
-    command = `$(profile.command) --profile $(profile.name) $overlays $(profile.arguments)`
-    return addenv(Cmd(command; dir=profile.directory), profile.environment...)
-end
+# DSH-specific wire protocol lives only in the pinned-reference differential harness.
+using JuliaForever2: AbstractRuntimeBackend, RpcResult, RpcError, ResourceRegistration,
+    start_runtime, finish_runtime!, PluginSpec, provide!, service, launch_feature
+import JuliaForever2: runtime_request!, runtime_notify!
 
 mutable struct RuntimeSubscriptions
     lock::ReentrantLock
@@ -113,7 +84,7 @@ function connect_dsh(profile::DSHProfile=DSHProfile(); initialize=Dict{String,An
     handshake = Threads.@spawn runtime_request!(backend, "initialize", params; context, timeout)
     wait(handshake; throw=false)
     response = istaskfailed(handshake) ? RpcResult(RpcError(nothing,
-        JSONRPCTransport.task_failure_message(handshake))) : fetch(handshake)
+        JuliaForever2.JSONRPCTransport.task_failure_message(handshake))) : fetch(handshake)
     if !response.ok
         close(backend)
         return response
@@ -174,25 +145,6 @@ dsh_working_directory(session::DSHSession; kwargs...) = runtime_request!(session
 """Change the SDK session directory through the selected runtime's validation and permissions."""
 dsh_working_directory!(session::DSHSession, path::AbstractString; kwargs...) = runtime_request!(session.client,
     "session/working-directory/set", Dict("sessionId" => session.id, "path" => String(path)); kwargs...)
-
-"""Extract the text blocks of the final assistant message from validated DSH session events."""
-function dsh_final_response(events)
-    for event in Iterators.reverse(events)
-        if get(event, "type", nothing) == "assistant/message"
-            return join(block["text"] for block in event["data"]["message"]["content"]
-                if get(block, "type", nothing) == "text")
-        end
-    end
-    return ""
-end
-
-"""Offer the generic JSON-RPC process transport as a replaceable native plugin service."""
-runtime_transport_plugin(name=:jsonrpc_transport; service_name=:runtime_transport, factory=start_runtime) =
-    PluginSpec(name, context -> provide!(context, service_name, factory); provides=[service_name])
-
-"""Offer process lifetime management independently from any frontend or harness protocol."""
-process_launcher_plugin(name=:process_launcher; service_name=:process_launcher, launcher=launch_feature) =
-    PluginSpec(name, context -> provide!(context, service_name, launcher); provides=[service_name])
 
 """Mount an SDK client whose transport implementation is selected by the active native profile."""
 function dsh_sdk_plugin(name=:dsh_sdk; profile=DSHProfile(), initialize=Dict{String,Any}(),

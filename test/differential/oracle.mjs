@@ -39,6 +39,30 @@ function layerCase(input) {
   return { entries, warnings, originalLayers: input.layers }
 }
 
+function profileGroupCase(input) {
+  const seen = new Set()
+  const patches = input.profiles.map(profile => {
+    const inserted = []
+    const overrides = []
+    for (const plugin of profile.plugins) {
+      const configuration = profile.config ?? {}
+      if (!seen.has(plugin)) {
+        const entry = { id: plugin, name: plugin }
+        if (Object.hasOwn(configuration, plugin)) entry.config = configuration[plugin]
+        inserted.push(entry)
+        seen.add(plugin)
+      } else if (Object.hasOwn(configuration, plugin)) {
+        overrides.push({ id: plugin, config: configuration[plugin] })
+      }
+    }
+    return [...inserted.length ? [{ insert: inserted }] : [], ...overrides]
+  })
+  const entries = composeEntries(patches, () => {})
+  return { plugins: entries.map(entry => entry.id),
+    config: Object.fromEntries(entries.filter(entry => Object.hasOwn(entry, 'config'))
+      .map(entry => [entry.id, entry.config])), originalProfiles: input.profiles }
+}
+
 async function transportCase(input) {
   const incoming = new PassThrough()
   let output = ''
@@ -493,6 +517,7 @@ async function toolCase(input) {
 async function execute(input) {
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
+  if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
   if (input.kind === 'transport') return Promise.all(input.cases.map(transportCase))
   if (input.kind === 'outgoing') return Promise.all(input.cases.map(outgoingCase))
   if (input.kind === 'recovery') return Promise.all(input.cases.map(recoveryCase))
