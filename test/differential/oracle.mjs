@@ -9,8 +9,13 @@ const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(path
 
 const { executeToolBatch } = await importSource('packages/core/tools/src/batch.ts', source => {
   const start = source.indexOf('export async function executeToolBatch(')
-  if (start < 0) throw new Error('Locked DSH tool batch scheduler was not found')
-  return source.slice(start)
+  const executor = referenceSource('packages/core/tools/src/executor.ts')
+  const errorStart = executor.indexOf('export class ToolBatchExecutionError extends Error {')
+  const errorEnd = executor.indexOf('/** The selected provider is missing', errorStart)
+  if (start < 0 || errorStart < 0 || errorEnd < 0) {
+    throw new Error('Locked DSH tool batch scheduler or error contract was not found')
+  }
+  return executor.slice(errorStart, errorEnd) + '\n' + source.slice(start)
 })
 
 
@@ -91,7 +96,7 @@ async function toolBatchCase(input) {
   }))
   const settled = await executeToolBatch({
     calls, signal: new AbortController().signal, maxParallelToolCalls: input.max_parallel,
-  }, pipeline, () => 1)
+  }, pipeline, () => 1).catch(error => { throw error.cause ?? error })
   return {
     results: settled.results.map(({ callId, result }) => ({
       id: callId, ok: !result.isError,
