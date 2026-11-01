@@ -20,7 +20,7 @@ function (checked::CheckedToolOutput)(arguments...)
     result.ok || return result
     violations = tool_output_violations(checked.schema, result.value)
     isempty(violations) && return result
-    return ExecutionResult(false, join(violations, "; "))
+    return ExecutionResult(false, string(join(violations, "; ")))
 end
 
 """Describe a tool independently of its executor, provider schema, or presentation protocol."""
