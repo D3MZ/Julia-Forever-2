@@ -90,6 +90,7 @@ function session_descendants(store::SessionStore, ancestor::UUID; include_self=f
     reachable = Set{UUID}([ancestor])
     names = String[]
     changed = true
+    passes = 0
     while changed
         changed = false
         for (id, (name, parent)) in relationships
@@ -98,6 +99,31 @@ function session_descendants(store::SessionStore, ancestor::UUID; include_self=f
                 push!(names, name)
                 changed = true
             end
+        end
+        passes += 1
+        if changed && passes == 8
+            # Long parent chains otherwise require repeatedly scanning every session.
+            # Keep the inexpensive scan for the common shallow lineage trees.
+            children = Dict{UUID,Vector{Tuple{UUID,String}}}()
+            for (id, (name, parent)) in relationships
+                isnothing(parent) && continue
+                push!(get!(Vector{Tuple{UUID,String}}, children, parent), (id, name))
+            end
+            queue = collect(reachable)
+            next = 1
+            while next <= length(queue)
+                parent = queue[next]
+                next += 1
+                descendants = get(children, parent, nothing)
+                isnothing(descendants) && continue
+                for (id, name) in descendants
+                    id in reachable && continue
+                    push!(reachable, id)
+                    push!(queue, id)
+                    push!(names, name)
+                end
+            end
+            break
         end
     end
     if include_self && haskey(relationships, ancestor)

@@ -311,3 +311,42 @@ end
     @test !isopen(deep)
     close(shallow)
 end
+
+
+using UUIDs: UUID, uuid5
+using JSON
+
+@testset "Saved session descendants preserve ordering and cycle handling" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        namespace = UUID("e52b186c-827a-496f-9899-3d9cae157522")
+        ids = [uuid5(namespace, "lineage-$index") for index in 1:8]
+        function persist_lineage(name, index, parent)
+            lineage = Dict("id" => string(ids[index]),
+                "parent_id" => isnothing(parent) ? nothing : string(ids[parent]),
+                "root_id" => string(ids[1]))
+            record = Dict("format" => "JuliaForever2.session", "version" => 2,
+                "name" => name, "working_directory" => directory,
+                "messages" => Any[], "lineage" => lineage)
+            write(joinpath(directory, string(name, ".json")), JSON.json(record))
+        end
+        persist_lineage("root", 1, nothing)
+        persist_lineage("alpha", 2, 1)
+        persist_lineage("beta", 3, 1)
+        persist_lineage("grandchild", 4, 2)
+        persist_lineage("unrelated", 5, nothing)
+        persist_lineage("cycle-a", 6, 7)
+        persist_lineage("cycle-b", 7, 6)
+        persist_lineage("orphan", 8, 5)
+        @test JuliaForever2.session_descendants(store, ids[1]) == ["alpha", "beta", "grandchild"]
+        @test JuliaForever2.session_descendants(store, "root"; include_self=true) ==
+            ["alpha", "beta", "grandchild", "root"]
+        @test JuliaForever2.session_descendants(store, ids[2]) == ["grandchild"]
+        @test JuliaForever2.session_descendants(store, ids[6]) == ["cycle-b"]
+        @test JuliaForever2.session_descendants(store, ids[6]; include_self=true) ==
+            ["cycle-a", "cycle-b"]
+        @test JuliaForever2.session_descendants(store, ids[5]) == ["orphan"]
+        @test isempty(JuliaForever2.session_descendants(store,
+            UUID("00000000-0000-0000-0000-000000000000")))
+    end
+end
