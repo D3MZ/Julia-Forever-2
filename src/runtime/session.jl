@@ -107,7 +107,7 @@ usage_label(session::Session) = usage_label(session.conversation)
 Base.isopen(session::Session) = lock(() -> !session.runtime.closed, session.conversation.lock)
 
 """Read the session's workspace independently of the process-wide working directory."""
-working_directory(session::Session) = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
+working_directory(session::Session)::String = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
 
 """Resolve a path against the session's workspace without changing process state."""
 function workspace_path(session::Session, path::AbstractString)
