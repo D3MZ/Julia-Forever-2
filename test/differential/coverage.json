@@ -433,7 +433,7 @@
     },
     {
       "kind": "tool_outputs",
-      "case_count": 31,
+      "case_count": 56,
       "status": "required-differential-cases",
       "sources": [
         {
@@ -450,7 +450,7 @@
         "valid results preserve their value, invalid outputs cannot escape through ExecutionResult.value, and output schema stays separate from model-visible input schema"
       ],
       "limits": [
-        "31 bounded JSON-compatible cases against original DSH schema validation, not the complete DSH output rendering or presentation pipeline.",
+        "56 bounded JSON-compatible cases against original DSH schema validation, not the complete DSH output rendering or presentation pipeline.",
         "Julia output checks are optional and replaceable through tool_output_violations multiple dispatch; approval, batching, cancellation, and tool-output presentation parity remain unverified."
       ]
     },
@@ -2627,6 +2627,13 @@
     "scenarios": [
       {
         "profiles": [
+          "sdk"
+        ],
+        "comparisons": 1,
+        "projection": "Native Julia session/close with an installed SessionStore durably saves completed user/assistant turns and workspace without an explicit save call. A new API instance resumes with the same identity and full continuation history; compare against the real pinned SDK process-shutdown/restart and the captured resumed model request. This is one completed-turn close/reopen observation, not ACP session/close equivalence or host-shutdown persistence."
+      },
+      {
+        "profiles": [
           "sdk",
           "sdk-minimal"
         ],
@@ -2665,13 +2672,6 @@
         ],
         "comparisons": 2,
         "projection": "Actual upstream HarnessClient versus Julia helpers: successful prompt, wait, exact final response and finish reason; a fresh process resumes the persisted session despite a different initialization directory, then completes another turn. Compare ordered notification projections and complete model-request messages, model/output-cap/stream options, local server outcomes, and the restored user/assistant history."
-      },
-      {
-        "profiles": [
-          "sdk"
-        ],
-        "comparisons": 1,
-        "projection": "Native Julia session/close with an installed SessionStore durably saves completed user/assistant turns and workspace without an explicit save call. A new API instance resumes with the same identity and full continuation history; compare against the real pinned SDK process-shutdown/restart and the captured resumed model request. This is one completed-turn close/reopen observation, not ACP session/close equivalence or host-shutdown persistence."
       },
       {
         "profiles": [

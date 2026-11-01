@@ -15,7 +15,8 @@ CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "sessi
 CASES["session_control"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_control.json"), String))
 CASES["session_fork"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_fork.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
-CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
+CASES["tool_outputs"] = vcat(deepcopy(CASES["tool_arguments"]),
+    JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_outputs.json"), String)))
 CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
 CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
