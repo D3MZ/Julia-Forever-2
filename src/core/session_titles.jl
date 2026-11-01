@@ -51,6 +51,30 @@ function title_visible(character::Char)
         !(0x2066 <= point <= 0x206f)
 end
 
+"""Recognize spacing and line breaks that a browser would collapse in title text."""
+function title_whitespace(character::Char)
+    codepoint = Int(character)
+    character in (' ', '\t', '\n', '\v', '\f', '\r') ||
+        codepoint in (0x00a0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000) ||
+        (0x2000 <= codepoint <= 0x200a)
+end
+
+"""Collapse Unicode spacing into one ASCII space without losing visible glyphs."""
+function collapse_title_whitespace(value::AbstractString)
+    output = IOBuffer()
+    separator = false
+    for character in value
+        if title_whitespace(character)
+            separator = position(output) > 0
+        else
+            separator && print(output, ' ')
+            print(output, character)
+            separator = false
+        end
+    end
+    String(take!(output))
+end
+
 """Convert untrusted terminal text into one ordinary display line without copying upstream code."""
 function clean_session_title(value::AbstractString)
     characters = collect(value)
@@ -76,7 +100,7 @@ function clean_session_title(value::AbstractString)
             position += 1
         end
     end
-    join(split(String(take!(output))), " ")
+    collapse_title_whitespace(String(take!(output)))
 end
 
 """Take the longest Unicode-codepoint prefix fitting a UTF-8 byte limit."""

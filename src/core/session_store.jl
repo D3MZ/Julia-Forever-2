@@ -29,10 +29,11 @@ function persist!(store::SessionStore, name, session::Session, path::AbstractStr
     record = session_record(session)
     lineage = record.lineage
     data = Dict("format" => "JuliaForever2.session", "version" => 2, "name" => String(name),
-        "working_directory" => record.directory, "messages" => record.messages, "title" => title,
+        "working_directory" => record.directory, "messages" => record.messages,
         "lineage" => Dict("id" => string(lineage.id),
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
+    isnothing(title) || (data["title"] = String(title))
     serialized = JSON.json(data) * "\n"
     lock(store.lock) do
         mkpath(store.directory; mode=0o700)
