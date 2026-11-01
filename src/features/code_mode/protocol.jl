@@ -42,5 +42,7 @@ action_kind(::RunJulia) = :code
 action_payload(action) = action
 action_payload(action::RunJulia) = action.source
 
-decision_message(answer::Answer) = Message(:assistant, answer.content, :answer)
-decision_message(decision::ActionDecision) = Message(:assistant, action_content(decision.action), action_kind(decision.action); metadata=decision.action isa RunJulia ? nothing : decision.action)
+Message(answer::Answer) = Message(:assistant, answer.content, :answer)
+Message(decision::ActionDecision) = Message(:assistant, action_content(decision.action), action_kind(decision.action); metadata=decision.action isa RunJulia ? nothing : decision.action)
+decision_message(answer::Answer) = Message(answer)
+decision_message(decision::ActionDecision) = Message(decision)

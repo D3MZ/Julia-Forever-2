@@ -15,6 +15,9 @@ struct UsageReport
     cost::Union{Nothing,Float64}
 end
 UsageReport() = UsageReport(nothing, nothing, nothing)
+UsageReport(report::UsageReport) = report
+UsageReport(data::AbstractDict) = normalize_usage(data)
+UsageReport(::Nothing) = UsageReport()
 usage_tokens(value::Integer) = value isa Bool || value < 0 || value > typemax(Int) ? nothing : Int(value)
 usage_tokens(value) = nothing
 function usage_cost(value::Real)

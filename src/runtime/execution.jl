@@ -20,8 +20,8 @@ function respond_model(provider, request::ModelRequest, session::Session, contex
         Base.invokelatest(respond, provider, request.messages, session, context)
 end
 
-apply_decision!(session::Session, answer::Answer, context) = ExecutionResult(true, answer.content)
-apply_decision!(session::Session, failure::Failure, context) = ExecutionResult(false, failure.content)
+apply_decision!(session::Session, answer::Answer, context) = ExecutionResult(answer)
+apply_decision!(session::Session, failure::Failure, context) = ExecutionResult(failure)
 
 function apply_decision!(session::Session, decision::ActionDecision, context)
     result = evaluate!(session, action_payload(decision.action); context)
@@ -46,7 +46,7 @@ function default_loop!(session::Session, prompt::AbstractString, max_steps::Inte
         isnothing(usage) || record_usage!(session, usage)
         cancelled(context) && return stopped_result()
         reply = response_reply(response)
-        decision = Base.invokelatest(agent_decision, reply)
+        decision = Base.invokelatest(AgentDecision, reply)
         decision isa Failure && return apply_decision!(session, decision, context)
         append_message!(session, Base.invokelatest(decision_message, decision))
         emit!(context, HarnessEvent(:response_committed, (operation_id=operation_id(context),)))

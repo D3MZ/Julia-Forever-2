@@ -75,15 +75,18 @@ function inspect!(issues, node::Expr, location::Location)
     issues
 end
 
-violations(source::AbstractString) = inspect!(Tuple{Int,String}[], Meta.parseall(source), Location())
+function violations(source::AbstractString; single_exit=false)
+    issues = inspect!(Tuple{Int,String}[], Meta.parseall(source), Location())
+    single_exit ? issues : filter(issue -> !(last(issue) in ("early return", "guard clause")), issues)
+end
 
-function audit(root)
+function audit(root; single_exit=false)
     issues = Tuple{String,Int,String}[]
     for (directory, directories, files) in walkdir(root)
         filter!(!=(".git"), directories)
         for file in filter(name -> endswith(name, ".jl"), files)
             path = joinpath(directory, file)
-            append!(issues, ((relpath(path, root), line, kind) for (line, kind) in violations(read(path, String))))
+            append!(issues, ((relpath(path, root), line, kind) for (line, kind) in violations(read(path, String); single_exit)))
         end
     end
     issues

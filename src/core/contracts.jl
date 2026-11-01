@@ -5,8 +5,10 @@ struct ExecutionResult{T}
 end
 
 ExecutionResult(ok::Bool, text::AbstractString, value=nothing) = ExecutionResult(ok, String(text), value)
-execution_result(result::ExecutionResult) = result
-execution_result(result::NamedTuple) = ExecutionResult(result.ok, result.text, get(result, :value, nothing))
+ExecutionResult(result::ExecutionResult) = result
+ExecutionResult(result::NamedTuple) = ExecutionResult(result.ok, result.text, get(result, :value, nothing))
+execution_result(result::ExecutionResult) = ExecutionResult(result)
+execution_result(result::NamedTuple) = ExecutionResult(result)
 
 struct Message{T}
     role::Symbol
@@ -58,6 +60,10 @@ struct Failure <: AgentDecision
     content::String
 end
 Failure(content::AbstractString) = Failure(String(content))
+
+ExecutionResult(answer::Answer) = ExecutionResult(true, answer.content)
+ExecutionResult(failure::Failure) = ExecutionResult(false, failure.content)
+AgentDecision(response) = agent_decision(response)
 
 agent_decision(decision::AgentDecision) = decision
 agent_decision(action::RunJulia) = ActionDecision(action)

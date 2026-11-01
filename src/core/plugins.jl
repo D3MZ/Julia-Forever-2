@@ -53,6 +53,8 @@ Profile(name, plugins; config=Dict(), bindings=Dict()) = Profile(Symbol(name),
 
 copy_profile(profile::Profile) = Profile(profile.name, copy(profile.plugins);
     config=deepcopy(profile.config), bindings=copy(profile.bindings))
+Profile(profile::Profile) = copy_profile(profile)
+Profile(name, first::Profile, rest::Profile...) = compose_profiles(name, first, rest...)
 
 """Compose reusable plugin groups; later groups replace plugin configuration and service bindings."""
 function compose_profiles(name, profiles::Profile...)

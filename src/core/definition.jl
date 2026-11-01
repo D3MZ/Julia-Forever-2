@@ -21,5 +21,7 @@ function definition_kernel(definition::AgentDefinition)
     return kernel
 end
 
+Kernel(definition::AgentDefinition) = definition_kernel(definition)
+
 operation_protocol(::Nothing, provider) = provider_protocol(provider)
 operation_protocol(definition::AgentDefinition, provider) = definition.protocol
