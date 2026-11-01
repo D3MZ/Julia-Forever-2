@@ -444,7 +444,7 @@ end
     delete!(rows[2], "extra")
     rows[2]["name"] = missing
     @test JuliaForever2.tool_argument_violations(checked, arguments) ==
-        ["\"arguments.rows[1]\" must be a lossless JSON object"]
+        ["missing required property \"arguments.rows[1].name\""]
     rows[2]["name"] = "row-2"
     @test isempty(JuliaForever2.tool_argument_violations(checked, arguments))
 
