@@ -16,14 +16,12 @@ end
 
 Kernel(provider) = Kernel(AgentDefinition(provider; protocol=nothing))
 default_kernel(provider=DemoProvider()) = Kernel(provider)
-"""Return display information while the selected provider generation remains retained."""
+"""Return a typed identity while the selected provider generation remains retained."""
 function provider_selection_snapshot(kernel::Kernel)
-    snapshot = with_component(kernel, :provider) do provider
-        (id=Base.invokelatest(provider_id, provider),
-            name=String(Base.invokelatest(provider_name, provider)),
-            detail=String(Base.invokelatest(provider_detail, provider)))
+    identity = with_component(kernel, :provider) do provider
+        Base.invokelatest(provider_identity, provider)
     end
-    return isnothing(snapshot) ? (id=:none, name="No provider", detail="No provider") : snapshot
+    isnothing(identity) ? ProviderIdentity(; id=:none, name="No provider", detail="No provider") : identity
 end
 
 """Read provider availability for settings without coupling views to credential storage."""

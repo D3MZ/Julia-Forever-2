@@ -69,9 +69,18 @@ OAuthAttempt(provider::Symbol, redirect::AbstractString; host_id="", client_id="
 oauth_attempt(provider::Symbol, redirect::AbstractString; kwargs...) = OAuthAttempt(provider, redirect; kwargs...)
 function callback_params(target::AbstractString)
     parts = split(target, '?'; limit=2)
+    if length(parts) == 2
+        values, valid = callback_query_values(split(parts[2], '&'))
+        (path=String(parts[1]), values, valid)
+    else
+        (path=String(parts[1]), values=Dict{String,String}(), valid=false)
+    end
+end
+
+"""Parse callback query parameters within a typed validation boundary."""
+function callback_query_values(fields::AbstractVector{<:AbstractString})
     values = Dict{String,String}()
-    valid = length(parts) == 2
-    fields = valid ? split(parts[2], '&') : SubString{String}[]
+    valid = true
     index = 1
     while valid && index <= length(fields)
         pair = split(fields[index], '='; limit=2)
@@ -83,7 +92,7 @@ function callback_params(target::AbstractString)
         end
         index += 1
     end
-    (path=String(parts[1]), values, valid)
+    (values, valid)
 end
 function finish_callback(attempt::OAuthAttempt, callback)
     if callback.valid && callback.path == "/auth/callback" && get(callback.values, "state", "") == attempt.state

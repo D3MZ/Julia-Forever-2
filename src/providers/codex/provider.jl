@@ -8,6 +8,7 @@ struct CodexProvider{P}
 end
 CodexProvider(executable::AbstractString="codex"; model="gpt-6.1-terra", reasoning="max", policy=CodeModePolicy()) = CodexProvider(String(executable), String(model), String(reasoning), policy)
 CodexProvider(executable::AbstractString, model::AbstractString, reasoning::AbstractString) = CodexProvider(executable; model, reasoning)
+CodexProvider(provider::CodexProvider, model::AbstractString) = CodexProvider(provider.executable; model, reasoning=provider.reasoning, policy=provider.policy)
 (provider::CodexProvider)(messages, session) = call_provider(provider, messages, session)
 
 function codex_usage(events)
@@ -71,7 +72,6 @@ function execute!(request::CodexRequest, protocol, context)
 end
 respond(provider::CodexProvider, messages, session, context::ExecutionContext) = legacy_provider_response(provider, messages, session, context)
 
-provider_id(::CodexProvider) = :codex
-provider_name(::CodexProvider) = "Codex"
-provider_detail(provider::CodexProvider) = "(openai-codex) " * provider.model * " • " * provider.reasoning
+provider_identity(provider::CodexProvider) = ProviderIdentity(;
+    id=:codex, name="Codex", detail="(openai-codex) " * provider.model * " • " * provider.reasoning)
 codex_provider_descriptor() = ProviderDescriptor(:codex, "ChatGPT / Codex", dir -> CodexProvider(); auth=codex_sign_in!, status=Returns("CLI sign-in"))

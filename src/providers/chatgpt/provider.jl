@@ -19,6 +19,8 @@ struct OpenAIProvider{F,G,P}
     catalog_ttl::Float64
 end
 OpenAIProvider(dir::AbstractString=config_dir(), transport=openai_request, auth_transport=auth_request; model=get(ENV, "CHATGPT_MODEL", ""), policy=CodeModePolicy(), catalog_ttl=300.0) = OpenAIProvider(String(dir), String(model), transport, auth_transport, policy, ModelCatalog(), Float64(catalog_ttl))
+OpenAIProvider(provider::OpenAIProvider, model::AbstractString) = OpenAIProvider(provider.dir, String(model),
+    provider.transport, provider.auth_transport, provider.policy, provider.catalog, provider.catalog_ttl)
 (provider::OpenAIProvider)(messages, session) = call_provider(provider, messages, session)
 
 function available_models!(provider::OpenAIProvider, headers, context)
@@ -130,9 +132,9 @@ function chatgpt_reply(stream::AbstractString)
 end
 respond(provider::OpenAIProvider, messages, session, context::ExecutionContext) = legacy_provider_response(provider, messages, session, context)
 
-provider_id(::OpenAIProvider) = :chatgpt
-provider_name(::OpenAIProvider) = "ChatGPT"
-provider_detail(provider::OpenAIProvider) = "(chatgpt) " * (isempty(provider.model) ? "auto" : provider.model)
+provider_identity(provider::OpenAIProvider) = ProviderIdentity(;
+    id=:chatgpt, name="ChatGPT",
+    detail="(chatgpt) " * (isempty(provider.model) ? "auto" : provider.model))
 
 chatgpt_status(dir) = account(load_credentials(dir, :chatgpt))
 account(::Nothing) = "not connected"

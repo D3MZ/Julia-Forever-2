@@ -8,7 +8,6 @@ end
 
 respond(provider::DemoProvider, messages, session, context::ExecutionContext) = respond(provider, model_request(CodeModePolicy(), messages, session), context)
 
-provider_id(::DemoProvider) = :demo
-provider_name(::DemoProvider) = "Demo"
-provider_detail(::DemoProvider) = "(demo) offline · /settings to connect"
+provider_identity(::DemoProvider) = ProviderIdentity(;
+    id=:demo, name="Demo", detail="(demo) offline · /settings to connect")
 demo_provider_descriptor() = ProviderDescriptor(:demo, "Demo", dir -> DemoProvider(); status=Returns("offline, deterministic"))

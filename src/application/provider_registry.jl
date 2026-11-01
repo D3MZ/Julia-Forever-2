@@ -1,11 +1,12 @@
-struct ProviderDescriptor{F,A,S}
+Base.@kwdef struct ProviderDescriptor{F,A,S}
     id::Symbol
     label::String
     create::F
-    auth::A
-    status::S
+    auth::A = nothing
+    status::S = Returns("")
 end
-ProviderDescriptor(id::Symbol, label::AbstractString, create; auth=nothing, status=Returns("")) = ProviderDescriptor(id, String(label), create, auth, status)
+ProviderDescriptor(id::Symbol, label::AbstractString, create; auth=nothing, status=Returns("")) =
+    ProviderDescriptor(; id, label=String(label), create, auth, status)
 
 struct ProviderRegistry
     lock::ReentrantLock

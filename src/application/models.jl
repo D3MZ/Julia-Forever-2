@@ -28,17 +28,19 @@ catalog(models::AbstractVector{<:ModelSpec}) = copy(models)
 catalog(value) = ModelSpec[]
 catalog_models(factory) = ModelSpec[]
 
+provider_catalog_descriptors(registry::ProviderRegistry, ::Nothing) = provider_descriptors(registry)
+provider_catalog_descriptors(registry::ProviderRegistry, id::Symbol) = (provider_descriptor(registry, id),)
+provider_catalog_descriptors(registry::ProviderRegistry, name::AbstractString) = provider_catalog_descriptors(registry, Symbol(name))
+
+"""Filter model catalogs inside a dedicated iteration boundary."""
+catalog_models_of_kind(descriptors, kind) = ModelSpec[
+    model for descriptor in descriptors for model in models(descriptor)
+    if kind == :all || model.kind == kind
+]
+
 """Read last-known model metadata; catalog callbacks must not perform network or authentication work."""
-function provider_models(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY; provider=nothing, kind=:chat)
-    descriptors = isnothing(provider) ? provider_descriptors(registry) : (provider_descriptor(registry, Symbol(provider)),)
-    result = ModelSpec[]
-    for descriptor in descriptors, model in models(descriptor)
-        if kind == :all || model.kind == kind
-            push!(result, model)
-        end
-    end
-    result
-end
+provider_models(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY; provider=nothing, kind=:chat) =
+    catalog_models_of_kind(provider_catalog_descriptors(registry, provider), kind)
 
 models(::Nothing) = ModelSpec[]
 models(descriptor::ProviderDescriptor) = catalog_models(descriptor.create)
@@ -49,7 +51,8 @@ function provider_model(registry::ProviderRegistry, provider, id::AbstractString
     return isnothing(index) ? nothing : models[index]
 end
 """Resolve one named provider's model without snapshotting unrelated provider descriptors."""
-provider_model(registry::ProviderRegistry, provider::Union{Symbol,AbstractString}, id::AbstractString; kind=:chat) = model(provider_descriptor(registry, Symbol(provider)), id, kind)
+provider_model(registry::ProviderRegistry, provider::Symbol, id::AbstractString; kind=:chat) = model(provider_descriptor(registry, provider), id, kind)
+provider_model(registry::ProviderRegistry, name::AbstractString, id::AbstractString; kind=:chat) = provider_model(registry, Symbol(name), id; kind)
 model(::Nothing, id::AbstractString, kind) = nothing
 
 function model(descriptor::ProviderDescriptor, id::AbstractString, kind)
@@ -83,9 +86,6 @@ provider_detail(provider::ModelProvider) = "($(provider.model.provider)) $(provi
 
 """Select a model without changing a provider's authentication, transport, or protocol policy."""
 select_model(provider, model::AbstractString) = nothing
-OpenRouterProvider(provider::OpenRouterProvider, model::AbstractString) = OpenRouterProvider(provider.api_key, model, provider.transport; policy=provider.policy)
-CodexProvider(provider::CodexProvider, model::AbstractString) = CodexProvider(provider.executable; model, reasoning=provider.reasoning, policy=provider.policy)
-OpenAIProvider(provider::OpenAIProvider, model::AbstractString) = OpenAIProvider(provider.dir, String(model), provider.transport, provider.auth_transport, provider.policy, provider.catalog, provider.catalog_ttl)
 select_model(provider::OpenRouterProvider, model::AbstractString) = OpenRouterProvider(provider, model)
 select_model(provider::CodexProvider, model::AbstractString) = CodexProvider(provider, model)
 select_model(provider::OpenAIProvider, model::AbstractString) = OpenAIProvider(provider, model)
