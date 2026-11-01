@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified.",
+  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -470,6 +470,30 @@
       "limits": [
         "The test invokes the unchanged pinned DSH scheduling function with an injected deterministic pipeline. The unexercised model-message factory is omitted only in this no-log test loader; no DSH runtime is loaded in production.",
         "This is a bounded behavioral projection. Approval/policy preparation timing, complete tool result rendering, deferrable context, durable DSH session logging, argument parsing and cancellation races are not proven equivalent."
+      ]
+    },
+    {
+      "kind": "tool_cancellation",
+      "case_count": 5,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/pipeline.ts",
+          "symbols": [
+            "ToolExecutionPipeline.dispatchToolBody",
+            "toolAbortedResult",
+            "toolAbortedBeforeDispatchResult"
+          ]
+        }
+      ],
+      "compares": [
+        "Successful native tool returns retain their original values",
+        "Cancellation before dispatch does not execute a tool body",
+        "Cancellation during synchronous and suspended bodies drains execution and discards successful values"
+      ],
+      "limits": [
+        "The test invokes the original pinned DSH dispatchToolBody with a deterministic injected tool and minimal success projection; it does not exercise surrounding event, approval, post-execute, or durable logging services.",
+        "Only five bounded cancellation cases are compared; errors, nested cancellation, competing abort sources, and arbitrary timing remain unverified."
       ]
     },
     {

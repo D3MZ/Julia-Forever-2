@@ -13,6 +13,7 @@ CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "sessi
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
 CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
+CASES["tool_cancellation"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_cancellation.json"), String))
 CASES["tool_approval"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_approval.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
@@ -745,6 +746,27 @@ function tool_approval_result(input)
     return normalize(outcomes)
 end
 
+"""Compare cancellation after a Julia-owned tool body starts with the pinned DSH lifecycle."""
+function tool_cancellation_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    context = ExecutionContext()
+    invoked = Ref(0)
+    specification = JuliaForever2.ToolSpec(:fixture, Dict("type" => "object"), arguments -> begin
+        invoked[] += 1
+        get(input, "async", false) && yield()
+        get(input, "cancel_during", false) && cancel!(context)
+        return input["value"]
+    end)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    get(input, "cancel_before", false) && cancel!(context)
+    result = JuliaForever2.invoke_tool!(scope, :fixture, Dict{String,Any}(); context)
+    close(scope)
+    close(context)
+    return normalize(Dict("allowed" => result.ok, "invoked" => invoked[],
+        "retained" => result.ok ? result.value : nothing))
+end
+
 """Compare native tool-batch scheduling with the original pinned DSH scheduler."""
 function tool_batch_result(input)
     scope = JuliaForever2.ExtensionScope()
@@ -891,7 +913,8 @@ end
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
-            ("tool_batch", tool_batch_result), ("tool_approval", tool_approval_result),
+            ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
+            ("tool_approval", tool_approval_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),

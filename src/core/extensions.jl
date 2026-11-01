@@ -744,7 +744,9 @@ function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context
                     ExecutionResult(false, "Tool call aborted before dispatch")
                 else
                     returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
-                    checked_tool_result(invocation.listener.spec, returned)
+                    result = checked_tool_result(invocation.listener.spec, returned)
+                    cancelled(context) && result.ok ?
+                        ExecutionResult(false, "Tool call aborted") : result
                 end
             end
         end
