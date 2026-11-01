@@ -1,0 +1,257 @@
+name: Session API count-only summary paired benchmark (2026-11-01)
+on:
+  push:
+    branches:
+      - perf/session-summary-count-20261101t1605
+permissions:
+  contents: read
+jobs:
+  experiment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      JULIA_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: 'db9582b8d7be03882f857af5f7e55b03aeeeb4d8'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Exact baseline worktree and runner provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/session-summary-evidence"
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/session-summary-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/session-summary-baseline" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$RUNNER_TEMP/session-summary-evidence/candidate.sha"
+          git -C "$RUNNER_TEMP/session-summary-baseline" rev-parse HEAD > "$RUNNER_TEMP/session-summary-evidence/baseline.sha"
+          julia --version > "$RUNNER_TEMP/session-summary-evidence/julia-version.txt"
+          lscpu > "$RUNNER_TEMP/session-summary-evidence/cpu.txt"
+          uname -a > "$RUNNER_TEMP/session-summary-evidence/os.txt"
+          git diff --exit-code "$BASELINE_SHA" HEAD -- Project.toml benchmarks/Project.toml
+      - name: Instantiate identical benchmark dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          julia --project="$BASELINE_DIR/benchmarks" -e 'using Pkg; Pkg.instantiate()'
+          julia --project="$GITHUB_WORKSPACE/benchmarks" -e 'using Pkg; Pkg.instantiate()'
+          cp "$BASELINE_DIR/benchmarks/Manifest.toml" "$RUNNER_TEMP/session-summary-evidence/baseline-manifest.toml"
+          cp "$GITHUB_WORKSPACE/benchmarks/Manifest.toml" "$RUNNER_TEMP/session-summary-evidence/candidate-manifest.toml"
+          diff -u "$RUNNER_TEMP/session-summary-evidence/baseline-manifest.toml" "$RUNNER_TEMP/session-summary-evidence/candidate-manifest.toml" > "$RUNNER_TEMP/session-summary-evidence/manifest-diff.txt"
+      - name: Write temporary benchmark programs
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/session-summary-worker.jl" <<'JULIA'
+          using JuliaForever2, JSON, Profile, Statistics, SHA
+          kind, pair_string, folder = ARGS
+          pair = parse(Int, pair_string)
+          fixture_id = JuliaForever2.UUID("b17aa33e-acf6-4c34-8bcf-e9a489201bce")
+          text = repeat("Recorded user conversation, tool response and application context. ", 3)
+          workloads = [("describe-large", 16384, "session/describe"),
+                       ("describe-medium", 4096, "session/describe"),
+                       ("describe-small", 128, "session/describe"),
+                       ("describe-empty", 0, "session/describe"),
+                       ("messages-control", 96, "session/messages"),
+                       ("mixed-describe-and-messages", 128, "mixed")]
+          canonical(item::AbstractDict) = [(key, canonical(item[key])) for key in sort!(collect(keys(item)))]
+          canonical(item::AbstractVector) = [canonical(value) for value in item]
+          canonical(item) = item
+          function make_run(count, method)
+              messages = [Message(:user, string("message ", i, ": ", text)) for i in 1:count]
+              session = Session(Kernel(); messages=messages, id=fixture_id)
+              api = JuliaForever2.SessionAPI()
+              api.sessions["bench"] = session
+              params = Dict{String,Any}("session" => "bench")
+              run = () -> begin
+                  result = if method == "mixed"
+                      descriptions = [JuliaForever2.session_api_request!(api,
+                          "session/describe", params) for _ in 1:8]
+                      messages = JuliaForever2.session_api_request!(api,
+                          "session/messages", params)
+                      Dict("descriptions" => descriptions, "messages" => messages)
+                  else
+                      JuliaForever2.session_api_request!(api, method, params)
+                  end
+                  JSON.json(Dict{String,Any}("jsonrpc" => "2.0", "id" => 1,
+                      "result" => result))
+              end
+              return (run, api)
+          end
+          function sample(run)
+              GC.gc()
+              timings = Int[]
+              for i in 1:13
+                  start = time_ns()
+                  run()
+                  push!(timings, time_ns() - start)
+              end
+              return Dict("raw_ns" => timings, "median_ns" => median(timings),
+                  "bytes" => Base.@allocated(run()), "allocations" => Base.@allocations(run()))
+          end
+          function profile(run)
+              Profile.clear()
+              Profile.@profile begin
+                  finish = time_ns() + 500_000_000
+                  while time_ns() < finish
+                      run()
+                  end
+              end
+              open(joinpath(folder, kind * "-cpu.txt"), "w") do output
+                  Profile.print(output; format=:flat, sortedby=:count)
+              end
+              Profile.Allocs.clear()
+              Profile.Allocs.@profile sample_rate=1.0 run()
+              sites = Dict{String,Tuple{Int,Int}}()
+              for allocation in Profile.Allocs.fetch().allocs
+                  isempty(allocation.stacktrace) && continue
+                  frame = first(allocation.stacktrace)
+                  for point in allocation.stacktrace
+                      if occursin("session_api.jl", string(point.file)) ||
+                         occursin("conversation.jl", string(point.file))
+                          frame = point
+                          break
+                      end
+                  end
+                  site = string(frame.file, ":", frame.line, " ", frame.func)
+                  old = get(sites, site, (0, 0))
+                  sites[site] = (old[1] + 1, old[2] + allocation.size)
+              end
+              entries = [(site=site, count=counts[1], bytes=counts[2]) for (site, counts) in sites]
+              sort!(entries; by=record -> record.bytes, rev=true)
+              write(joinpath(folder, kind * "-allocation-profile.json"),
+                  JSON.json((sample_rate=1.0, allocations=entries)))
+              Profile.Allocs.clear()
+          end
+          results = Dict{String,Any}()
+          for (label, count, method) in workloads
+              run, api = make_run(count, method)
+              before = JSON.parse(run())
+              if method == "session/describe" && before["result"]["messages"] != count
+                  error("Wrong session history size")
+              end
+              if method == "mixed" && (
+                      length(before["result"]["descriptions"]) != 8 ||
+                      length(before["result"]["messages"]) != count ||
+                      any(record -> record["messages"] != count,
+                          before["result"]["descriptions"]))
+                  error("Mixed workflow returned incorrect message counts")
+              end
+              expected = bytes2hex(sha256(codeunits(repr(canonical(before)))))
+              for _ in 1:45
+                  run()
+              end
+              observation = sample(run)
+              observation["semantic_sha256"] = expected
+              results[label] = observation
+              if pair == 7 && label == "describe-large"
+                  profile(run)
+              end
+              close(api)
+          end
+          record = Dict("variant" => kind, "pair" => pair,
+              "julia_version" => string(VERSION), "threads" => Threads.nthreads(),
+              "cpu" => Sys.CPU_NAME, "json_version" => string(Base.pkgversion(JSON)),
+              "juliaforever_version" => string(Base.pkgversion(JuliaForever2)),
+              "results" => results)
+          write(joinpath(folder, "$kind-$pair.json"), JSON.json(record))
+          println("completed ", kind, " pair ", pair)
+          JULIA
+          cat > "$RUNNER_TEMP/session-summary-gate.py" <<'PYTHON'
+          import json, pathlib, random, statistics, os
+          output = pathlib.Path(os.environ["OUTPUT_DIR"])
+          baseline = [json.loads((output / f"baseline-{i}.json").read_text()) for i in range(1, 8)]
+          candidate = [json.loads((output / f"candidate-{i}.json").read_text()) for i in range(1, 8)]
+          names = ["describe-large", "describe-medium", "describe-small", "describe-empty", "messages-control", "mixed-describe-and-messages"]
+          same_environment = all(b["julia_version"] == c["julia_version"] == "1.13.3"
+              and b["threads"] == c["threads"] == 1 and b["cpu"] == c["cpu"]
+              and b["json_version"] == c["json_version"]
+              for b,c in zip(baseline,candidate))
+          same_outputs = True
+          results = {}
+          for name in names:
+              before = [b["results"][name] for b in baseline]
+              after = [c["results"][name] for c in candidate]
+              equal = all(b["semantic_sha256"] == a["semantic_sha256"] for b,a in zip(before,after))
+              same_outputs &= equal
+              differences = [1.0 - a["median_ns"]/b["median_ns"] for b,a in zip(before,after)]
+              rng = random.Random(53239)
+              boot = sorted(statistics.median(rng.choices(differences, k=7)) for _ in range(10000))
+              lower = boot[249]
+              results[name] = dict(median_gain=statistics.median(differences), lower95=lower,
+                  minimum_gain=min(differences), paired_gains=differences,
+                  median_baseline_ns=statistics.median(x["median_ns"] for x in before),
+                  median_candidate_ns=statistics.median(x["median_ns"] for x in after),
+                  baseline_bytes=statistics.median(x["bytes"] for x in before),
+                  candidate_bytes=statistics.median(x["bytes"] for x in after),
+                  baseline_allocations=statistics.median(x["allocations"] for x in before),
+                  candidate_allocations=statistics.median(x["allocations"] for x in after),
+                  same_semantic_output=equal)
+              print(name, "median", round(100*results[name]["median_gain"],2),
+                    "lower95", round(100*lower,2), "min", round(100*min(differences),2),
+                    "equal", equal, flush=True)
+          primary = results["describe-large"]
+          no_regression = all(x["median_gain"] > -0.10 for x in results.values())
+          quality = os.environ.get("QUALITY_OK") == "true"
+          passed = same_environment and same_outputs and no_regression and quality and (
+              primary["median_gain"] > 0.1 and primary["lower95"] > 0.1 and primary["minimum_gain"] > 0.1)
+          report = dict(passed=passed, results=results, same_environment=same_environment,
+              same_semantic_outputs=same_outputs, no_material_regressions=no_regression,
+              quality_passed=quality, baseline_commit=os.environ["BASELINE_SHA"],
+              candidate_commit=os.environ["GITHUB_SHA"], julia_version="1.13.3",
+              pairs=7, warmed_up_calls=45, repetitions_per_side=13,
+              paired_order="AB,BA,AB,BA,AB,BA,AB",
+              confidence="10,000 seeded paired-bootstrap median resamples, lower 2.5% quantile",
+              representative="native SessionAPI session/describe and JSON-RPC serialization with 16,384 messages; additional mixed eight describe plus one messages JSON-RPC workflow")
+          (output/"gate.json").write_text(json.dumps(report, indent=2))
+          print("PERFORMANCE_GATE=" + ("PASS" if passed else "FAIL"),flush=True)
+          if not passed:
+              raise SystemExit("Acceptance failed: no PR or merge authorized")
+          PYTHON
+      - name: Warmed-up alternating paired measurements and profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pair in {1..7}; do
+            if (( pair % 2 )); then order="baseline candidate"; else order="candidate baseline"; fi
+            for kind in $order; do
+              if [[ "$kind" == baseline ]]; then project="$BASELINE_DIR/benchmarks"; else project="$GITHUB_WORKSPACE/benchmarks"; fi
+              julia --project="$project" "$RUNNER_TEMP/session-summary-worker.jl" "$kind" "$pair" "$RUNNER_TEMP/session-summary-evidence" > "$RUNNER_TEMP/session-summary-evidence/$kind-$pair.log" 2>&1
+              tail -n 1 "$RUNNER_TEMP/session-summary-evidence/$kind-$pair.log"
+            done
+          done
+      - name: Focused correctness, Julia lint, Aqua
+        id: checks
+        if: always()
+        shell: bash
+        run: |
+          if julia --project=test -e 'using Pkg; Pkg.instantiate()' > "$RUNNER_TEMP/session-summary-evidence/test-install.log" 2>&1 &&
+             julia --project=test test/runtests.jl core lint aqua > "$RUNNER_TEMP/session-summary-evidence/quality.log" 2>&1; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "Correctness, lint and Aqua passed"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "Correctness, lint or Aqua failed"
+            tail -n 80 "$RUNNER_TEMP/session-summary-evidence/quality.log" 2>/dev/null || true
+          fi
+      - name: Paired bootstrap acceptance gate
+        if: always()
+        shell: bash
+        env:
+          QUALITY_OK: ${{ steps.checks.outputs.ok }}
+          OUTPUT_DIR: ${{ runner.temp }}/session-summary-evidence
+        run: |
+          python3 "$RUNNER_TEMP/session-summary-gate.py" > "$RUNNER_TEMP/session-summary-evidence/gate.log" 2>&1
+          cat "$RUNNER_TEMP/session-summary-evidence/gate.log"
+      - name: Always upload raw benchmark, allocation and CPU evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-summary-experiment-raw-profiles
+          path: ${{ runner.temp }}/session-summary-evidence/
+          if-no-files-found: warn
+          retention-days: 30
