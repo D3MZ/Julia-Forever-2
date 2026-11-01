@@ -266,6 +266,7 @@ function release!(invocation::EventInvocation)
         empty!(invocation.scopes)
         pending
     end
+    isempty(resources) && isnothing(invocation.retention) && return nothing
     failures = Task[]
     for cleanup in (() -> dispose_extension_resources!(resources), () -> isnothing(invocation.retention) || release!(invocation.retention))
         worker = spawn_cleanup(cleanup)
