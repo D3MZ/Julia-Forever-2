@@ -4,6 +4,8 @@ using Test
 using JSON
 using Base64
 using JuliaForever2
+using JuliaForever2: SessionAPI, session_api_request!, append_message!, history_snapshot,
+    working_directory, session_lineage, RpcError
 
 const DIFFERENTIAL_DIRECTORY = joinpath(@__DIR__, "differential")
 include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
