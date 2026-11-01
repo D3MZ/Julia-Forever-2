@@ -20,13 +20,18 @@ end
 
 usage_label(conversation::Conversation) = usage_label(usage_snapshot(conversation))
 
-"""Compact count formatter matching Pi's footer thresholds."""
+"""Compact nonnegative token counts using Pi's decimal half-up rounding."""
+function footer_one_decimal(count::Integer, scale::Integer, suffix::AbstractString)
+    tenths = div(count * 10 + div(scale, 2), scale)
+    return string(div(tenths, 10), '.', mod(tenths, 10), suffix)
+end
+
 function footer_tokens(count::Integer)
     count < 1_000 && return string(count)
-    count < 10_000 && return @sprintf("%.1fk", count / 1_000)
-    count < 1_000_000 && return string(div(count + 500, 1_000), 'k')
-    count < 10_000_000 && return @sprintf("%.1fM", count / 1_000_000)
-    return string(div(count + 500_000, 1_000_000), 'M')
+    count < 10_000 && return footer_one_decimal(count, 1_000, "k")
+    count < 1_000_000 && return string(div(count, 1_000) + (mod(count, 1_000) >= 500), 'k')
+    count < 10_000_000 && return footer_one_decimal(count, 1_000_000, "M")
+    return string(div(count, 1_000_000) + (mod(count, 1_000_000) >= 500_000), 'M')
 end
 
 footer_context_window(value) = nothing
