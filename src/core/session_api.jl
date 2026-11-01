@@ -28,7 +28,7 @@ end
 function api_session_summary(api::SessionAPI, name::AbstractString, session::Session)
     summary = api_session_summary(name, session)
     explicit = session_title(api.titles, name)
-    summary["title"] = isnothing(explicit) ? session_title_fallback(session) : explicit
+    summary["title"] = isnothing(explicit) ? session_title_fallback(api.titles, session) : explicit
     summary
 end
 
@@ -86,7 +86,7 @@ function restore!(api::SessionAPI, name, directory, resume)
         if !isnothing(record)
             restore_session_title!(api.titles, name, get(record, :title, nothing))
         end
-        api_session_summary(api, name, session)
+        api_session_summary(name, session)
     end
 end
 
@@ -104,7 +104,15 @@ function api_close_session!(api::SessionAPI, params::AbstractDict)
         Dict("closed" => true)
     end
 end
-api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(api, params["session"], session), api_session(api, params))
+api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(params["session"], session), api_session(api, params))
+
+"""Resolve current display title through a replaceable Julia title service."""
+function api_session_title(api::SessionAPI, params::AbstractDict)
+    apply(api_session(api, params)) do session
+        summary = api_session_summary(api, String(params["session"]), session)
+        Dict("session" => summary["session"], "title" => summary["title"])
+    end
+end
 
 """Enumerate stable session names and optional display titles without opening saved sessions."""
 function api_session_list_details(api::SessionAPI, params::AbstractDict)
@@ -333,7 +341,7 @@ function api_fork_snapshot!(api::SessionAPI, source::Session, destination::Strin
         inherited = messages[1:Int(last)]
         child = Base.invokelatest(fork_session, source, inherited)
         api.sessions[destination] = child
-        api_session_summary(api, destination, child)
+        api_session_summary(destination, child)
     end
 end
 
@@ -349,6 +357,7 @@ const SESSION_OPERATIONS = Dict(
     "session/resume" => (api, params) -> api_open_session!(api, params; resume=true),
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
     "session/list/details" => api_session_list_details,
+    "session/title/get" => api_session_title,
     "session/rename" => api_session_rename!,
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,

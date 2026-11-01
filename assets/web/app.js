@@ -62,7 +62,7 @@
       return;
     }
     showMessages(await rpc("session/messages", { session: selected }));
-    const details = await rpc("session/describe", { session: selected });
+    const details = await rpc("session/title/get", { session: selected });
     fields.title.value = details.title || "";
     fields.sessions.selectedOptions[0].textContent = details.title || selected;
     status("Session: " + selected);

@@ -1315,7 +1315,7 @@ function verify_session_title_lifecycle(input, expected)
         else
             @test renamed isa AbstractDict
             @test renamed["title"] == expected
-            detail = JuliaForever2.session_api_request!(api, "session/describe", Dict("session" => "title-case"))
+            detail = JuliaForever2.session_api_request!(api, "session/title/get", Dict("session" => "title-case"))
             listed = JuliaForever2.session_api_request!(api, "session/list/details")
             @test detail["title"] == expected
             @test length(listed) == 1 && listed[1]["title"] == expected
@@ -1328,8 +1328,10 @@ function verify_session_title_lifecycle(input, expected)
                 titles=JuliaForever2.SessionTitles(; max_bytes=input["max_bytes"]))
             reopened = JuliaForever2.session_api_request!(restored, "session/resume",
                 Dict("session" => "title-case"))
-            @test reopened["title"] == expected
             @test reopened["session"] == "title-case"
+            restored_title = JuliaForever2.session_api_request!(restored, "session/title/get",
+                Dict("session" => "title-case"))
+            @test restored_title["title"] == expected
             close(restored)
         end
     end

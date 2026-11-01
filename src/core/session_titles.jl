@@ -131,14 +131,21 @@ restore_session_title!(titles, name, title::AbstractString) =
 restore_session_title!(titles, name, ::Nothing) = forget_session_title!(titles, name)
 
 """Suggest a title from the first nonblank human message when no explicit title exists."""
-function session_title_fallback(session::Session)
-    for message in history_snapshot(session).messages
-        if message.role == :user
-            suggestion = fallback_session_title(message.content)
-            isempty(suggestion) || return suggestion
+session_title_fallback(titles, session::Session) = session_title_fallback(session)
+session_title_fallback(titles::SessionTitles, session::Session) =
+    session_title_fallback(session; max_bytes=titles.max_bytes)
+
+"""Read only the first useful human message under its lock; avoid full history snapshots."""
+function session_title_fallback(session::Session; max_bytes::Integer=120)
+    lock(session.conversation.lock) do
+        for message in session.conversation.messages
+            if message.role == :user
+                suggestion = fallback_session_title(message.content; max_bytes)
+                isempty(suggestion) || return suggestion
+            end
         end
+        nothing
     end
-    nothing
 end
 
 """Register a replaceable title service in an ordinary Julia plugin composition."""
