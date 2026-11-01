@@ -478,9 +478,9 @@ end
 
 @testset "Session index candidate allocations ignore common-first query order" begin
     mktempdir() do directory
-        index = SessionSearchIndex(SessionStore(directory))
+        index = JuliaForever2.SessionSearchIndex(JuliaForever2.SessionStore(directory))
         ordinary = JuliaForever2.SessionSearchHit(("synthetic", 1, :user, :text, "aaa"))
-        index.documents = fill(ordinary, 65_536)
+        index.documents = JuliaForever2.SessionSearchHit[ordinary for _ in 1:65_536]
         index.documents[73] = JuliaForever2.SessionSearchHit(("synthetic", 73, :user, :text, "aaa bbb"))
         index.documents[99] = JuliaForever2.SessionSearchHit(("synthetic", 99, :user, :text, "Ä aaa bbb"))
         common = BitSet(1:65_536)
