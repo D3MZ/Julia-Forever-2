@@ -1,3 +1,5 @@
+using Tachikoma
+using CommonMark
 using JSON
 
 @testset "Pinned Pi interactive menu parity (red → green)" begin
