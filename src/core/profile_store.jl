@@ -41,7 +41,7 @@ end
 function load_profile(store::ProfileStore, name::Union{Symbol,AbstractString})
     identity = Symbol(name)
     path = profile_path(store, identity)
-    (isnothing(path) || !isfile(path)) && return nothing
+    (isnothing(path) || islink(path) || !isfile(path)) && return nothing
     data = JSON.parsefile(path)
     data["format"] == "JuliaForever2.profile" || error("Invalid profile format: $identity")
     data["version"] == 1 || error("Unsupported profile version: $identity")
@@ -57,7 +57,7 @@ function profile_names(store::ProfileStore)
         endswith(filename, ".json") || continue
         identity = Symbol(first(filename, length(filename) - 5))
         path = profile_path(store, identity)
-        !isnothing(path) && isfile(path) && push!(names, identity)
+        !isnothing(path) && !islink(path) && isfile(path) && push!(names, identity)
     end
     return sort!(names)
 end
