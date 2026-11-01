@@ -48,12 +48,12 @@ const fixtures = Dict(
 function run_workload(package, name, item)
     store = package.SessionStore(item.directory)
     if startswith(name, "integration/")
-        return package.session_descendants(store, item.ids[1]; include_self=true)
+        package.session_descendants(store, item.ids[1]; include_self=true)
     elseif name == "control/load-full-record"
         record = package.saved_session_record(store, item.root_name)
-        return (length(record.messages), record.lineage, record.directory)
+        (length(record.messages), record.lineage, record.directory)
     else
-        return package.session_lineage(store, item.root_name)
+        package.session_lineage(store, item.root_name)
     end
 end
 
@@ -98,8 +98,7 @@ function profile_case(f, prefix)
     Profile.Allocs.clear()
     Profile.Allocs.@profile sample_rate=0.05 f()
     sites = Dict{String,Tuple{Int,Int}}()
-    for allocation in Profile.Allocs.fetch().allocs
-        isempty(allocation.stacktrace) && continue
+    for allocation in Iterators.filter(allocation -> !isempty(allocation.stacktrace), Profile.Allocs.fetch().allocs)
         frame = first(allocation.stacktrace)
         for location in allocation.stacktrace
             if endswith(string(location.file), "session_store.jl")

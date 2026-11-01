@@ -94,9 +94,10 @@ end
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
     path = session_file(store, name)
     if isnothing(path) || !isfile(path)
-        return nothing
+        nothing
+    else
+        session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
     end
-    return session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
 end
 
 """Return stored descendants of a session identity in deterministic session-name order."""
