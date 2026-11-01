@@ -770,7 +770,7 @@ function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, a
     isnothing(denial) || return ExecutionResult(false, denial)
     cancelled(context) && return ExecutionResult(false, "Tool call aborted before dispatch")
     violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
-    isempty(violations) || return ExecutionResult(false, join(violations, "; "))
+    isempty(violations) || return ExecutionResult(false, string(join(violations, "; ")))
     cancelled(context) && return ExecutionResult(false, "Tool call aborted before dispatch")
     returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
     return checked_tool_result(invocation.listener.spec, call.arguments, returned)
