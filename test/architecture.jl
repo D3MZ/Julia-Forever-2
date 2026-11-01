@@ -503,6 +503,10 @@ end
         end
         @test collect(JuliaForever2.indexed_session_candidates(index, "aaa bbb")) == [73, 99]
         @test collect(JuliaForever2.indexed_session_candidates(index, "bbb aaa")) == [73, 99]
+        @test collect(JuliaForever2.indexed_session_candidates(index, "aaa ccc")) == [99]
+        @test collect(JuliaForever2.indexed_session_candidates(index, "ccc aaa")) == [99]
+        @test [hit.index for hit in JuliaForever2.search_history(index, "aaa bbb")] == [73, 99]
+        @test isempty(JuliaForever2.search_history(index, "aaa ccc"))
 
         GC.gc()
         sparse_first_bytes = @allocated candidate_count("bbb aaa", repetitions)
