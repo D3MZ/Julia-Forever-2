@@ -66,9 +66,21 @@ end
         if !Sys.iswindows()
             symlink(outside, joinpath(directory, "linked.json"))
             @test isnothing(load_credentials(directory, :linked))
+            save_credentials!(directory, :linked, Dict("access_token" => "replaced"))
+            @test !islink(joinpath(directory, "linked.json"))
+            @test load_credentials(directory, :linked)["access_token"] == "replaced"
+            @test JSON.parsefile(outside)["access_token"] == "outside"
+        end
+        for label in ("", ".", "..", "bad\0name")
+            name = Symbol(label)
+            @test isnothing(load_credentials(directory, name))
+            @test_throws ErrorException save_credentials!(directory, name,
+                Dict("access_token" => "invalid"))
         end
         save_credentials!(directory, :ordinary, Dict("access_token" => "inside"))
         @test load_credentials(directory, :ordinary)["access_token"] == "inside"
+        save_credentials!(directory, :π, Dict("access_token" => "unicode"))
+        @test load_credentials(directory, :π)["access_token"] == "unicode"
     end
 end
 
