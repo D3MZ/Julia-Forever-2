@@ -78,6 +78,42 @@ end
     close(context)
 end
 
+@testset "SSE decoder constructor defaults preserve isolation and positional compatibility" begin
+    events = JuliaForever2.SSEEvent[]
+    sink = event -> push!(events, event)
+    first = @inferred JuliaForever2.SSEDecoder(; sink)
+    second = JuliaForever2.SSEDecoder(; sink)
+    positional = JuliaForever2.SSEDecoder(sink)
+    complete = JuliaForever2.SSEDecoder(sink, UInt8[], String[], "", "", false, true)
+
+    @test first isa JuliaForever2.SSEDecoder{typeof(sink)}
+    @test all(decoder -> isempty(decoder.line) && isempty(decoder.data) &&
+        decoder.event == "" && decoder.id == "" &&
+        !decoder.after_cr && decoder.first_line, (first, second, positional, complete))
+    @test first.line !== second.line
+    @test first.data !== second.data
+    push!(first.line, 0x61)
+    push!(first.data, "changed")
+    @test isempty(second.line)
+    @test isempty(second.data)
+    @test isempty(positional.line)
+    @test isempty(complete.data)
+
+    custom_line = UInt8[0x64, 0x61]
+    customized = JuliaForever2.SSEDecoder(; sink, line=custom_line, first_line=false)
+    @test customized.line === custom_line
+    @test isempty(customized.data)
+    @test customized.event == ""
+    @test !customized.first_line
+    @test_throws UndefKeywordError JuliaForever2.SSEDecoder()
+    @test_throws MethodError JuliaForever2.SSEDecoder(; sink, unknown=true)
+
+    write(second, "id: retained\ndata: keyword\n\n")
+    @test length(events) == 1
+    @test only(events).data == "keyword"
+    @test only(events).id == "retained"
+end
+
 @testset "Incremental SSE fields preserve framing, colons, and Unicode" begin
     events = JuliaForever2.SSEEvent[]
     decoder = JuliaForever2.SSEDecoder(event -> push!(events, event))
