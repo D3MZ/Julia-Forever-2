@@ -692,3 +692,49 @@ end
         @test join(wrapped) == content
     end
 end
+
+
+@testset "ASCII markdown span wrapping matches grapheme reference" begin
+    function reference_markdown_wrap(spans, width)
+        lines = Vector{Tachikoma.Span}[]
+        line = Tachikoma.Span[]
+        columns = 0
+        for span in spans
+            text = IOBuffer()
+            for grapheme in Base.Unicode.graphemes(span.content)
+                size = textwidth(grapheme)
+                if columns + size > width && columns > 0
+                    position(text) > 0 && push!(line, Tachikoma.Span(String(take!(text)), span.style))
+                    push!(lines, line)
+                    line = Tachikoma.Span[]
+                    columns = 0
+                end
+                print(text, grapheme)
+                columns += size
+            end
+            position(text) > 0 && push!(line, Tachikoma.Span(String(take!(text)), span.style))
+        end
+        push!(lines, line)
+        return [[(span.content, span.style) for span in row] for row in lines]
+    end
+
+    plain = Tachikoma.Style(; fg=Tachikoma.ColorRGB(222, 224, 225))
+    highlighted = Tachikoma.Style(; fg=Tachikoma.ColorRGB(104, 183, 141), bold=true)
+    cases = (
+        Tachikoma.Span[],
+        [Tachikoma.Span("", plain)],
+        [Tachikoma.Span("abcdefghijk", plain)],
+        [Tachikoma.Span("ab", plain), Tachikoma.Span("cdefghijklmnop", highlighted)],
+        [Tachikoma.Span("a", plain), Tachikoma.Span("bcdefg", highlighted), Tachikoma.Span("hi", plain)],
+        [Tachikoma.Span("text with spaces  and punctuation !?@#", plain)],
+        [Tachikoma.Span("first", plain), Tachikoma.Span("λ你好🚀", highlighted), Tachikoma.Span("last", plain)],
+        [Tachikoma.Span("cafe\u0301\tcontrol", plain), Tachikoma.Span("ASCII", highlighted)],
+        [Tachikoma.Span("🇨🇦👩\u200d💻", highlighted), Tachikoma.Span("abc", plain)],
+        [Tachikoma.Span(repeat("x", 2000), plain), Tachikoma.Span("!", highlighted)],
+    )
+    for spans in cases, width in (-2, 0, 1, 2, 5, 10, 40, 78, 200)
+        actual = [[(span.content, span.style) for span in row]
+            for row in Terminal.wrap_markdown_spans(spans, width)]
+        @test actual == reference_markdown_wrap(spans, width)
+    end
+end
