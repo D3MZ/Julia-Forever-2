@@ -350,3 +350,77 @@ using JSON
             UUID("00000000-0000-0000-0000-000000000000")))
     end
 end
+
+@testset "Empty extension scopes retire without skipping owned cleanup" begin
+    root = JuliaForever2.ExtensionScope()
+    child = JuliaForever2.ExtensionScope(root)
+    @test isopen(root)
+    @test isopen(child)
+    close(root)
+    @test !isopen(root)
+    @test !isopen(child)
+    close(root)
+    close(child)
+
+    unobserved = JuliaForever2.ExtensionScope()
+    @test isnothing(JuliaForever2.dispatch_event!(unobserved, :unobserved, 1))
+    close(unobserved)
+    @test !isopen(unobserved)
+
+    cleaned = Ref(0)
+    owned = JuliaForever2.ExtensionScope()
+    JuliaForever2.own_resource!(owned, :sentinel; cleanup=value -> begin
+        value === :sentinel || error("Wrong cleanup resource")
+        cleaned[] += 1
+        nothing
+    end)
+    close(owned)
+    close(owned)
+    @test cleaned[] == 1
+end
+
+
+@testset "Unowned event invocations do not schedule empty cleanup workers" begin
+    scope = JuliaForever2.ExtensionScope()
+    JuliaForever2.on!(_ -> nothing, scope, :no_cleanup)
+
+    function release_batch!(invocations)
+        for invocation in invocations
+            JuliaForever2.release!(invocation)
+        end
+        return nothing
+    end
+
+    # Compile and exercise the same release method before recording allocations.
+    warm = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:8]
+    release_batch!(warm)
+
+    # Acquisition and test setup do not contribute to the release measurement.
+    invocations = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:100]
+    @test all(invocation -> isnothing(invocation.retention), invocations)
+    @test scope.users == 100
+    GC.gc()
+    bytes = @allocated release_batch!(invocations)
+    println("Unowned listener release allocations for 100 warmed invocations: ",
+        bytes, " bytes; predefined target <= 32768 bytes")
+    @test bytes <= 32_768
+    @test scope.users == 0
+    close(scope)
+end
+
+
+@testset "Deferred event cleanup honors held scope resources" begin
+    scope = JuliaForever2.ExtensionScope()
+    cleaned = Symbol[]
+    JuliaForever2.own_resource!(scope, :owned; cleanup=value -> push!(cleaned, value))
+    JuliaForever2.on!(_ -> nothing, scope, :held)
+    invocation = only(JuliaForever2.event_invocations(scope, :held))
+    @test scope.users == 1
+
+    close(scope)
+    @test !isopen(scope)
+    @test isempty(cleaned)
+    JuliaForever2.release!(invocation)
+    @test scope.users == 0
+    @test cleaned == [:owned]
+end
