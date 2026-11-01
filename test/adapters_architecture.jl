@@ -1,5 +1,51 @@
 using JSON
 
+struct LegacyIdentityFixture end
+JuliaForever2.provider_id(::LegacyIdentityFixture) = :legacy_fixture
+JuliaForever2.provider_name(::LegacyIdentityFixture) = "Legacy fixture"
+JuliaForever2.provider_detail(::LegacyIdentityFixture) = "Legacy detail"
+
+@testset "Provider identity constructors preserve built-in and extension behavior" begin
+    providers = (
+        (JuliaForever2.DemoProvider(), :demo, "Demo"),
+        (JuliaForever2.OpenRouterProvider("synthetic", "fixture"), :openrouter, "OpenRouter"),
+        (JuliaForever2.CodexProvider("codex"; model="fixture"), :codex, "Codex"),
+        (JuliaForever2.OpenAIProvider("unused"; model="fixture"), :chatgpt, "ChatGPT"),
+    )
+    for (provider, expected_id, expected_name) in providers
+        identity = JuliaForever2.provider_identity(provider)
+        @test identity isa JuliaForever2.ProviderIdentity
+        @test identity.id == expected_id
+        @test identity.name == expected_name
+        @test JuliaForever2.provider_id(provider) == identity.id
+        @test JuliaForever2.provider_name(provider) == identity.name
+        @test JuliaForever2.provider_detail(provider) == identity.detail
+    end
+
+    legacy = JuliaForever2.provider_identity(LegacyIdentityFixture())
+    @test (legacy.id, legacy.name, legacy.detail) ==
+        (:legacy_fixture, "Legacy fixture", "Legacy detail")
+
+    keyword = JuliaForever2.ProviderDescriptor(;
+        id=:keyword_fixture, label="Keyword fixture", create=Returns(nothing))
+    @test keyword.id == :keyword_fixture
+    @test isnothing(keyword.auth)
+    @test keyword.status("unused") == ""
+
+    router = JuliaForever2.OpenRouterProvider("synthetic", "original")
+    selected_router = JuliaForever2.select_model(router, "replacement")
+    @test selected_router.model == "replacement"
+    @test selected_router.transport === router.transport
+    @test selected_router.policy === router.policy
+
+    chatgpt = JuliaForever2.OpenAIProvider("unused"; model="original")
+    selected_chatgpt = JuliaForever2.select_model(chatgpt, "replacement")
+    @test selected_chatgpt.model == "replacement"
+    @test selected_chatgpt.catalog === chatgpt.catalog
+    @test selected_chatgpt.transport === chatgpt.transport
+    @test selected_chatgpt.auth_transport === chatgpt.auth_transport
+end
+
 struct AdapterRequestPolicy end
 JuliaForever2.decode_reply(::AdapterRequestPolicy, text) = Reply(:answer, reverse(String(text)))
 
@@ -116,8 +162,7 @@ end
     @test only(snapshot) === original
 end
 
-JuliaForever2.authorization_url(::Val{:adapter_fixture}, attempt::JuliaForever2.OAuthAttempt) =
-    "https://example.invalid/authorize?state=" * attempt.state
+JuliaForever2.authorization_url(::Val{:adapter_fixture}, attempt::JuliaForever2.OAuthAttempt) = "https://example.invalid/authorize?state=" * attempt.state
 
 function JuliaForever2.complete_authorization!(::Val{:adapter_fixture}, directory, attempt, callback;
         transport, identity, context, persist)
@@ -191,5 +236,48 @@ end
     println("Single-model lookup allocations over ", repetitions, " warmed calls: ",
         "1 registered provider=", narrow_bytes, " bytes; ",
         "257 registered providers=", wide_bytes, " bytes; target growth <= 32768 bytes")
+    @test wide_bytes <= narrow_bytes + 32_768
+end
+
+@testset "Filtered model catalogs avoid unrelated registry snapshots" begin
+    model = JuliaForever2.ModelSpec(:filtered_catalog_target, "selected-model")
+    embedding = JuliaForever2.ModelSpec(:filtered_catalog_target, "vector-model"; kind=:embedding)
+    factory = JuliaForever2.ProviderFactory(Returns(nothing); models=() -> [model, embedding])
+    descriptor = JuliaForever2.ProviderDescriptor(:filtered_catalog_target, "Target", factory)
+    narrow = JuliaForever2.ProviderRegistry()
+    wide = JuliaForever2.ProviderRegistry()
+    for registry in (narrow, wide)
+        JuliaForever2.register_provider!(registry, descriptor)
+    end
+    for index in 1:256
+        JuliaForever2.register_provider!(wide,
+            JuliaForever2.ProviderDescriptor(Symbol("unrelated_catalog_", index), "Unrelated", Returns(nothing)))
+    end
+
+    @test JuliaForever2.provider_models(narrow; provider=:filtered_catalog_target) == [model]
+    @test JuliaForever2.provider_models(wide; provider="filtered_catalog_target", kind=:all) == [model, embedding]
+    @test JuliaForever2.provider_models(wide; provider=:filtered_catalog_target, kind=:embedding) == [embedding]
+    @test isempty(JuliaForever2.provider_models(wide; provider=:missing_catalog))
+    @test JuliaForever2.provider_models(wide; kind=:all) == [model, embedding]
+
+    function count_filtered_models(registry, iterations)
+        matches = 0
+        for _ in 1:iterations
+            models = JuliaForever2.provider_models(registry; provider=:filtered_catalog_target)
+            matches += (length(models) == 1 && only(models) === model)
+        end
+        return matches
+    end
+
+    repetitions = 100
+    @test count_filtered_models(narrow, repetitions) == repetitions
+    @test count_filtered_models(wide, repetitions) == repetitions
+    GC.gc()
+    narrow_bytes = @allocated count_filtered_models(narrow, repetitions)
+    GC.gc()
+    wide_bytes = @allocated count_filtered_models(wide, repetitions)
+    println("Filtered provider catalog allocations over ", repetitions, " warmed calls: ",
+        "1 provider=", narrow_bytes, " bytes; 257 providers=", wide_bytes,
+        " bytes; target growth <= 32768 bytes")
     @test wide_bytes <= narrow_bytes + 32_768
 end

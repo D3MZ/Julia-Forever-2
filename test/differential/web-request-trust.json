@@ -1,0 +1,105 @@
+[
+  {
+    "name": "loopback-default",
+    "headers": {},
+    "allowed": true
+  },
+  {
+    "name": "loopback-explicit",
+    "headers": {
+      "Host": "127.0.0.1:<port>"
+    },
+    "allowed": true
+  },
+  {
+    "name": "localhost-explicit",
+    "headers": {
+      "Host": "localhost:<port>"
+    },
+    "allowed": true
+  },
+  {
+    "name": "loopback-independent-port",
+    "headers": {
+      "Host": "127.0.0.1:9876"
+    },
+    "allowed": true
+  },
+  {
+    "name": "rebound-host",
+    "headers": {
+      "Host": "attacker.example:<port>"
+    },
+    "allowed": false
+  },
+  {
+    "name": "suffix-impersonation",
+    "headers": {
+      "Host": "localhost.attacker.example:<port>"
+    },
+    "allowed": false
+  },
+  {
+    "name": "matching-origin",
+    "headers": {
+      "Origin": "http://127.0.0.1:<port>"
+    },
+    "allowed": true
+  },
+  {
+    "name": "https-proxy-origin",
+    "headers": {
+      "Origin": "https://127.0.0.1:<port>"
+    },
+    "allowed": true
+  },
+  {
+    "name": "cross-host-origin",
+    "headers": {
+      "Origin": "http://localhost:<port>"
+    },
+    "allowed": false
+  },
+  {
+    "name": "cross-port-origin",
+    "headers": {
+      "Origin": "http://127.0.0.1:9876"
+    },
+    "allowed": false
+  },
+  {
+    "name": "opaque-origin",
+    "headers": {
+      "Origin": "null"
+    },
+    "allowed": false
+  },
+  {
+    "name": "non-http-origin",
+    "headers": {
+      "Origin": "file:///tmp/"
+    },
+    "allowed": false
+  },
+  {
+    "name": "cross-site-fetch",
+    "headers": {
+      "Sec-Fetch-Site": "cross-site"
+    },
+    "allowed": false
+  },
+  {
+    "name": "same-origin-fetch",
+    "headers": {
+      "Sec-Fetch-Site": "same-origin"
+    },
+    "allowed": true
+  },
+  {
+    "name": "forwarded-host-untrusted",
+    "headers": {
+      "X-Forwarded-Host": "attacker.example"
+    },
+    "allowed": true
+  }
+]

@@ -8,16 +8,19 @@ end
 
 function profile_path(store::ProfileStore, name::Symbol)
     label = String(name)
-    if isempty(label) || label in (".", "..") || any(character -> character in ('/', '\\', '\0'), label)
-        return nothing
-    end
-    return joinpath(store.directory, label * ".json")
+    validname(label) ? joinpath(store.directory, label * ".json") : nothing
 end
 
+validname(label::AbstractString) = !isempty(label) && !(label in (".", "..")) && !any(character -> character in ('/', '\\', '\0'), label)
+"""Accept only saved regular files, not symlinked profile entries."""
+is_saved_profile_file(::Nothing) = false
+is_saved_profile_file(path::AbstractString) = !islink(path) && isfile(path)
+
 """Atomically save a profile's JSON-compatible configuration, not its live plugin instances."""
-function save_profile!(store::ProfileStore, profile::Profile)
-    path = profile_path(store, profile.name)
-    isnothing(path) && return (ok=false, reason="Invalid profile name")
+save_profile!(store::ProfileStore, profile::Profile) = persist!(store, profile, profile_path(store, profile.name))
+persist!(store::ProfileStore, profile::Profile, ::Nothing) = (ok=false, reason="Invalid profile name")
+
+function persist!(store::ProfileStore, profile::Profile, path::AbstractString)
     data = Dict(
         "format" => "JuliaForever2.profile",
         "version" => 1,
@@ -41,30 +44,39 @@ end
 function load_profile(store::ProfileStore, name::Union{Symbol,AbstractString})
     identity = Symbol(name)
     path = profile_path(store, identity)
-    (isnothing(path) || !isfile(path)) && return nothing
-    data = JSON.parsefile(path)
-    data["format"] == "JuliaForever2.profile" || error("Invalid profile format: $identity")
-    data["version"] == 1 || error("Unsupported profile version: $identity")
-    data["name"] == String(identity) || error("Profile identity mismatch: $identity")
-    return Profile(identity, Symbol.(data["plugins"]); config=data["config"], bindings=data["bindings"])
+    is_saved_profile_file(path) ? Profile(ProfileRecord(JSON.parsefile(path), identity)) : nothing
 end
 
+struct ProfileRecord{D}
+    data::D
+    name::Symbol
+
+    function ProfileRecord(data::D, name::Symbol) where {D}
+        validate(ProfileRecord, data, name)
+        new{D}(data, name)
+    end
+end
+
+function validate(::Type{ProfileRecord}, data, name::Symbol)
+    if data["format"] != "JuliaForever2.profile"
+        error("Invalid profile format: $name")
+    elseif data["version"] != 1
+        error("Unsupported profile version: $name")
+    elseif data["name"] != String(name)
+        error("Profile identity mismatch: $name")
+    end
+    nothing
+end
+
+Profile(record::ProfileRecord) = Profile(record.name, Symbol.(record.data["plugins"]); config=record.data["config"], bindings=record.data["bindings"])
 """List valid saved profile names without opening or activating their plugins."""
 function profile_names(store::ProfileStore)
-    isdir(store.directory) || return Symbol[]
-    names = Symbol[]
-    for filename in readdir(store.directory)
-        endswith(filename, ".json") || continue
-        identity = Symbol(first(filename, length(filename) - 5))
-        path = profile_path(store, identity)
-        !isnothing(path) && isfile(path) && push!(names, identity)
-    end
-    return sort!(names)
+    files = isdir(store.directory) ? readdir(store.directory) : String[]
+    names = Symbol[Symbol(chop(file; tail=5)) for file in files if endswith(file, ".json")]
+    sort!(filter(name -> is_saved_profile_file(profile_path(store, name)), names))
 end
-
 """Activate a saved named composition using the host's own Julia plugin registry."""
 function activate!(host::PluginHost, store::ProfileStore, name::Union{Symbol,AbstractString})
     profile = load_profile(store, name)
-    isnothing(profile) && return (ok=false, reason="Unknown profile $name")
-    return activate!(host, profile)
+    isnothing(profile) ? (ok=false, reason="Unknown profile $name") : activate!(host, profile)
 end

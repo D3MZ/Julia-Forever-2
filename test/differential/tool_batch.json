@@ -1,0 +1,171 @@
+[
+  {
+    "name": "empty batch",
+    "max_parallel": 2,
+    "calls": []
+  },
+  {
+    "name": "exclusive by default",
+    "max_parallel": 3,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "exclusive"
+      },
+      {
+        "id": "beta",
+        "mode": "exclusive"
+      }
+    ]
+  },
+  {
+    "name": "bounded parallel with input-order results",
+    "max_parallel": 2,
+    "check_overlap": true,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "parallel",
+        "wait_for": "beta"
+      },
+      {
+        "id": "beta",
+        "mode": "parallel",
+        "wait_for": "alpha"
+      },
+      {
+        "id": "gamma",
+        "mode": "parallel"
+      }
+    ]
+  },
+  {
+    "name": "exclusive barrier between pools",
+    "max_parallel": 2,
+    "check_overlap": true,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "parallel",
+        "wait_for": "beta"
+      },
+      {
+        "id": "beta",
+        "mode": "parallel",
+        "wait_for": "alpha"
+      },
+      {
+        "id": "barrier",
+        "mode": "exclusive"
+      },
+      {
+        "id": "gamma",
+        "mode": "parallel"
+      }
+    ]
+  },
+  {
+    "name": "concurrency bound one",
+    "max_parallel": 1,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "parallel"
+      },
+      {
+        "id": "beta",
+        "mode": "parallel"
+      },
+      {
+        "id": "gamma",
+        "mode": "parallel"
+      }
+    ]
+  },
+  {
+    "name": "unknown tool fails without stopping neighbors",
+    "max_parallel": 2,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "parallel"
+      },
+      {
+        "id": "missing",
+        "registered": false
+      },
+      {
+        "id": "gamma",
+        "mode": "parallel"
+      }
+    ]
+  },
+  {
+    "name": "guard denial isolates one tool",
+    "max_parallel": 2,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "exclusive"
+      },
+      {
+        "id": "denied",
+        "mode": "exclusive",
+        "deny": true
+      },
+      {
+        "id": "gamma",
+        "mode": "exclusive"
+      }
+    ]
+  },
+  {
+    "name": "cancel before dispatch",
+    "max_parallel": 2,
+    "cancel_before": true,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "parallel"
+      },
+      {
+        "id": "beta",
+        "mode": "exclusive"
+      }
+    ]
+  },
+  {
+    "name": "cancel after first exclusive call",
+    "max_parallel": 2,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "exclusive",
+        "cancel": true
+      },
+      {
+        "id": "beta",
+        "mode": "parallel"
+      },
+      {
+        "id": "gamma",
+        "mode": "exclusive"
+      }
+    ]
+  },
+  {
+    "name": "native Session ToolExecutor integration",
+    "max_parallel": 2,
+    "session": true,
+    "calls": [
+      {
+        "id": "alpha",
+        "mode": "exclusive"
+      },
+      {
+        "id": "beta",
+        "mode": "exclusive"
+      }
+    ]
+  }
+]

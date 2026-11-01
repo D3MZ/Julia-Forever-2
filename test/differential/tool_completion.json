@@ -1,0 +1,165 @@
+[
+  {
+    "name": "completion with no policy",
+    "initial": "success"
+  },
+  {
+    "name": "completion accepts unchanged result",
+    "initial": "success",
+    "policy": "accept"
+  },
+  {
+    "name": "completion replaces success display only",
+    "initial": "success",
+    "policy": "replace",
+    "message": "Presented result"
+  },
+  {
+    "name": "completion blocks success and erases value",
+    "initial": "success",
+    "policy": "block",
+    "message": "Policy blocked output"
+  },
+  {
+    "name": "completion observes guard denial",
+    "initial": "guard",
+    "policy": "accept"
+  },
+  {
+    "name": "completion can replace guard error display",
+    "initial": "guard",
+    "policy": "replace",
+    "message": "Restricted by policy"
+  },
+  {
+    "name": "completion blocks a prior guard denial",
+    "initial": "guard",
+    "policy": "block",
+    "message": "Policy denial"
+  },
+  {
+    "name": "completion preserves failed body",
+    "initial": "failed",
+    "policy": "accept"
+  },
+  {
+    "name": "completion blocks failed body",
+    "initial": "failed",
+    "policy": "block",
+    "message": "Removed invalid result"
+  },
+  {
+    "name": "post-policy replaces successful text value",
+    "policy": "value",
+    "schema": {
+      "type": "string"
+    },
+    "value": "policy-approved"
+  },
+  {
+    "name": "post-policy replaces Unicode text",
+    "policy": "value",
+    "schema": {
+      "type": "string"
+    },
+    "value": "東京 λ"
+  },
+  {
+    "name": "post-policy replaces and rerenders structured value",
+    "policy": "value",
+    "initial_value": {
+      "label": "before"
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "label": "after"
+    },
+    "format": "label",
+    "prefix": "Result: "
+  },
+  {
+    "name": "post-policy replaces and rerenders array-containing value",
+    "policy": "value",
+    "initial_value": {
+      "lines": [
+        "first"
+      ]
+    },
+    "schema": {
+      "type": "object",
+      "properties": {
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "lines"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "lines": [
+        "α",
+        "β"
+      ]
+    },
+    "format": "joined"
+  },
+  {
+    "name": "post-policy preserves zero as a replacement",
+    "policy": "value",
+    "schema": {
+      "type": "integer"
+    },
+    "initial_value": 1,
+    "value": 0
+  },
+  {
+    "name": "post-policy preserves empty string as a replacement",
+    "policy": "value",
+    "schema": {
+      "type": "string"
+    },
+    "value": ""
+  },
+  {
+    "name": "post-policy rejects schema-invalid replacement",
+    "policy": "value",
+    "schema": {
+      "type": "string"
+    },
+    "value": 42
+  },
+  {
+    "name": "post-policy replacement cannot revive failed body",
+    "initial": "failed",
+    "policy": "value",
+    "schema": {
+      "type": "string"
+    },
+    "value": "not allowed"
+  },
+  {
+    "name": "post-policy replacement cannot revive guard denial",
+    "initial": "guard",
+    "policy": "value",
+    "schema": {
+      "type": "string"
+    },
+    "value": "not allowed"
+  }
+]

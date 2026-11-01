@@ -17,64 +17,79 @@ end
 
 function protocol_hex_digit(byte::UInt8)
     if 0x30 <= byte <= 0x39
-        return Int(byte - 0x30)
+        Int(byte - 0x30)
     elseif 0x41 <= byte <= 0x46
-        return Int(byte - 0x41) + 10
+        Int(byte - 0x41) + 10
     elseif 0x61 <= byte <= 0x66
-        return Int(byte - 0x61) + 10
+        Int(byte - 0x61) + 10
+    else
+        -1
     end
-    return -1
 end
-
 function protocol_hex_quad(bytes, index)
     if index + 3 > length(bytes)
-        return (value=0, next=index, status=:incomplete)
+        (value=0, next=index, status=:incomplete)
+    else
+        hexadecimal(bytes, index)
     end
-    value = 0
-    for offset in 0:3
-        digit = protocol_hex_digit(bytes[index + offset])
-        if digit < 0
-            return (value=0, next=index, status=:invalid)
-        end
-        value = 16 * value + digit
-    end
-    return (value, next=index + 4, status=:complete)
 end
 
+function hexadecimal(bytes, index)
+    value = 0
+    offset = 0
+    valid = true
+    while offset < 4 && valid
+        digit = protocol_hex_digit(bytes[index + offset])
+        valid = digit >= 0
+        value = 16 * value + digit
+        offset += 1
+    end
+    valid ? (value, next=index + 4, status=:complete) : (value=0, next=index, status=:invalid)
+end
 function protocol_unicode_escape(bytes, index)
     first = protocol_hex_quad(bytes, index)
-    first.status == :complete || return first
-    if 0xd800 <= first.value <= 0xdbff
-        next = first.next
-        if next + 1 > length(bytes)
-            return (value=0, next=index, status=:incomplete)
-        elseif bytes[next] != 0x5c || bytes[next + 1] != 0x75
-            return (value=0, next=index, status=:invalid)
-        end
-        second = protocol_hex_quad(bytes, next + 2)
-        second.status == :complete || return second
-        if 0xdc00 <= second.value <= 0xdfff
-            value = 0x10000 + (first.value - 0xd800) * 0x400 + second.value - 0xdc00
-            return (value, next=second.next, status=:complete)
-        end
-        return (value=0, next=index, status=:invalid)
+    if first.status != :complete
+        first
+    elseif 0xd800 <= first.value <= 0xdbff
+        surrogate(bytes, index, first)
     elseif 0xdc00 <= first.value <= 0xdfff
-        return (value=0, next=index, status=:invalid)
+        (value=0, next=index, status=:invalid)
+    else
+        first
     end
-    return first
 end
 
+function surrogate(bytes, index, first)
+    next = first.next
+    if next + 1 > length(bytes)
+        (value=0, next=index, status=:incomplete)
+    elseif bytes[next] != 0x5c || bytes[next + 1] != 0x75
+        (value=0, next=index, status=:invalid)
+    else
+        surrogate(index, first, protocol_hex_quad(bytes, next + 2))
+    end
+end
+
+function surrogate(index::Integer, first, second)
+    if second.status != :complete
+        second
+    elseif 0xdc00 <= second.value <= 0xdfff
+        (value=0x10000 + (first.value - 0xd800) * 0x400 + second.value - 0xdc00, next=second.next, status=:complete)
+    else
+        (value=0, next=index, status=:invalid)
+    end
+end
 function protocol_utf8_size(byte::UInt8)
     if 0xc2 <= byte <= 0xdf
-        return 2
+        2
     elseif 0xe0 <= byte <= 0xef
-        return 3
+        3
     elseif 0xf0 <= byte <= 0xf4
-        return 4
+        4
+    else
+        0
     end
-    return 0
 end
-
 """Validate UTF-8 continuation bytes without allocating temporary substring views."""
 protocol_utf8_continuation(byte::UInt8) = 0x80 <= byte <= 0xbf
 
@@ -82,31 +97,27 @@ function protocol_utf8_valid(bytes, index, size)
     lead = bytes[index]
     second = bytes[index + 1]
     if size == 2
-        return protocol_utf8_continuation(second)
+        protocol_utf8_continuation(second)
     elseif size == 3
-        protocol_utf8_continuation(bytes[index + 2]) || return false
-        if lead == 0xe0
-            return 0xa0 <= second <= 0xbf
-        elseif lead == 0xed
-            return 0x80 <= second <= 0x9f
-        end
-        return protocol_utf8_continuation(second)
+        protocol_utf8_continuation(bytes[index + 2]) && continuation(lead, second, 0xe0, 0xa0, 0xed, 0x9f)
+    else
+        protocol_utf8_continuation(bytes[index + 2]) && protocol_utf8_continuation(bytes[index + 3]) && continuation(lead, second, 0xf0, 0x90, 0xf4, 0x8f)
     end
-    protocol_utf8_continuation(bytes[index + 2]) &&
-        protocol_utf8_continuation(bytes[index + 3]) || return false
-    if lead == 0xf0
-        return 0x90 <= second <= 0xbf
-    elseif lead == 0xf4
-        return 0x80 <= second <= 0x8f
-    end
-    return protocol_utf8_continuation(second)
 end
 
+function continuation(lead, second, lowerlead, lower, upperlead, upper)
+    if lead == lowerlead
+        lower <= second <= 0xbf
+    elseif lead == upperlead
+        0x80 <= second <= upper
+    else
+        protocol_utf8_continuation(second)
+    end
+end
 protocol_string_buffer(::Nothing) = IOBuffer()
 protocol_string_buffer(output::IOBuffer) = output
 
-protocol_string_result(::Nothing, bytes, pending, index, status) =
-    (text=String(@view bytes[pending]), next=index, status)
+protocol_string_result(::Nothing, bytes, pending, index, status) = (text=String(@view bytes[pending]), next=index, status)
 
 function protocol_string_result(output::IOBuffer, bytes, pending, index, status)
     write(output, @view bytes[pending])
@@ -116,141 +127,200 @@ end
 """Read the complete decoded prefix of one JSON string without accepting unfinished escapes."""
 function protocol_string(bytes, index)
     if index > length(bytes)
-        return (text="", next=index, status=:incomplete)
+        (text="", next=index, status=:incomplete)
     elseif bytes[index] != 0x22
-        return (text="", next=index, status=:invalid)
+        (text="", next=index, status=:invalid)
+    else
+        scanstring(bytes, index + 1)
     end
-    index += 1
+end
+
+struct StringEscape
+    value::Union{Nothing,Char,UInt8}
+    next::Int
+    status::Symbol
+
+    function StringEscape(value::Union{Nothing,Char,UInt8}, next::Int, status::Symbol)
+        if (isnothing(value) && status in (:incomplete, :invalid)) || (!isnothing(value) && status == :complete)
+            new(value, next, status)
+        else
+            error("Invalid decoded escape state")
+        end
+    end
+end
+
+@inline function StringEscape(bytes, index::Int)
+    if index == length(bytes)
+        StringEscape(nothing, index, :incomplete)
+    elseif bytes[index + 1] == 0x75
+        character = protocol_unicode_escape(bytes, index + 2)
+        character.status == :complete ? StringEscape(Char(character.value), character.next, :complete) : StringEscape(nothing, index, character.status)
+    else
+        byte = unescape(bytes[index + 1])
+        isnothing(byte) ? StringEscape(nothing, index, :invalid) : StringEscape(byte, index + 2, :complete)
+    end
+end
+
+function unescape(byte::UInt8)
+    if byte == 0x62
+        0x08
+    elseif byte == 0x66
+        0x0c
+    elseif byte == 0x6e
+        0x0a
+    elseif byte == 0x72
+        0x0d
+    elseif byte == 0x74
+        0x09
+    else
+        byte in (0x22, 0x5c, 0x2f) ? byte : nothing
+    end
+end
+
+emit!(output::IOBuffer, character::Char) = print(output, character)
+emit!(output::IOBuffer, byte::UInt8) = write(output, byte)
+
+function escaped(output, bytes, pending, value::Union{Char,UInt8})
+    buffer = protocol_string_buffer(output)
+    write(buffer, @view bytes[pending])
+    emit!(buffer, value)
+    buffer
+end
+
+function scalar(bytes, index)
+    size = protocol_utf8_size(bytes[index])
+    if size == 0
+        (next=index, status=:invalid)
+    elseif index + size - 1 > length(bytes)
+        (next=index, status=:incomplete)
+    elseif protocol_utf8_valid(bytes, index, size)
+        (next=index + size, status=:pending)
+    else
+        (next=index, status=:invalid)
+    end
+end
+
+function scanstring(bytes, index)
     first = index
     output = nothing
-    while index <= length(bytes)
+    status = :pending
+    while index <= length(bytes) && status == :pending
         byte = bytes[index]
         if byte == 0x22
-            return protocol_string_result(output, bytes, first:(index - 1), index + 1, :complete)
+            status = :complete
         elseif byte == 0x5c
-            if index == length(bytes)
-                return protocol_string_result(output, bytes, first:(index - 1), index, :incomplete)
-            end
-            escape = bytes[index + 1]
-            if escape == 0x75
-                character = protocol_unicode_escape(bytes, index + 2)
-                if character.status != :complete
-                    return protocol_string_result(output, bytes, first:(index - 1), index, character.status)
-                end
-                output = protocol_string_buffer(output)
-                write(output, @view bytes[first:(index - 1)])
-                print(output, Char(character.value))
-                index = character.next
+            escape = StringEscape(bytes, index)
+            value = escape.value
+            if isnothing(value)
+                status = escape.status
             else
-                escaped = escape == 0x62 ? 0x08 : escape == 0x66 ? 0x0c :
-                    escape == 0x6e ? 0x0a : escape == 0x72 ? 0x0d :
-                    escape == 0x74 ? 0x09 : escape in (0x22, 0x5c, 0x2f) ? escape : nothing
-                if isnothing(escaped)
-                    return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
-                end
-                output = protocol_string_buffer(output)
-                write(output, @view bytes[first:(index - 1)])
-                write(output, escaped)
-                index += 2
+                output = escaped(output, bytes, first:(index - 1), value)
+                index = escape.next
+                first = index
             end
-            first = index
         elseif byte < 0x20
-            return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
+            status = :invalid
         elseif byte < 0x80
             index += 1
         else
-            size = protocol_utf8_size(byte)
-            if size == 0
-                return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
-            elseif index + size - 1 > length(bytes)
-                return protocol_string_result(output, bytes, first:(index - 1), index, :incomplete)
-            elseif !protocol_utf8_valid(bytes, index, size)
-                return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
-            end
-            index += size
+            character = scalar(bytes, index)
+            index, status = character.next, character.status
         end
     end
-    return protocol_string_result(output, bytes, first:(index - 1), index, :incomplete)
+    next = status == :complete ? index + 1 : index
+    protocol_string_result(output, bytes, first:(index - 1), next, status == :pending ? :incomplete : status)
 end
-
 response_progress(kind, content::Nothing) = nothing
 response_progress(kind, content::String) = kind in (:answer, :code) ? ResponseProgress(kind, content) : nothing
+
+"""Track the parsed fields and position of a cumulative response preview."""
+struct ResponsePreview
+    kind::Symbol
+    content::Union{Nothing,String}
+    seen_kind::Bool
+    seen_content::Bool
+    after_comma::Bool
+    index::Int
+    status::Symbol
+end
+
+ResponsePreview(index::Int) = ResponsePreview(:unknown, nothing, false, false, false, index, :pending)
+ResponsePreview(preview::ResponsePreview; kind=preview.kind, content=preview.content, seen_kind=preview.seen_kind, seen_content=preview.seen_content, after_comma=preview.after_comma, index=preview.index, status=preview.status) = ResponsePreview(kind, content, seen_kind, seen_content, after_comma, index, status)
 
 """Decode semantic previews from cumulative code-mode JSON, in either field order."""
 function protocol_progress(::CodeModePolicy, text::AbstractString)
     bytes = codeunits(text)
     index = skip_protocol_whitespace(bytes, 1)
-    if index > length(bytes) || bytes[index] != 0x7b
-        return nothing
+    index <= length(bytes) && bytes[index] == 0x7b ? preview(bytes, ResponsePreview(index + 1)) : nothing
+end
+
+function preview(bytes, state::ResponsePreview)
+    while state.status == :pending
+        state = advance(state, bytes)
     end
-    index += 1
-    kind = :unknown
-    content = nothing
-    seen_kind = false
-    seen_content = false
-    after_comma = false
-    while true
-        index = skip_protocol_whitespace(bytes, index)
-        if index > length(bytes)
-            return response_progress(kind, content)
-        elseif bytes[index] == 0x7d
-            if after_comma || skip_protocol_whitespace(bytes, index + 1) <= length(bytes)
-                return nothing
-            end
-            return response_progress(kind, content)
-        end
-        key = protocol_string(bytes, index)
-        if key.status == :invalid
-            return nothing
-        elseif key.status == :incomplete
-            return response_progress(kind, content)
-        end
-        index = skip_protocol_whitespace(bytes, key.next)
-        if index > length(bytes)
-            return response_progress(kind, content)
-        elseif bytes[index] != 0x3a
-            return nothing
-        end
-        index = skip_protocol_whitespace(bytes, index + 1)
-        value = protocol_string(bytes, index)
-        if value.status == :invalid
-            return nothing
-        elseif key.text == "kind" && !seen_kind
-            seen_kind = true
-            if value.status == :complete
-                kind = value.text == "answer" ? :answer : value.text == "code" ? :code : :unknown
-            end
-        elseif key.text == "content" && !seen_content
-            seen_content = true
-            content = value.text
-        else
-            return nothing
-        end
-        if value.status == :incomplete
-            return response_progress(kind, content)
-        end
-        index = skip_protocol_whitespace(bytes, value.next)
-        if index > length(bytes)
-            return response_progress(kind, content)
-        elseif bytes[index] == 0x2c
-            index += 1
-            after_comma = true
-        elseif bytes[index] == 0x7d
-            after_comma = false
-        else
-            return nothing
-        end
+    state.status == :invalid ? nothing : response_progress(state.kind, state.content)
+end
+
+function advance(state::ResponsePreview, bytes)
+    index = skip_protocol_whitespace(bytes, state.index)
+    if index > length(bytes)
+        ResponsePreview(state; status=:incomplete)
+    elseif bytes[index] == 0x7d
+        valid = !state.after_comma && skip_protocol_whitespace(bytes, index + 1) > length(bytes)
+        ResponsePreview(state; status=valid ? :complete : :invalid)
+    else
+        field(state, bytes, protocol_string(bytes, index))
     end
 end
 
+function field(state::ResponsePreview, bytes, key)
+    index = skip_protocol_whitespace(bytes, key.next)
+    if key.status != :complete
+        ResponsePreview(state; status=key.status)
+    elseif index > length(bytes)
+        ResponsePreview(state; status=:incomplete)
+    elseif bytes[index] != 0x3a
+        ResponsePreview(state; status=:invalid)
+    else
+        value = protocol_string(bytes, skip_protocol_whitespace(bytes, index + 1))
+        separate(update(state, key.text, value), bytes, value)
+    end
+end
+
+function update(state::ResponsePreview, key, value)
+    if value.status == :invalid
+        ResponsePreview(state; status=:invalid)
+    elseif key == "kind" && !state.seen_kind
+        kind = value.status == :complete ? responsekind(value.text) : state.kind
+        ResponsePreview(state; kind, seen_kind=true)
+    elseif key == "content" && !state.seen_content
+        ResponsePreview(state; content=value.text, seen_content=true)
+    else
+        ResponsePreview(state; status=:invalid)
+    end
+end
+
+responsekind(text) = text == "answer" ? :answer : text == "code" ? :code : :unknown
+
+function separate(state::ResponsePreview, bytes, value)
+    index = skip_protocol_whitespace(bytes, value.next)
+    if state.status == :invalid
+        state
+    elseif value.status == :incomplete || index > length(bytes)
+        ResponsePreview(state; status=:incomplete)
+    elseif bytes[index] == 0x2c
+        ResponsePreview(state; index=index + 1, after_comma=true)
+    elseif bytes[index] == 0x7d
+        ResponsePreview(state; index, after_comma=false)
+    else
+        ResponsePreview(state; status=:invalid)
+    end
+end
 """Publish an operation-scoped decoded preview while keeping wire fragments private to adapters."""
 function emit_protocol_progress!(policy, text::AbstractString, context::ExecutionContext)
-    if cancelled(context)
-        return nothing
-    end
-    progress = protocol_progress(policy, text)
+    progress = cancelled(context) ? nothing : protocol_progress(policy, text)
     if !isnothing(progress)
         emit!(context, HarnessEvent(:response_progress, (operation_id=operation_id(context), progress)))
     end
-    return progress
+    progress
 end

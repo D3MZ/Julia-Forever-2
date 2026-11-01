@@ -20,18 +20,16 @@ end
 function start_runtime(command::Cmd; on_request=nothing, on_notification=nothing, stderr=Base.stderr)
     worker = Threads.@spawn open(pipeline(ignorestatus(command); stderr), "r+")
     wait(worker; throw=false)
-    if istaskfailed(worker)
-        return RpcResult(RpcError(nothing, JSONRPCTransport.task_failure_message(worker)))
-    end
-    process = fetch(worker)
-    peer = JsonRpcPeer(process, process; on_request, on_notification)
-    runtime = JsonRpcRuntime(peer, process, ReentrantLock(), false)
-    start!(peer)
-    return RpcResult(runtime)
+    istaskfailed(worker) ? RpcResult(RpcError(nothing, JSONRPCTransport.task_failure_message(worker))) : start!(JsonRpcRuntime(fetch(worker); on_request, on_notification))
 end
 
-runtime_request!(runtime::JsonRpcRuntime, method, params=Dict{String,Any}(); kwargs...) =
-    request!(runtime.peer, method, params; kwargs...)
+JsonRpcRuntime(process::Base.Process; on_request=nothing, on_notification=nothing) = JsonRpcRuntime(JsonRpcPeer(process, process; on_request, on_notification), process, ReentrantLock(), false)
+
+function JSONRPCTransport.start!(runtime::JsonRpcRuntime)
+    start!(runtime.peer)
+    RpcResult(runtime)
+end
+runtime_request!(runtime::JsonRpcRuntime, method, params=Dict{String,Any}(); kwargs...) = request!(runtime.peer, method, params; kwargs...)
 runtime_notify!(runtime::JsonRpcRuntime, method, params=nothing) = notify!(runtime.peer, method, params)
 Base.isopen(runtime::JsonRpcRuntime) = !runtime.closed && isopen(runtime.peer)
 
@@ -68,8 +66,10 @@ function launch_feature(command::Cmd; stdin=devnull, stdout=Base.stdout, stderr=
     worker = Threads.@spawn run(pipeline(ignorestatus(command); stdin, stdout, stderr); wait=false)
     wait(worker; throw=false)
     return istaskfailed(worker) ? RpcResult(RpcError(nothing, JSONRPCTransport.task_failure_message(worker))) :
-        RpcResult(ProcessFeature(fetch(worker), ReentrantLock(), false))
+        RpcResult(ProcessFeature(fetch(worker)))
 end
+
+ProcessFeature(process::Base.Process) = ProcessFeature(process, ReentrantLock(), false)
 
 Base.isopen(feature::ProcessFeature) = !feature.closed && process_running(feature.process)
 Base.wait(feature::ProcessFeature) = (wait(feature.process); feature)
@@ -86,9 +86,7 @@ function Base.close(feature::ProcessFeature)
 end
 
 """Publish a replaceable JSON-RPC transport service for caller-selected processes."""
-runtime_transport_plugin(name=:jsonrpc_transport; service_name=:runtime_transport, factory=start_runtime) =
-    PluginSpec(name, context -> provide!(context, service_name, factory); provides=[service_name])
+runtime_transport_plugin(name=:jsonrpc_transport; service_name=:runtime_transport, factory=start_runtime) = PluginSpec(name, context -> provide!(context, service_name, factory); provides=[service_name])
 
 """Publish generic process lifetime management independently of any application protocol."""
-process_launcher_plugin(name=:process_launcher; service_name=:process_launcher, launcher=launch_feature) =
-    PluginSpec(name, context -> provide!(context, service_name, launcher); provides=[service_name])
+process_launcher_plugin(name=:process_launcher; service_name=:process_launcher, launcher=launch_feature) = PluginSpec(name, context -> provide!(context, service_name, launcher); provides=[service_name])

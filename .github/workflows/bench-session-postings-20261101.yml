@@ -1,0 +1,256 @@
+name: Session trigram postings paired performance experiment
+on:
+  push:
+    branches:
+      - perf/session-trigram-postings-20261101t0517
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: '8170f69d1e621dca2e4bb74b52bb39b5484c4174'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Prepare exact baseline worktree and record environment
+        shell: bash
+        run: |
+          mkdir -p benchmark-evidence
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/session-postings-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/session-postings-baseline" >> "$GITHUB_ENV"
+          julia --version | tee benchmark-evidence/julia-version.txt
+          git rev-parse HEAD > benchmark-evidence/candidate-sha.txt
+          git -C "$RUNNER_TEMP/session-postings-baseline" rev-parse HEAD > benchmark-evidence/baseline-sha.txt
+          lscpu > benchmark-evidence/runner-cpu.txt
+          uname -a > benchmark-evidence/runner-os.txt
+      - name: Instantiate Julia 1.13.3 test dependencies
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()'
+      - name: Seven warmed-up alternating pairs with profiling and conservative confidence gate
+        shell: bash
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/session-postings-experiment.jl" <<'JULIA'
+          using JuliaForever2, JSON, Profile, Statistics, SHA
+          length(ARGS) == 2 || error("Expected baseline worktree and evidence directory")
+          const baseline_directory = realpath(ARGS[1])
+          const evidence = abspath(ARGS[2])
+          mkpath(evidence)
+          module BaselineNamespace end
+          Base.include(BaselineNamespace, joinpath(baseline_directory, "src/JuliaForever2.jl"))
+          const Baseline = BaselineNamespace.JuliaForever2
+          const Candidate = JuliaForever2
+          
+          # Integrated fixture: real saved sessions with mixed roles, ASCII and Unicode.
+          const fixture = Candidate.SessionStore(joinpath(evidence, "fixture"))
+          for session_number in 1:64
+              session = Candidate.Session(Candidate.Kernel())
+              for message_number in 1:8
+                  mark = session_number % 13 == 0 && message_number == 2 ?
+                      "signal needle token" : "ordinary marker token"
+                  unicode = session_number % 17 == 0 && message_number == 5 ? " λ café 中文" : ""
+                  content = "record $(session_number)/$(message_number) " *
+                      repeat("Julia session index search transcripts contain repeated words and tokens. ", 8) *
+                      " " * mark * unicode
+                  role = isodd(message_number) ? :user : :assistant
+                  Candidate.append_message!(session.conversation, Candidate.Message(role, content, :text))
+              end
+              stored = Candidate.save_session!(fixture, "session_$(lpad(session_number, 4, '0'))", session)
+              stored.ok || error("Fixture write failed")
+              close(session)
+          end
+          const old_index = Baseline.SessionSearchIndex(Baseline.SessionStore(fixture.directory))
+          const new_index = Candidate.SessionSearchIndex(Candidate.SessionStore(fixture.directory))
+          isequal(old_index.documents, new_index.documents) || error("Document mismatch")
+          old_index.postings == new_index.postings || error("Posting mismatch")
+          old_index.unicode_documents == new_index.unicode_documents || error("Unicode mismatch")
+          for query in ("needle token", "Julia session", "nonsense unmatched", "λ", "café", "X")
+              isequal(Baseline.search_history(old_index, query), Candidate.search_history(new_index, query)) ||
+                  error("Search mismatch: $(query)")
+          end
+          
+          function full_search(package, query)
+              idx = package.SessionSearchIndex(package.SessionStore(fixture.directory))
+              return (hits=package.search_history(idx, query),
+                  documents=length(idx.documents), postings=length(idx.postings),
+                  unicode=length(idx.unicode_documents))
+          end
+          
+          function refresh_search(package, idx)
+              package.refresh_index!(idx)
+              return (hits=package.search_history(idx, "needle token"),
+                  documents=length(idx.documents), postings=length(idx.postings))
+          end
+          
+          function cached_search(package, idx, query, times)
+              count = 0
+              for _ in 1:times
+                  count += length(package.search_history(idx, query))
+              end
+              return count
+          end
+          
+          const workloads = [
+              ("integration/restore-and-find-needle", p -> full_search(p, "needle token")),
+              ("integration/restore-and-find-common", p -> full_search(p, "Julia session")),
+              ("integration/restore-and-find-unicode", p -> full_search(p, "café")),
+              ("index/refresh", p -> refresh_search(p, p === Baseline ? old_index : new_index)),
+              ("query/cached-common-200", p -> cached_search(p, p === Baseline ? old_index : new_index, "Julia session", 200)),
+              ("query/cached-needle-200", p -> cached_search(p, p === Baseline ? old_index : new_index, "needle token", 200)),
+              ("query/cached-unicode-40", p -> cached_search(p, p === Baseline ? old_index : new_index, "λ", 40)),
+          ]
+          
+          function measure(f)
+              GC.gc()
+              timings = Int[]
+              for _ in 1:9
+                  t0 = time_ns()
+                  f()
+                  push!(timings, time_ns() - t0)
+              end
+              return (times_ns=timings, median_ns=median(timings),
+                  allocated_bytes=Base.@allocated(f()), allocation_count=Base.@allocations(f()))
+          end
+          
+          function bootstrap_limits(improvements)
+              seed = UInt64(0x53455353)
+              medians = Float64[]
+              for _ in 1:10000
+                  draw = Float64[]
+                  for _ in eachindex(improvements)
+                      seed = seed * UInt64(6364136223846793005) + UInt64(1442695040888963407)
+                      push!(draw, improvements[Int(mod(seed, UInt64(length(improvements)))) + 1])
+                  end
+                  push!(medians, median(draw))
+              end
+              return (lower=quantile(medians, 0.025), upper=quantile(medians, 0.975))
+          end
+          
+          function profile_workload(f, prefix)
+              f()
+              Profile.clear()
+              Profile.@profile begin
+                  end_time = time_ns() + 400_000_000
+                  while time_ns() < end_time
+                      f()
+                  end
+              end
+              open(joinpath(evidence, prefix * "-cpu.txt"), "w") do io
+                  Profile.print(io; format=:flat, sortedby=:count)
+              end
+              Profile.Allocs.clear()
+              Profile.Allocs.@profile sample_rate=0.05 f()
+              sites = Dict{String,Tuple{Int,Int}}()
+              for allocation in Profile.Allocs.fetch().allocs
+                  isempty(allocation.stacktrace) && continue
+                  frame = first(allocation.stacktrace)
+                  for location in allocation.stacktrace
+                      if endswith(string(location.file), "session_query.jl")
+                          frame = location
+                          break
+                      end
+                  end
+                  label = string(frame.file, ":", frame.line, " ", frame.func)
+                  count, bytes = get(sites, label, (0, 0))
+                  sites[label] = (count + 1, bytes + allocation.size)
+              end
+              records = [(site=site, count=value[1], bytes=value[2]) for (site, value) in sites]
+              sort!(records; by=x -> x.bytes, rev=true)
+              write(joinpath(evidence, prefix * "-allocation-sites.json"),
+                  JSON.json((sample_rate=0.05, sites=records)))
+              Profile.Allocs.clear()
+          end
+          
+          const metadata = (;
+              baseline_sha=readchomp(Cmd(["git", "-C", baseline_directory, "rev-parse", "HEAD"])),
+              candidate_sha=get(ENV, "GITHUB_SHA", "unknown"),
+              julia_version=string(VERSION), julia_threads=Threads.nthreads(),
+              cpu=Sys.CPU_NAME, logical_cpus=Sys.CPU_THREADS, architecture=string(Sys.ARCH),
+              os=string(Sys.KERNEL), json_version=string(Base.pkgversion(JSON)),
+              project_sha256=bytes2hex(sha256(read("test/Project.toml"))),
+              baseline_project_sha256=bytes2hex(sha256(read(joinpath(baseline_directory, "test/Project.toml")))),
+              fixture_sha256=bytes2hex(sha256(join([read(joinpath(fixture.directory, filename), String)
+                  for filename in sort(readdir(fixture.directory))], ""))),
+              session_count=64, message_count=512, pairs=7, repetitions_per_side=9,
+              warmups_per_side=6, order="AB,BA,AB,BA,AB,BA,AB",
+              confidence="10,000 deterministic bootstrap resamples of seven paired median improvements",
+              matched_environment="same process, runner, Julia packages, persisted fixture and thread count",
+              threads="JULIA_NUM_THREADS=1; OPENBLAS_NUM_THREADS=1")
+          write(joinpath(evidence, "environment.json"), JSON.json(metadata))
+          
+          results = Dict{String,Any}()
+          for (name, factory) in workloads
+              before, after = () -> factory(Baseline), () -> factory(Candidate)
+              isequal(before(), after()) || error("Workload results disagree: $(name)")
+              for _ in 1:6
+                  before()
+                  after()
+              end
+              old_samples, new_samples = Any[], Any[]
+              for pair in 1:7
+                  if isodd(pair)
+                      push!(old_samples, measure(before))
+                      push!(new_samples, measure(after))
+                  else
+                      push!(new_samples, measure(after))
+                      push!(old_samples, measure(before))
+                  end
+              end
+              gains = [1 - new_samples[i].median_ns / old_samples[i].median_ns for i in 1:7]
+              bounds = bootstrap_limits(gains)
+              result = (;
+                  baseline=old_samples, candidate=new_samples, paired_improvements=gains,
+                  median_improvement=median(gains), ci95_lower_improvement=bounds.lower,
+                  ci95_upper_improvement=bounds.upper,
+                  baseline_median_ns=median(getproperty.(old_samples, :median_ns)),
+                  candidate_median_ns=median(getproperty.(new_samples, :median_ns)),
+                  baseline_median_allocations=median(getproperty.(old_samples, :allocation_count)),
+                  candidate_median_allocations=median(getproperty.(new_samples, :allocation_count)),
+                  baseline_median_bytes=median(getproperty.(old_samples, :allocated_bytes)),
+                  candidate_median_bytes=median(getproperty.(new_samples, :allocated_bytes)))
+              results[name] = result
+              write(joinpath(evidence, "paired-raw.json"), JSON.json((; metadata, results)))
+              println(name, ": ", round(100 * result.median_improvement; digits=3),
+                  "% median improvement, lower95 ", round(100 * result.ci95_lower_improvement; digits=3),
+                  "%, allocations ", result.baseline_median_allocations, " -> ", result.candidate_median_allocations)
+              flush(stdout)
+          end
+          
+          profile_workload(() -> full_search(Baseline, "needle token"), "baseline")
+          profile_workload(() -> full_search(Candidate, "needle token"), "candidate")
+          flagship = results["integration/restore-and-find-needle"]
+          no_regressions = all(r.median_improvement > -0.03 && r.ci95_lower_improvement > -0.07
+              for (name, r) in results if name != "integration/restore-and-find-needle")
+          gate = (; accepted=flagship.median_improvement > 0.10 &&
+              flagship.ci95_lower_improvement > 0.10 && no_regressions,
+              improvement=flagship.median_improvement, lower95=flagship.ci95_lower_improvement,
+              no_material_regressions=no_regressions)
+          write(joinpath(evidence, "gate.json"), JSON.json(gate))
+          println("Acceptance gate: ", JSON.json(gate))
+          gate.accepted || error("Performance gate failed; do not create PR")
+          
+          JULIA
+          julia --project=test "$RUNNER_TEMP/session-postings-experiment.jl" "$BASELINE_DIR" "benchmark-evidence" 2>&1 | tee benchmark-evidence/benchmark.log
+      - name: Focused core correctness, syntax lint and Aqua
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl core lint aqua 2>&1 | tee benchmark-evidence/verification.log
+      - name: Preserve raw timing, allocations, CPU profiles, versions and gate even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-postings-raw-pairs-profiles-and-gate
+          path: benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30

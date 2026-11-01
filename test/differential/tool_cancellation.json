@@ -1,0 +1,34 @@
+[
+  {
+    "name": "successful text return",
+    "value": "completed"
+  },
+  {
+    "name": "successful structured return",
+    "value": {
+      "ok": true,
+      "items": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "cancelled before body invocation",
+    "value": "hidden",
+    "cancel_before": true
+  },
+  {
+    "name": "cancelled by the running body",
+    "value": "must not leak",
+    "cancel_during": true
+  },
+  {
+    "name": "cancelled after asynchronous suspension",
+    "value": {
+      "secret": "must not leak"
+    },
+    "async": true,
+    "cancel_during": true
+  }
+]
