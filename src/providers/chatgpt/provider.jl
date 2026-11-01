@@ -32,7 +32,9 @@ function available_models!(provider::OpenAIProvider, headers, context)
     data = parse_json(response.body)
     data isa AbstractDict || return (models=String[], reason="ChatGPT model discovery returned invalid JSON.")
     models = get(data, "models", [])
-    discovered = String[m["slug"] for m in models if get(m, "visibility", "") == "list" && get(m, "slug", nothing) isa AbstractString]
+    models isa AbstractVector || return (models=String[], reason="ChatGPT model discovery returned invalid JSON.")
+    discovered = String[m["slug"] for m in models if m isa AbstractDict &&
+        get(m, "visibility", "") == "list" && get(m, "slug", nothing) isa AbstractString]
     return lock(provider.catalog.lock) do
         if time() >= provider.catalog.expires_at
             provider.catalog.models = discovered
