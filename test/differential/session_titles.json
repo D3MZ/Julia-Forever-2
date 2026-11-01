@@ -1,0 +1,114 @@
+[
+  {
+    "name": "basic-title",
+    "text": "Plan a native Julia feature.",
+    "rename": "A reusable title",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "spaces-and-newlines",
+    "text": " First \n  eligible\t  prompt   here ",
+    "rename": " Renamed \n  session ",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "ansi-colors",
+    "text": "\u001b[31mRed\u001b[0m normal",
+    "rename": "Visible \u001b[32m title",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "terminal-osc",
+    "text": "\u001b]0;invisible title\u0007Real content",
+    "rename": "\u001b]2;hidden\u001b\\Public name",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "c1-csi",
+    "text": "31mHello0m world",
+    "rename": "Session 1mOne",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "directional-controls",
+    "text": "Read ‮ild‬ message",
+    "rename": "Trust ​ text ⁦value⁩",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "c0-controls",
+    "text": "a\u0000b\u0001cd",
+    "rename": "Safe\u001f Title",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "unicode-byte-limit",
+    "text": "über café 你好 world",
+    "rename": "日本語テスト and more",
+    "maxBytes": 10,
+    "maxWords": 8,
+    "fallbackBytes": 9
+  },
+  {
+    "name": "emoji-budget",
+    "text": "🧪 experiment succeeds",
+    "rename": "🧪 trial",
+    "maxBytes": 7,
+    "maxWords": 4,
+    "fallbackBytes": 7
+  },
+  {
+    "name": "word-budget",
+    "text": "one two three four five six",
+    "rename": "Brief title",
+    "maxBytes": 120,
+    "maxWords": 3,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "whitespace-normalization",
+    "text": "Alpha beta gamma　delta",
+    "rename": "  full   title\t",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "empty-user-content",
+    "text": "\u001b[31m​\u0000",
+    "rename": "Manual fallback",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "combining-mark",
+    "text": "Café is good",
+    "rename": "Å sample",
+    "maxBytes": 120,
+    "maxWords": 8,
+    "fallbackBytes": 96
+  },
+  {
+    "name": "longer-than-cap",
+    "text": "A really long prompt for smaller limits",
+    "rename": "Renamed with lots of words",
+    "maxBytes": 12,
+    "maxWords": 2,
+    "fallbackBytes": 10
+  }
+]
