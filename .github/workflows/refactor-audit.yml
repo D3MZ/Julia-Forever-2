@@ -1,0 +1,26 @@
+name: Refactor source audit
+
+on:
+  push:
+    branches: [refactor/data-first-composition-20261101]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive the exact source under review
+        run: |
+          mkdir -p "$RUNNER_TEMP/refactor-audit"
+          git archive --format=tar HEAD | gzip > "$RUNNER_TEMP/refactor-audit/source.tar.gz"
+          git rev-parse HEAD > "$RUNNER_TEMP/refactor-audit/commit.txt"
+          git ls-files '*.jl' | xargs wc -l > "$RUNNER_TEMP/refactor-audit/lines.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refactor-source
+          path: ${{ runner.temp }}/refactor-audit
+          retention-days: 7
