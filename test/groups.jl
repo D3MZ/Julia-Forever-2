@@ -14,7 +14,7 @@ const UNIT_TEST_FILES = [
     "auth.jl",
     "smoke.jl",
 ]
-const DIFFERENTIAL_TEST_FILES = ["dsh_differential.jl", "dsh_runtime_differential.jl", "pi_parity.jl"]
+const DIFFERENTIAL_TEST_FILES = ["dsh_differential.jl", "dsh_runtime_differential.jl", "pi_parity.jl", "pi_tui_parity.jl"]
 const TEST_FILES = vcat(UNIT_TEST_FILES, DIFFERENTIAL_TEST_FILES, ["lint_tests.jl", "aqua.jl", "jet.jl"])
 
 const TEST_GROUPS = Dict(
@@ -36,6 +36,7 @@ const TEST_GROUPS = Dict(
     "differential-runtime" => ["dsh_runtime_differential.jl"],
     "differential-all" => copy(DIFFERENTIAL_TEST_FILES),
     "parity" => ["pi_parity.jl"],
+    "parity-tui" => ["pi_tui_parity.jl"],
     "lint" => ["lint_tests.jl"],
     "aqua" => ["aqua.jl"],
     "jet" => ["jet.jl"],
