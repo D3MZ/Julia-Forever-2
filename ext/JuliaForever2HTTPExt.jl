@@ -12,7 +12,7 @@ struct WebServer{S}
     token::String
 end
 
-Base.close(server::WebServer) = close(server.backend)
+Base.close(server::WebServer) = HTTP.forceclose(server.backend)
 JuliaForever2.web_url(server::WebServer) = "http://$(server.host):$(server.port)"
 
 function response(status::Integer, body::AbstractString, mime::AbstractString="application/json")
