@@ -139,6 +139,23 @@ end
     @test app.selected == 1
 end
 
+@testset "TUI uses captured modifiers once per key" begin
+    app = App(default_kernel())
+    Tachikoma.set_text!(app.input, "alpha beta")
+    Tachikoma.enable_raw_capture!()
+    bytes = Tachikoma.last_event_raw()
+    empty!(bytes)
+    append!(bytes, codeunits("\e[127;3u"))
+    update!(app, KeyEvent(:backspace))
+    @test Tachikoma.text(app.input) == "alpha "
+    @test isempty(bytes)
+
+    Tachikoma.set_text!(app.input, "alpha beta")
+    update!(app, KeyEvent(:backspace))
+    @test Tachikoma.text(app.input) == "alpha bet"
+    Tachikoma.disable_raw_capture!()
+end
+
 @testset "Cross-terminal prompt editing shortcuts" begin
     app = App(default_kernel())
     Tachikoma.set_text!(app.input, "alpha beta gamma")
