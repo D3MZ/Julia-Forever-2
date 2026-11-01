@@ -9,6 +9,7 @@ const DIFFERENTIAL_DIRECTORY = joinpath(@__DIR__, "differential")
 include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
 const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), String))
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
+CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -641,8 +642,49 @@ function launch_result(input)
     return normalize(Dict("arguments" => collect(command), "directory" => command.dir, "environment" => actual))
 end
 
+
+function session_query_result(input)
+    return mktempdir() do directory
+        matches = if get(input, "source", "stored") == "live"
+            specification = only(input["sessions"])
+            messages = Message[Message(Symbol(entry["role"]), entry["content"]) for entry in specification["messages"]]
+            session = Session(Kernel(); messages, owns_kernel=true)
+            results = JuliaForever2.search_history(session, input["text"];
+                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)))
+            close(session)
+            results
+        else
+            registry = JuliaForever2.PluginRegistry()
+            JuliaForever2.register_plugin!(registry, JuliaForever2.session_store_plugin(directory))
+            JuliaForever2.register_plugin!(registry, JuliaForever2.session_query_plugin())
+            base = Kernel()
+            host = JuliaForever2.PluginHost(base; registry)
+            activated = JuliaForever2.activate!(host, JuliaForever2.Profile(:query, [:session_store, :session_query]))
+            activated.ok || error(activated.reason)
+            store = component(host, :session_store)
+            for specification in input["sessions"]
+                messages = Message[Message(Symbol(entry["role"]), entry["content"]) for entry in specification["messages"]]
+                session = Session(Kernel(); messages, owns_kernel=true)
+                saved = JuliaForever2.save_session!(store, specification["name"], session)
+                saved.ok || error(saved.reason)
+                close(session)
+            end
+            results = JuliaForever2.search_history(component(host, :session_query), input["text"];
+                roles=get(input, "roles", nothing), limit=get(input, "limit", typemax(Int)))
+            close(host)
+            close(base)
+            results
+        end
+        return normalize(Dict("ok" => true, "hits" => [
+            Dict("session" => hit.session, "index" => hit.index,
+                "role" => String(hit.role), "kind" => String(hit.kind), "content" => hit.content)
+            for hit in matches]))
+    end
+end
+
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
+            ("session_query", session_query_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),

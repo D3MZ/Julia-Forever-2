@@ -1,0 +1,214 @@
+[
+  {
+    "name": "case-insensitive-text",
+    "text": "sapphire",
+    "sessions": [
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Remember Sapphire."
+          },
+          {
+            "role": "assistant",
+            "content": "Recorded SAPPHIRE."
+          },
+          {
+            "role": "user",
+            "content": "unrelated"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "whitespace-flexible",
+    "text": "two line sequence",
+    "sessions": [
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "user",
+            "content": "a two \tline\nsequence here"
+          },
+          {
+            "role": "assistant",
+            "content": "two-line sequence"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "literal-regex-metacharacters",
+    "text": "a+b? [ok]",
+    "sessions": [
+      {
+        "name": "symbols",
+        "messages": [
+          {
+            "role": "user",
+            "content": "The literal a+b? [ok] exists"
+          },
+          {
+            "role": "assistant",
+            "content": "aaabbb ok does not match"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "unicode-case",
+    "text": "café",
+    "sessions": [
+      {
+        "name": "unicode",
+        "messages": [
+          {
+            "role": "user",
+            "content": "CAFÉ is open"
+          },
+          {
+            "role": "assistant",
+            "content": "mañana"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "role-filter",
+    "text": "lumen",
+    "roles": [
+      "assistant"
+    ],
+    "sessions": [
+      {
+        "name": "role",
+        "messages": [
+          {
+            "role": "user",
+            "content": "lumen"
+          },
+          {
+            "role": "assistant",
+            "content": "LUMEN"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "multiple-stored-sessions-in-order",
+    "text": "planet",
+    "limit": 2,
+    "sessions": [
+      {
+        "name": "zulu",
+        "messages": [
+          {
+            "role": "user",
+            "content": "planet z"
+          }
+        ]
+      },
+      {
+        "name": "alpha",
+        "messages": [
+          {
+            "role": "user",
+            "content": "planet a"
+          },
+          {
+            "role": "assistant",
+            "content": "PLANET b"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "zero-limit",
+    "text": "persist",
+    "limit": 0,
+    "sessions": [
+      {
+        "name": "bounded",
+        "messages": [
+          {
+            "role": "user",
+            "content": "persist here"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "live-snapshot",
+    "source": "live",
+    "text": "sunrise",
+    "sessions": [
+      {
+        "name": "active",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Sunrise returns"
+          },
+          {
+            "role": "assistant",
+            "content": "sunrise"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "no-matches",
+    "text": "nonexistent",
+    "sessions": [
+      {
+        "name": "none",
+        "messages": [
+          {
+            "role": "user",
+            "content": "something else"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "substring-not-word-boundary",
+    "text": "port",
+    "sessions": [
+      {
+        "name": "substring",
+        "messages": [
+          {
+            "role": "user",
+            "content": "transport"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "input-whitespace",
+    "text": "alpha  \n beta",
+    "sessions": [
+      {
+        "name": "whitespace",
+        "messages": [
+          {
+            "role": "assistant",
+            "content": "alpha\t beta"
+          }
+        ]
+      }
+    ]
+  }
+]

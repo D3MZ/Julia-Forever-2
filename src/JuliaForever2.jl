@@ -34,12 +34,14 @@ public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
 public runtime_transport_plugin, process_launcher_plugin
 public SessionStore, save_session!, load_session, session_store_plugin
+public SessionQuery, session_query_plugin, search_history, session_names
 
 include("kernel.jl")
 include("agent.jl")
 include("core/plugins.jl")
 include("core/profile_store.jl")
 include("core/session_store.jl")
+include("core/session_query.jl")
 include("core/extensions.jl")
 include("core/event_context.jl")
 include("features/code_mode/streaming.jl")

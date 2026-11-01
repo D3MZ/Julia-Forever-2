@@ -1,8 +1,10 @@
 import { PassThrough, Writable } from 'node:stream'
 import { createInterface } from 'node:readline'
 import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { importSource, referenceSource, cordisReference, scopedReference, toolsReference } from './reference.mjs'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { resolve } from 'node:path'
+import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
+const { filterSessionEventDocuments } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
@@ -532,10 +534,36 @@ async function toolCase(input) {
   return results
 }
 
+
+function sessionQueryCase(input) {
+  const documents = input.sessions.flatMap(session => session.messages.map((message, index) => ({
+    sessionId: session.name,
+    seq: index,
+    type: `${message.role}/message`,
+    time: 0,
+    surface: 'current',
+    text: message.content,
+  })))
+  documents.sort((left, right) => left.sessionId < right.sessionId ? -1
+    : left.sessionId > right.sessionId ? 1 : left.seq - right.seq)
+  const filters = [{ kind: 'text', text: input.text }]
+  if (input.roles !== undefined) filters.push({ kind: 'type',
+    values: input.roles.map(role => `${role}/message`) })
+  const selected = filterSessionEventDocuments(documents, filters)
+  return { ok: true, hits: selected.slice(0, input.limit ?? selected.length).map(document => ({
+    session: input.source === 'live' ? null : document.sessionId,
+    index: document.seq + 1,
+    role: document.type.slice(0, document.type.indexOf('/')),
+    kind: 'text',
+    content: document.text,
+  })) }
+}
+
 async function execute(input) {
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
+  if (input.kind === 'session_query') return input.cases.map(sessionQueryCase)
   if (input.kind === 'transport') return Promise.all(input.cases.map(transportCase))
   if (input.kind === 'outgoing') return Promise.all(input.cases.map(outgoingCase))
   if (input.kind === 'recovery') return Promise.all(input.cases.map(recoveryCase))
