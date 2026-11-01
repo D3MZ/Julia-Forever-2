@@ -122,6 +122,25 @@ end
     end
 end
 
+@testset "History query limits distinguish Bool from Integer" begin
+    for value in (false, true)
+        @test_throws "Session query limit must be a non-Boolean integer" JuliaForever2.HistoryQuery("needle"; limit=value)
+        @test_throws "Session query limit must be a non-Boolean integer" JuliaForever2.HistoryQuery("needle", nothing, value)
+    end
+
+    @test JuliaForever2.HistoryQuery("needle").limit == typemax(Int)
+    @test JuliaForever2.HistoryQuery("needle", nothing, 2).limit == 2
+    for limit in (0, 1, Int8(2), big(3))
+        query = JuliaForever2.HistoryQuery("needle"; limit)
+        @test query.limit === limit
+        @test isconcretetype(typeof(query))
+    end
+    @test_throws "Session query limit must be nonnegative" JuliaForever2.HistoryQuery("needle"; limit=-1)
+    @test_throws "Session query must contain non-whitespace text" JuliaForever2.HistoryQuery("   ")
+    @test_throws MethodError JuliaForever2.HistoryQuery("needle"; limit=1.0)
+    @test_throws MethodError JuliaForever2.HistoryQuery("needle"; limit=nothing)
+end
+
 struct UnreadResponse end
 JuliaForever2.response_reply(::UnreadResponse) = error("Cancelled responses must not be decoded")
 
