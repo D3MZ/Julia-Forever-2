@@ -394,3 +394,38 @@ end
     @test all(call -> call.context === context, calls)
     close(context)
 end
+
+@testset "OpenAI streaming text materializes on block completion" begin
+    thinking = ["reason ", "αβγ "]
+    answer = ["Julia ", "streaming ", "🚀", " response"]
+    events = JuliaForever2.HarnessEvent[]
+    transport = function (url, method, body, headers, request_context, sink)
+        for (field, chunks) in (("reasoning_content", thinking), ("content", answer))
+            for delta in chunks
+                choice = Dict("delta" => Dict(field => delta), "finish_reason" => nothing)
+                write(sink, "data: ", JSON.json(Dict("choices" => [choice])), "\n\n")
+            end
+        end
+        write(sink, "data: ", JSON.json(Dict("choices" =>
+            [Dict("delta" => Dict{String,Any}(), "finish_reason" => "stop")])), "\n\n")
+        return (status=200, reason="OK")
+    end
+    context = JuliaForever2.ExecutionContext(; event_sink=event -> push!(events, event))
+    backend = JuliaForever2.HTTPModelBackend(JuliaForever2.OpenAIChatProtocol(),
+        "https://example.invalid"; transport)
+    model = JuliaForever2.ModelSpec(:test, "stream-test")
+    request = JuliaForever2.ModelRequest(Message[], "", nothing, nothing, nothing)
+    result = JuliaForever2.respond_model(backend, model, request, context)
+    @test result.reply.kind == :answer
+    @test result.reply.content == join(answer)
+    @test result.message["stopReason"] == "stop"
+    blocks = result.message["content"]
+    @test [(block["type"], block[block["type"]]) for block in blocks] ==
+        [("thinking", join(thinking)), ("text", join(answer))]
+    stream = [event.data for event in events if event.kind == :model_stream]
+    @test [event["delta"] for event in stream if event["type"] == "thinking_delta"] == thinking
+    @test [event["delta"] for event in stream if event["type"] == "text_delta"] == answer
+    @test only([event["content"] for event in stream if event["type"] == "thinking_end"]) == join(thinking)
+    @test only([event["content"] for event in stream if event["type"] == "text_end"]) == join(answer)
+    close(context)
+end
