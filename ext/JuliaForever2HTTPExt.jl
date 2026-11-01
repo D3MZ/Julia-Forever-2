@@ -88,7 +88,48 @@ end
 
 web_session_cookie(access::WebAccess, request::HTTP.Request) = any(part -> strip(part) == "juliaforever2_session=$(access.cookie)", split(HTTP.header(request, "Cookie"), ';'))
 
-function authorize_web_request(api, access::WebAccess, handler, request::HTTP.Request)
+
+const LOCAL_WEB_AUTHORITY = r"^(127\.0\.0\.1|localhost|\[::1\])(?::([0-9]{1,5}))?$"i
+
+"""Parse a literal loopback HTTP authority, using absence for invalid authority values."""
+local_web_authority(value::AbstractString, scheme::AbstractString) = local_web_authority(match(LOCAL_WEB_AUTHORITY, value), scheme)
+local_web_authority(::Nothing, ::AbstractString) = nothing
+
+function local_web_authority(matched::RegexMatch, scheme::AbstractString)
+    digits = matched.captures[2]
+    port = isnothing(digits) ? (scheme == "https" ? 443 : 80) : tryparse(Int, digits)
+    isnothing(port) || !(1 <= port <= 65535) ? nothing : (lowercase(matched.captures[1]), port)
+end
+
+"""Compare the browser's Origin to its actual HTTP Host, including the listener port."""
+matching_web_origin(host::AbstractString, origin::AbstractString) = matching_web_origin(host, match(r"^(https?)://(.+)$"i, origin))
+matching_web_origin(::AbstractString, ::Nothing) = false
+
+function matching_web_origin(host::AbstractString, matched::RegexMatch)
+    scheme = lowercase(matched.captures[1])
+    authority = local_web_authority(host, scheme)
+    !isnothing(authority) && authority == local_web_authority(matched.captures[2], scheme)
+end
+
+"""Protect every browser entry point and API from DNS rebinding and cross-site initiation."""
+function trusted_web_request(request::HTTP.Request)
+    host = HTTP.header(request, "Host")
+    origin = HTTP.header(request, "Origin")
+    valid_host = !isnothing(local_web_authority(host, "http"))
+    same_site = lowercase(HTTP.header(request, "Sec-Fetch-Site")) != "cross-site"
+    valid_host && same_site && (isempty(origin) || matching_web_origin(host, origin))
+end
+
+function authorize_web_request(api, access::WebAccess, handler, trust, request::HTTP.Request)
+    trusted = Base.invokelatest(trust, request) === true
+    if trusted
+        authorize_trusted_web_request(api, access, handler, request)
+    else
+        response(403, "{\"error\":\"Untrusted browser authority\"}")
+    end
+end
+
+function authorize_trusted_web_request(api, access::WebAccess, handler, request::HTTP.Request)
     uri = HTTP.URI(String(request.target))
     query = HTTP.queryparams(uri)
     if request.method == "GET" && uri.path == "/" && haskey(query, "access")
@@ -129,21 +170,26 @@ end
 
 WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(port))
 """Start a token-authenticated loopback Web server backed only by Julia-native sessions."""
-JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request) = serve(api, WebAddress(host, port), token, handler)
+function JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI;
+        host::AbstractString="127.0.0.1", port::Integer=0,
+        token=string(uuid4()), handler=web_request, trust=trusted_web_request)
+    serve(api, WebAddress(host, port), token, handler, trust)
+end
 
-function serve(api, address::WebAddress, token, handler)
+function serve(api, address::WebAddress, token, handler, trust)
     access = WebAccess(String(token))
-    server = HTTP.serve!(request -> authorize_web_request(api, access, handler, request), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
+    server = HTTP.serve!(request -> authorize_web_request(api, access, handler, trust, request), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
     WebServer(server, address.host, Int(HTTP.port(server)), String(token))
 end
 """An optional HTTP extension publishes an independently replaceable native Web service."""
 function JuliaForever2.web_server_plugin(; name=:web_server, service_name=:web_server,
-        api_service=:session_api, host="127.0.0.1", port=0, token=string(uuid4()), handler=web_request)
+        api_service=:session_api, host="127.0.0.1", port=0, token=string(uuid4()),
+        handler=web_request, trust=trusted_web_request)
     contract = Symbol(service_name)
     dependency = Symbol(api_service)
     setup = context -> JuliaForever2.provide!(context, contract,
         JuliaForever2.start_web_server(JuliaForever2.service(context, dependency);
-            host, port, token, handler); cleanup=close)
+            host, port, token, handler, trust); cleanup=close)
     return JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
 end
 

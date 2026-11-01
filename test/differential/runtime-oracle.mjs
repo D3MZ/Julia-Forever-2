@@ -1,5 +1,6 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 import { createRequire } from 'node:module';
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -248,6 +249,20 @@ async function httpObservation(url, options = {}, replacements = []) {
   } };
 }
 
+// Use node:http, not fetch: fetch can discard a caller-supplied Host header.
+async function webTrustStatus(url, headers) {
+  return await new Promise((resolve, reject) => {
+    const request = httpRequest(new URL(url), { method: 'GET', headers }, response => {
+      response.on('error', reject);
+      response.on('end', () => resolve(response.statusCode));
+      response.resume();
+    });
+    request.setTimeout(10000, () => request.destroy(new Error('Web trust probe timed out')));
+    request.once('error', reject);
+    request.end();
+  });
+}
+
 async function web() {
   const child = launch('web', request.home, ['--no-open', '--host', '127.0.0.1', '--port', '0']);
   const exit = exited(child);
@@ -294,10 +309,27 @@ async function web() {
       throw new Error('DSH Web did not serve its built static asset');
     }
     const cached = await httpObservation(origin + '/favicon.svg', { headers: { 'if-none-match': asset.observation.etag } });
+    // Live, pinned Web authority decisions, separate from the frontend's route layout.
+    const trustCases = [
+      ['plain', {}],
+      ['same-origin', { origin }],
+      ['same-site', { origin, 'sec-fetch-site': 'same-site' }],
+      ['foreign-origin', { origin: 'https://untrusted.invalid' }],
+      ['opaque-origin', { origin: 'null' }],
+      ['wrong-port-origin', { origin: 'http://127.0.0.1:1' }],
+      ['cross-site', { origin, 'sec-fetch-site': 'cross-site' }],
+      ['foreign-host', { host: 'untrusted.invalid' }],
+      ['lookalike-host', { host: '127.0.0.1.untrusted.invalid' }],
+    ];
+    const trust = [];
+    for (const [name, headers] of trustCases) {
+      const status = await webTrustStatus(origin + '/api/', { cookie, ...headers });
+      trust.push({ name, status });
+    }
     child.kill('SIGTERM');
     const stopped = await settleChild(child, exit);
     return { release, referenceCommit, responses, authentication,
-      index: index.observation, asset: asset.observation, cached: cached.observation,
+      index: index.observation, asset: asset.observation, cached: cached.observation, trust,
       exit: stopped.code, signal: stopped.signal };
   } finally {
     clearTimeout(timer);
