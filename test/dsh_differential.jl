@@ -715,8 +715,9 @@ function tool_approval_result(input)
     else
         JuliaForever2.on!((call, request) -> begin
             approvals[] += 1
-            outcome = Symbol(approvals[] == 1 ? input["outcome"] :
-                get(input, "next_outcome", input["outcome"]))
+            selected = approvals[] == 1 ? input["outcome"] :
+                get(input, "next_outcome", input["outcome"])
+            outcome = selected == "allowed-once" ? :allowed_once : Symbol(selected)
             observed[] = outcome
             get(input, "async", false) ? (@async begin
                 yield()
