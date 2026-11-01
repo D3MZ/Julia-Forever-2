@@ -1,0 +1,47 @@
+name: ASCII transcript paired performance experiment
+
+on:
+  push:
+    branches:
+      - perf/terminal-ascii-transcript-20261031t2310
+
+permissions:
+  contents: read
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    env:
+      JULIA_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: 'eccfbabe5d809d47e77132789f1f1c112f56007d'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Prepare exact baseline worktree
+        run: |
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/julia-forever-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/julia-forever-baseline" >> "$GITHUB_ENV"
+          julia --version
+          git rev-parse HEAD
+          git -C "$RUNNER_TEMP/julia-forever-baseline" rev-parse HEAD
+      - name: Install pinned benchmark dependencies
+        run: julia --project=benchmarks -e 'using Pkg; Pkg.instantiate()'
+      - name: Run alternating baseline/candidate performance tests, allocation and CPU profiles
+        run: julia --project=benchmarks benchmarks/transcript_experiment.jl "$BASELINE_DIR" "$RUNNER_TEMP/transcript-evidence"
+      - name: Run focused TUI correctness, repository lint and Aqua
+        run: |
+          julia --project=test -e 'using Pkg; Pkg.instantiate()'
+          julia --project=test test/runtests.jl tui lint aqua
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: transcript-paired-raw-profile-env
+          path: ${{ runner.temp }}/transcript-evidence/
+          if-no-files-found: warn
+          retention-days: 30

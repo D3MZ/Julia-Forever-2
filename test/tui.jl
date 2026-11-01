@@ -674,3 +674,21 @@ end
 
 end
 end
+
+@testset "Printable ASCII transcript wrapping fast path" begin
+    for (content, width, expected) in (
+            ("abcdefghi", 4, ["abcd", "efgh", "i"]),
+            ("ab cd ef", 4, ["ab ", "cd ", "ef"]),
+            ("   abc", 2, ["  ", " ", "ab", "c"]),
+            (repeat("x", 25), 3, [repeat("x", 3) for _ in 1:8] |> x -> vcat(x, ["x"])),
+            (" ", 0, [" "]),
+            ("x", -3, ["x"]),
+            ("", 2, [""]))
+        @test Terminal.wrap_conversation_line(content, width) == expected
+        @test Terminal.wrap_conversation_line(SubString("##" * content * "@@", 3, 2 + ncodeunits(content)), width) == expected
+    end
+    for content in ("a\\tb", "Julia λ", "e\u0301x", "👩\u200d💻", "ab\r\ncd")
+        wrapped = Terminal.wrap_conversation_line(content, 5)
+        @test join(wrapped) == content
+    end
+end
