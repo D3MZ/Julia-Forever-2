@@ -28,7 +28,6 @@ Base.@kwdef struct UsageReport
     cache_write_tokens::Union{Nothing,Int} = nothing
 end
 
-UsageReport() = UsageReport(nothing, nothing, nothing, nothing, nothing)
 UsageReport(input, output, cost) = UsageReport(input, output, cost, nothing, nothing)
 UsageReport(report::UsageReport) = report
 UsageReport(data) = UsageReport()
