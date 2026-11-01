@@ -519,3 +519,36 @@ end
         @test common_first_bytes <= sparse_first_bytes + 32_768
     end
 end
+
+
+@testset "ASCII session trigram index preserves postings and Unicode fallback" begin
+    samples = ["AaAaAa", "abcABCabc", "Julia julia JULIA", "AB", "", "A a A a", "needle token"]
+    expected, observed = Dict{String,BitSet}(), Dict{String,BitSet}()
+    for (id, message) in enumerate(samples)
+        for gram in Set(JuliaForever2.session_trigrams(message))
+            push!(get!(BitSet, expected, gram), id)
+        end
+        JuliaForever2.append_ascii_session_postings!(observed, message, id)
+    end
+    @test observed == expected
+    @test observed["aaa"] == BitSet([1])
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        for (name, value) in [("one", "ABABA needle token"), ("two", "café needle token"),
+                ("three", "aaaa aaaa AaAa"), ("four", "中文 язык"), ("five", "ABC xyz")]
+            session = Session(Kernel())
+            append_message!(session.conversation, Message(:user, value, :text))
+            @test JuliaForever2.save_session!(store, name, session).ok
+            close(session)
+        end
+        index = JuliaForever2.SessionSearchIndex(store)
+        @test index.postings["aba"] == BitSet([1])
+        @test 2 in index.unicode_documents
+        for term in ("aba", "AAAA", "needle token", "café", "xyz", "zzzzz", "a", " NEEdle   token ")
+            @test JuliaForever2.search_history(index, term) ==
+                JuliaForever2.search_history(store, term)
+            @test JuliaForever2.search_history(index, term; roles=[:assistant], limit=2) ==
+                JuliaForever2.search_history(store, term; roles=[:assistant], limit=2)
+        end
+    end
+end
