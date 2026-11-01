@@ -1,0 +1,51 @@
+[
+  {
+    "name": "completion with no policy",
+    "initial": "success"
+  },
+  {
+    "name": "completion accepts unchanged result",
+    "initial": "success",
+    "policy": "accept"
+  },
+  {
+    "name": "completion replaces success display only",
+    "initial": "success",
+    "policy": "replace",
+    "message": "Presented result"
+  },
+  {
+    "name": "completion blocks success and erases value",
+    "initial": "success",
+    "policy": "block",
+    "message": "Policy blocked output"
+  },
+  {
+    "name": "completion observes guard denial",
+    "initial": "guard",
+    "policy": "accept"
+  },
+  {
+    "name": "completion can replace guard error display",
+    "initial": "guard",
+    "policy": "replace",
+    "message": "Restricted by policy"
+  },
+  {
+    "name": "completion blocks a prior guard denial",
+    "initial": "guard",
+    "policy": "block",
+    "message": "Policy denial"
+  },
+  {
+    "name": "completion preserves failed body",
+    "initial": "failed",
+    "policy": "accept"
+  },
+  {
+    "name": "completion blocks failed body",
+    "initial": "failed",
+    "policy": "block",
+    "message": "Removed invalid result"
+  }
+]
