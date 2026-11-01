@@ -9,7 +9,7 @@ end
 """Compose a wire protocol with independent endpoint, credential resolver, transport, and request options."""
 HTTPModelBackend(protocol, endpoint::AbstractString; credentials=Returns(Pair{String,String}[]),
         transport=model_http_transport, options=Dict{String,Any}()) =
-    HTTPModelBackend(protocol, rstrip(String(endpoint), '/'), credentials, transport, options)
+    HTTPModelBackend(protocol, String(rstrip(endpoint, '/')), credentials, transport, options)
 Base.show(io::IO, backend::HTTPModelBackend) = print(io, "HTTPModelBackend(", nameof(typeof(backend.protocol)), ")")
 
 """Send an owned streaming request; custom transports implement this same context-aware signature."""
@@ -41,12 +41,15 @@ mutable struct ModelStreamState{M,C}
     message::Dict{String,Any}
     blocks::Dict{Any,Int}
     arguments::Dict{Int,String}
+    closed_blocks::Set{Int}
+    received_start::Bool
+    received_stop::Bool
     started::Bool
     finished::Bool
     error::String
 end
 ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model),
-    Dict{Any,Int}(), Dict{Int,String}(), false, false, "")
+    Dict{Any,Int}(), Dict{Int,String}(), Set{Int}(), false, false, false, false, "")
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -92,19 +95,31 @@ function text_model_block!(state::ModelStreamState, kind::String, delta::Abstrac
     return nothing
 end
 
-function finish_model_blocks!(state::ModelStreamState)
-    for (index, block) in enumerate(state.message["content"])
-        kind = block["type"]
-        if kind == "toolCall"
-            arguments = parse_json(get(state.arguments, index, "{}"))
+function finish_model_block!(state::ModelStreamState, index::Int)
+    index in state.closed_blocks && return nothing
+    push!(state.closed_blocks, index)
+    block = state.message["content"][index]
+    kind = block["type"]
+    if kind == "toolCall"
+        if haskey(state.arguments, index) && !isempty(state.arguments[index])
+            arguments = parse_json(state.arguments[index])
             arguments isa AbstractDict && (block["arguments"] = arguments)
-            model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))
-        else
-            model_event!(state, kind * "_end"; contentIndex=index - 1, content=block[kind])
         end
+        model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))
+    else
+        model_event!(state, kind * "_end"; contentIndex=index - 1, content=block[kind])
     end
     return nothing
 end
+
+function finish_model_blocks!(state::ModelStreamState)
+    for index in eachindex(state.message["content"])
+        finish_model_block!(state, index)
+    end
+    return nothing
+end
+
+finish_protocol_stream!(protocol, state::ModelStreamState) = finish_model_blocks!(state)
 
 function finish_model_stream!(state::ModelStreamState)
     state.finished && return nothing
@@ -112,7 +127,7 @@ function finish_model_stream!(state::ModelStreamState)
     if cancelled(state.context)
         state.message["stopReason"] = "aborted"
         state.error = "Request was aborted"
-    elseif state.message["stopReason"] == "pending"
+    elseif state.message["stopReason"] == "pending" && isempty(state.error)
         state.message["stopReason"] = "error"
         state.error = "Stream ended without finish_reason"
     end
@@ -162,7 +177,7 @@ function respond_model(backend::HTTPModelBackend, model::ModelSpec, request::Mod
         "POST", JSON.json(payload), headers, context, decoder)
     if response.status in 200:299
         start_model_stream!(state)
-        finish_model_blocks!(state)
+        finish_protocol_stream!(backend.protocol, state)
     else
         state.error = "Model HTTP request failed ($(response.status)): $(response.reason)"
     end

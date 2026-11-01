@@ -4,6 +4,7 @@ from __future__ import annotations
 import random
 
 from wire import wire_scenarios
+from anthropic_fixtures import anthropic_scenarios
 
 REGISTRY_CONTRACTS = [
     'provider-registry.replacement', 'model-catalog.typed-lookup',
@@ -100,4 +101,4 @@ def build_scenarios() -> list[dict]:
         ]
         scenarios.append(dict(id=f'model-store-isolation-{index}', family='store',
                               capabilities=STORE_CONTRACTS, steps=steps))
-    return scenarios + wire_scenarios()
+    return scenarios + wire_scenarios() + anthropic_scenarios()

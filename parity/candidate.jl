@@ -105,9 +105,11 @@ end
 function wire_scenario(scenario)
     metadata = scenario["model"]
     model = fixture_model(metadata)
-    protocol = JuliaForever2.OpenAIChatProtocol(; compatibility=metadata["compat"])
+    protocol = scenario["protocol"] == "anthropic" ? JuliaForever2.AnthropicMessagesProtocol() :
+        JuliaForever2.OpenAIChatProtocol(; compatibility=metadata["compat"])
+    headers = scenario["protocol"] == "anthropic" ? ["x-api-key" => "fixture-only"] : ["Authorization" => "Bearer fixture-only"]
     backend = JuliaForever2.HTTPModelBackend(protocol, scenario["endpoint"];
-        credentials=Returns(["Authorization" => "Bearer fixture-only"]), options=scenario["options"])
+        credentials=Returns(headers), options=scenario["options"])
     request = ModelRequest([Message(:user, scenario["prompt"])], scenario["instructions"], nothing, nothing, nothing)
     events = Any[]
     context = ExecutionContext(; emit=event -> event.kind == :model_stream && push!(events, deepcopy(event.data)))

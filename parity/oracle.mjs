@@ -104,7 +104,8 @@ async function storeScenario(scenario) {
 }
 
 async function wireScenario(scenario) {
-    const { stream } = await load('packages/ai/src/api/openai-completions.ts');
+    const module = scenario.protocol === 'anthropic' ? 'anthropic-messages' : 'openai-completions';
+    const { stream } = await load(`packages/ai/src/api/${module}.ts`);
     const model = { ...scenario.model, baseUrl: scenario.endpoint };
     const messages = [
         { role: 'system', content: scenario.instructions, timestamp: 0 },

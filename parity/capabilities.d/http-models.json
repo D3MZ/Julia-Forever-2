@@ -12,6 +12,14 @@
       "scope": "Real HTTP Chat Completions request serialization; streamed text/thinking/tool-call finals, usage, cache costs, stop/error reasons and event order for explicit compatibility options. Partial tool-argument snapshots, retries, OAuth and vendor-specific policies remain gaps.",
       "sources": ["packages/ai/src/api/openai-completions.ts"],
       "differential": "Execute both real adapters against the same loopback HTTP server and fragmented SSE bytes. Compare full request body/path/method/auth, final message and ordered semantic events; omit only platform headers, timestamps, durations and partial snapshots."
+    },
+    {
+      "id": "provider-protocol.anthropic-streaming",
+      "placement": "replaceable_extension",
+      "status": "differential",
+      "scope": "Real Anthropic Messages HTTP serialization and streamed text, thinking/signatures, redacted thinking, interleaved tool finals, cache/usage preservation, refusal and incomplete-stream detection. OAuth, retries, strict-tool fallback, multimodal history and partial argument snapshots remain gaps.",
+      "sources": ["packages/ai/src/api/anthropic-messages.ts"],
+      "differential": "Execute Pi and Julia against identical loopback HTTP SSE fixtures, including fragmented Unicode, omitted usage fields, out-of-order tool block closure, refusal details and missing stop markers. Compare captured requests, final messages and ordered semantic events."
     }
   ]
 }
