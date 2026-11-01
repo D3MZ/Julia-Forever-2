@@ -126,18 +126,19 @@ function profile_case(f, label)
     Profile.Allocs.@profile sample_rate=0.1 f()
     sites = Dict{String,Tuple{Int,Int}}()
     for allocation in Profile.Allocs.fetch().allocs
-        isempty(allocation.stacktrace) && continue
-        frame = first(allocation.stacktrace)
-        for location in allocation.stacktrace
-            if occursin("anthropic.jl", string(location.file)) ||
-                    occursin("backend.jl", string(location.file))
-                frame = location
-                break
+        if !isempty(allocation.stacktrace)
+            frame = first(allocation.stacktrace)
+            for location in allocation.stacktrace
+                if occursin("anthropic.jl", string(location.file)) ||
+                        occursin("backend.jl", string(location.file))
+                    frame = location
+                    break
+                end
             end
+            site = string(frame.file, ":", frame.line, " ", frame.func)
+            count, bytes = get(sites, site, (0, 0))
+            sites[site] = (count + 1, bytes + allocation.size)
         end
-        site = string(frame.file, ":", frame.line, " ", frame.func)
-        count, bytes = get(sites, site, (0, 0))
-        sites[site] = (count + 1, bytes + allocation.size)
     end
     records = [(site=site, count=value[1], bytes=value[2]) for (site, value) in sites]
     sort!(records; by=entry -> entry.bytes, rev=true)
