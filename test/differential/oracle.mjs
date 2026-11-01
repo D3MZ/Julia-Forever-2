@@ -814,7 +814,7 @@ async function toolActivationCase(input) {
     await target.plugin(SystemPrompt)
     await target.plugin(ToolsService)
   }, ['tools', 'systemPrompt'])
-  const scopeOf = operation => scopes.get(operation.scope ?? input.scope ?? 'agent')
+  const scopeOf = operation => scopes.get(operation.scope ?? input.scope ?? (scopes.has('agent') ? 'agent' : 'root'))
   const registrations = new Map()
   const toolSets = new Map()
   const conditions = []

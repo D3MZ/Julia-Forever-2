@@ -926,7 +926,8 @@ function tool_activation_result(input)
     for specification in get(input, "scopes", [])
         scopes[specification["name"]] = ExtensionScope(scopes[get(specification, "parent", "root")])
     end
-    scope_of(specification) = scopes[get(specification, "scope", get(input, "scope", "agent"))]
+    scope_of(specification) = scopes[get(specification, "scope", get(input, "scope",
+        haskey(scopes, "agent") ? "agent" : "root"))]
     registrations = Dict{String,Any}()
     admitted = Dict{String,Any}()
     conditions = String[]

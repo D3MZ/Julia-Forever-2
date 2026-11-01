@@ -383,6 +383,11 @@
         "name": "available",
         "set": "step"
       }
+    ],
+    "scopes": [
+      {
+        "name": "agent"
+      }
     ]
   },
   {
@@ -623,6 +628,11 @@
         "type": "check",
         "name": "tool",
         "set": "one"
+      }
+    ],
+    "scopes": [
+      {
+        "name": "agent"
       }
     ]
   }
