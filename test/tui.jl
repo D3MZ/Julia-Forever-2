@@ -55,6 +55,93 @@ end
 mktempdir() do terminal_configuration
 withenv("JULIAFOREVER_CONFIG_DIR" => terminal_configuration, "OPENROUTER_API_KEY" => "") do
 
+@testset "Cross-terminal prompt editing shortcuts" begin
+    app = App(default_kernel())
+    Tachikoma.set_text!(app.input, "alpha beta gamma")
+    app.input.cursor = 10
+    update!(app, KeyEvent(:ctrl, 'u'))  # Ctrl+U; also Ghostty's Command+Backspace
+    @test Tachikoma.text(app.input) == " gamma"
+    @test app.input.cursor == 0
+    update!(app, KeyEvent(:ctrl, 'k'))
+    @test Tachikoma.text(app.input) == ""
+    @test app.input.cursor == 0
+
+    Tachikoma.set_text!(app.input, "one  two   ")
+    update!(app, KeyEvent(:ctrl, 'w'))
+    @test Tachikoma.text(app.input) == "one  "
+    @test app.input.cursor == 5
+    Tachikoma.set_text!(app.input, "αβ γδ")
+    update!(app, KeyEvent(:ctrl, 'w'))
+    @test Tachikoma.text(app.input) == "αβ "
+
+    Tachikoma.set_text!(app.input, "abcdef")
+    update!(app, KeyEvent(:ctrl, 'a'))
+    @test app.input.cursor == 0
+    update!(app, KeyEvent(:ctrl, 'f'))
+    @test app.input.cursor == 1
+    update!(app, KeyEvent(:ctrl, 'e'))
+    @test app.input.cursor == 6
+    update!(app, KeyEvent(:ctrl, 'b'))
+    @test app.input.cursor == 5
+    update!(app, KeyEvent(:ctrl, 'd'))
+    @test Tachikoma.text(app.input) == "abcde"
+    update!(app, KeyEvent(:ctrl, 'h'))
+    @test Tachikoma.text(app.input) == "abcd"
+    @test app.input.cursor == 4
+    update!(app, KeyEvent(:ctrl, 'u', Tachikoma.key_release))
+    @test Tachikoma.text(app.input) == "abcd"
+    update!(app, KeyEvent('!'))
+    @test Tachikoma.text(app.input) == "abcd!"
+end
+
+@testset "Slash completion and menu editing" begin
+    app = App(default_kernel())
+    for character in "/se"
+        update!(app, KeyEvent(character))
+    end
+    @test app.menu
+    update!(app, KeyEvent(:tab))
+    @test Tachikoma.text(app.input) == "/settings "
+    @test !app.menu
+    @test app.page == :chat
+    update!(app, KeyEvent(:enter))
+    @test app.page == :settings
+
+    selected = App(default_kernel())
+    update!(selected, KeyEvent('/'))
+    update!(selected, KeyEvent(:down))
+    update!(selected, KeyEvent(:tab))
+    @test Tachikoma.text(selected.input) == "/components "
+    @test selected.page == :chat
+    @test !selected.menu
+
+    output = String[]
+    custom = App(default_kernel())
+    Terminal.register_command!(custom, Terminal.CommandSpec("echo", "Echo", (app, arguments) -> push!(output, String(arguments))))
+    for character in "/ec"
+        update!(custom, KeyEvent(character))
+    end
+    update!(custom, KeyEvent(:tab))
+    @test Tachikoma.text(custom.input) == "/echo "
+    @test isempty(output)
+    for character in "hello world"
+        update!(custom, KeyEvent(character))
+    end
+    update!(custom, KeyEvent(:enter))
+    @test output == ["hello world"]
+    @test Tachikoma.text(custom.input) == ""
+
+    update!(custom, KeyEvent('/'))
+    update!(custom, KeyEvent(:backtab))
+    @test custom.selected == length(Terminal.matching_commands(custom))
+    update!(custom, KeyEvent(:ctrl, 'u'))
+    @test !custom.menu
+    @test Tachikoma.text(custom.input) == ""
+    Tachikoma.set_text!(custom.input, "plain text")
+    update!(custom, KeyEvent(:tab))
+    @test Tachikoma.text(custom.input) == "plain text"
+end
+
 @testset "Terminal navigation" begin
     app = App(default_kernel())
     update!(app, KeyEvent('/'))
