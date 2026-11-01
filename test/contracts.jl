@@ -256,3 +256,40 @@ end
     @test cleared_accounting.context_tokens === nothing
     @test merge(cleared_accounting, (context_tokens=accounting.context_tokens,)) == accounting
 end
+
+@testset "JSON-RPC peer keyword construction and isolated mutable defaults" begin
+    legacy_input, legacy_output = IOBuffer(), IOBuffer()
+    legacy = JuliaForever2.JsonRpcPeer(legacy_input, legacy_output)
+    @test legacy isa JuliaForever2.JsonRpcPeer{typeof(legacy_input),typeof(legacy_output)}
+    @test legacy.input === legacy_input
+    @test legacy.output === legacy_output
+    @test isnothing(legacy.on_request)
+    @test isnothing(legacy.on_notification)
+
+    input, output = IOBuffer(), IOBuffer()
+    on_request = (method, params) -> (method=method, params=params)
+    on_notification = (method, params) -> nothing
+    peer = JuliaForever2.JsonRpcPeer(; input, output, on_request, on_notification)
+    @test peer isa JuliaForever2.JsonRpcPeer{typeof(input),typeof(output)}
+    @test peer.input === input
+    @test peer.output === output
+    @test peer.on_request === on_request
+    @test peer.on_notification === on_notification
+    @test isopen(peer)
+    @test isempty(peer.buffer) && isempty(peer.pending) && isempty(peer.handlers)
+    @test isnothing(peer.reader) && isnothing(peer.reader_worker) && isnothing(peer.failure)
+    @test peer.lock !== legacy.lock
+    @test peer.write_lock !== legacy.write_lock
+    @test peer.buffer !== legacy.buffer
+    @test peer.pending !== legacy.pending
+    @test peer.handlers !== legacy.handlers
+    push!(peer.buffer, 0x42)
+    @test isempty(legacy.buffer)
+
+    callbacks = JuliaForever2.JsonRpcPeer(IOBuffer(), IOBuffer(); on_request, on_notification)
+    @test callbacks.on_request === on_request
+    @test callbacks.on_notification === on_notification
+    @test_throws UndefKeywordError JuliaForever2.JsonRpcPeer(; input)
+    @test_throws UndefKeywordError JuliaForever2.JsonRpcPeer(; output)
+    @test_throws MethodError JuliaForever2.JsonRpcPeer(; input, output, unsupported=true)
+end
