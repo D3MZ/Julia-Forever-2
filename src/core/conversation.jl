@@ -17,7 +17,11 @@ end
 UsageReport() = UsageReport(nothing, nothing, nothing)
 usage_tokens(value::Integer) = value isa Bool || value < 0 || value > typemax(Int) ? nothing : Int(value)
 usage_tokens(value) = nothing
-usage_cost(value::Real) = value isa Bool || !isfinite(value) || value < 0 ? nothing : Float64(value)
+function usage_cost(value::Real)
+    value isa Bool && return nothing
+    normalized = Float64(value)
+    return isfinite(normalized) && normalized >= 0 ? normalized : nothing
+end
 usage_cost(value) = nothing
 normalize_usage(data) = UsageReport()
 normalize_usage(data::UsageReport) = data
