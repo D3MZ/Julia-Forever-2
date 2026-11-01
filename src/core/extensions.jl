@@ -64,7 +64,16 @@ function extension_chain(scope::ExtensionScope)
     end
     return chain
 end
-Base.isopen(scope::ExtensionScope) = lock(() -> all(item -> !item.closed, extension_chain(scope)), scope.lock)
+function Base.isopen(scope::ExtensionScope)
+    return lock(scope.lock) do
+        current = scope
+        while !isnothing(current)
+            current.closed && return false
+            current = current.parent
+        end
+        return true
+    end
+end
 
 function scope_admits(scope::ExtensionScope, listener_scope::ExtensionScope)
     isnothing(listener_scope.parent) && return true
