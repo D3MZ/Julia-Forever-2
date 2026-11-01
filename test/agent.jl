@@ -339,3 +339,32 @@ end
     close(owned)
     @test cleaned[] == 1
 end
+
+
+@testset "Unowned event invocations do not schedule empty cleanup workers" begin
+    scope = JuliaForever2.ExtensionScope()
+    JuliaForever2.on!(_ -> nothing, scope, :no_cleanup)
+
+    function release_batch!(invocations)
+        for invocation in invocations
+            JuliaForever2.release!(invocation)
+        end
+        return nothing
+    end
+
+    # Compile and exercise the same release method before recording allocations.
+    warm = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:8]
+    release_batch!(warm)
+
+    # Acquisition and test setup do not contribute to the release measurement.
+    invocations = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:100]
+    @test all(invocation -> isnothing(invocation.retention), invocations)
+    @test scope.users == 100
+    GC.gc()
+    bytes = @allocated release_batch!(invocations)
+    println("Unowned listener release allocations for 100 warmed invocations: ",
+        bytes, " bytes; predefined target <= 32768 bytes")
+    @test bytes <= 32_768
+    @test scope.users == 0
+    close(scope)
+end
