@@ -1,3 +1,5 @@
+using Downloads
+
 struct ModelSpec{M}
     provider::Symbol
     id::String
@@ -120,3 +122,111 @@ function delete_model_catalog!(store::MemoryModelStore, provider::Symbol)
     end
     return nothing
 end
+
+
+"""Accept only positive, representable model limits; unknown metadata is not guessed."""
+model_limit(value) = nothing
+model_limit(value::Bool) = nothing
+model_limit(value::Integer) = 0 < value <= typemax(Int) ? Int(value) : nothing
+model_limit(metadata::AbstractDict, key::String) = model_limit(get(metadata, key, nothing))
+model_limit(metadata, key::String) = nothing
+model_context_window(model::ModelSpec) = model_limit(model.metadata, "contextWindow")
+model_output_limit(model::ModelSpec) = model_limit(model.metadata, "maxTokens")
+model_context_window(provider::ModelProvider) = model_context_window(provider.model)
+model_output_limit(provider::ModelProvider) = model_output_limit(provider.model)
+
+"""Resolve a selected model's cached metadata without requiring a network request."""
+selected_model(provider) = hasproperty(provider, :model) &&
+    getproperty(provider, :model) isa ModelSpec ? getproperty(provider, :model) : nothing
+selected_model(provider::ModelProvider) = provider.model
+selected_model(provider::OpenRouterProvider) = provider_model(:openrouter, provider.model)
+selected_model(provider::CodexProvider) = provider_model(:codex, provider.model)
+function selected_model(provider::OpenAIProvider)
+    model = isempty(provider.model) ?
+        lock(() -> provider.catalog.selected_model, provider.catalog.lock) : provider.model
+    isempty(model) ? nothing : provider_model(:chatgpt, model)
+end
+
+model_context_window(provider) = model_context_window(selected_model(provider))
+model_context_window(::Nothing) = nothing
+model_output_limit(provider) = model_output_limit(selected_model(provider))
+model_output_limit(::Nothing) = nothing
+
+pi_catalog_provider(::Val{provider}) where {provider} = String(provider)
+pi_catalog_provider(::Val{:chatgpt}) = "openai-codex"
+pi_catalog_provider(::Val{:codex}) = "openai-codex"
+pi_catalog_provider(provider::Symbol) = pi_catalog_provider(Val(provider))
+
+"""Explicitly refresh a named provider's metadata; invalid catalogs do not replace a good cache."""
+function refresh_pi_model_catalog!(registry::ProviderRegistry, provider::Symbol; fetcher=fetch_pi_catalog)
+    descriptor = provider_descriptor(registry, provider)
+    if isnothing(descriptor)
+        (ok=false, reason="Unknown provider", count=0)
+    else
+        url = "https://pi.dev/api/models/providers/" * pi_catalog_provider(provider)
+        catalog = pi_model_catalog(Base.invokelatest(fetcher, url), provider)
+        if isnothing(catalog)
+            (ok=false, reason="Invalid model catalog", count=0)
+        elseif !(descriptor.create isa ProviderFactory)
+            (ok=false, reason="Provider has no model factory", count=0)
+        else
+            factory = descriptor.create
+            existing = catalog_models(factory)
+            preserved = ModelSpec[model for model in existing if
+                !any(remote -> remote.kind == model.kind && remote.id == model.id, catalog)]
+            updated = vcat(preserved, catalog)
+            replacement = ProviderFactory(factory.create;
+                models=() -> copy(updated), select=factory.select)
+            register_provider!(registry, ProviderDescriptor(descriptor, replacement))
+            (ok=true, reason="", count=length(catalog))
+        end
+    end
+end
+refresh_pi_model_catalog!(provider::Symbol; kwargs...) =
+    refresh_pi_model_catalog!(DEFAULT_PROVIDER_REGISTRY, provider; kwargs...)
+
+function fetch_pi_catalog(url::AbstractString)
+    output = IOBuffer()
+    response = Downloads.request(url; output, timeout=15, throw=false)
+    response isa Downloads.Response && response.status == 200 ? String(take!(output)) : ""
+end
+
+pi_catalog_rows(data::AbstractVector) = data
+pi_catalog_rows(data::AbstractDict) =
+    haskey(data, "models") ? pi_catalog_rows(data["models"]) : pi_catalog_map(data)
+pi_catalog_rows(data) = nothing
+
+"""Accept both Pi's id-keyed model catalogs and the array-shaped model list."""
+function pi_catalog_map(data::AbstractDict)
+    all(value -> value isa AbstractDict, values(data)) ?
+        [merge(Dict{String,Any}("id" => String(id)), entry)
+            for (id, entry) in data if id isa AbstractString] : nothing
+end
+
+pi_catalog_entry(provider, entry) = nothing
+function pi_catalog_entry(provider::Symbol, entry::AbstractDict)
+    id = get(entry, "id", nothing)
+    api = get(entry, "api", "")
+    model_type = get(entry, "type", "chat")
+    valid_limits = all(name -> !haskey(entry, name) ||
+        !isnothing(model_limit(entry, name)), ("contextWindow", "maxTokens"))
+    if id isa AbstractString && !isempty(id) && api isa AbstractString &&
+            model_type isa AbstractString && valid_limits
+        ModelSpec(provider, String(id); api, kind=Symbol(model_type),
+            metadata=deepcopy(entry))
+    else
+        nothing
+    end
+end
+
+function pi_model_catalog(text::AbstractString, provider::Symbol)
+    rows = pi_catalog_rows(parse_json(text))
+    if isnothing(rows)
+        nothing
+    else
+        models = [pi_catalog_entry(provider, row) for row in rows]
+        isempty(models) || any(isnothing, models) ?
+            nothing : ModelSpec[model for model in models]
+    end
+end
+pi_model_catalog(data, provider::Symbol) = nothing

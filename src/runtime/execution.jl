@@ -36,10 +36,10 @@ finish(outcome) = outcome
 advance!(session::Session, context::ExecutionContext) = cancelled(context) ? stopped_result() : consume!(session, request(session, context), context)
 
 function request(session::Session, context::ExecutionContext)
-    messages = history_snapshot(session).messages
     with_component(session.kernel, :provider) do provider
+        maybe_compact!(session, provider, context)
         protocol = operation_protocol(session.definition, provider)
-        Base.invokelatest(respond_model, provider, model_request(protocol, messages, session), session, context)
+        Base.invokelatest(request_with_compaction, session, provider, protocol, context)
     end
 end
 
@@ -165,13 +165,14 @@ function record!(session::Session, action, context::ExecutionContext)
     append_message!(session, Message(:code_result, result.text; metadata=result))
     result
 end
-child_session(session::Session, definition::AgentDefinition, isolated) = Session(definition; messages=empty(session.conversation.messages), working_directory=working_directory(session), parent_id=session.runtime.id, root_id=session.runtime.root_id)
+child_session(session::Session, definition::AgentDefinition, isolated) = Session(definition; messages=empty(session.conversation.messages), working_directory=working_directory(session), parent_id=session.runtime.id, root_id=session.runtime.root_id, compaction=session.runtime.compaction_settings)
 
 function child_session(session::Session, ::Nothing, isolated::Bool)
     kernel = isolated ? fork_kernel(session.kernel) : session.kernel
     return Session(kernel; executor=fork_executor(session.runtime.executor), messages=empty(session.conversation.messages),
         definition=session.definition, owns_kernel=isolated, working_directory=working_directory(session),
-        parent_id=session.runtime.id, root_id=session.runtime.root_id)
+        parent_id=session.runtime.id, root_id=session.runtime.root_id,
+        compaction=session.runtime.compaction_settings)
 end
 
 """Spawn a child; isolated=true snapshots composition, while an explicit definition replaces it."""

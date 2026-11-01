@@ -10,7 +10,7 @@ using JuliaForever2: AuthFlow, active_auth, cancel_auth!, config_dir, default_ke
     provider_id, provider_detail, configured_provider, save_provider!, usage_label,
     provider_settings_snapshot, provider_selection_snapshot, component_snapshot,
     ResponseProgress, operation_id, cancelled,
-    TaskHandle, submit_turn!, submit_evaluation!, cancel!, with_component,
+    TaskHandle, submit_turn!, submit_evaluation!, submit_compaction!, cancel!, with_component,
     append_message!, clear_history!, replace_message!, history_snapshot
 using Tachikoma
 using CommonMark

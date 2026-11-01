@@ -846,3 +846,26 @@ end
         @test actual == reference_markdown_wrap(spans, width)
     end
 end
+
+
+@testset "Manual compaction slash command uses supervised session operations" begin
+    kernel = Kernel()
+    install!(kernel, ComponentSpec(:provider,
+        (messages, session) -> Reply(:answer, "Condensed terminal context")))
+    session = Session(kernel; compaction=JuliaForever2.CompactionSettings(;
+        keep_recent_tokens=0), messages=Message[
+            Message(:user, "Older task"), Message(:assistant, "Previous result"),
+            Message(:user, "Current task")])
+    app = Terminal.App(session)
+    @test any(command -> command.name == "compact", app.commands)
+    Terminal.compact_command!(app, "Keep the current goal")
+    handle = app.operations.active
+    @test handle isa TaskHandle
+    @test fetch(handle).ok
+    Terminal.operation_finished!(app, handle)
+    @test [message.content for message in JuliaForever2.context_messages(session)] ==
+        ["Condensed terminal context", "Current task"]
+    @test length(JuliaForever2.history_snapshot(session).messages) == 3
+    @test !app.busy
+    Terminal.finish_shutdown!(app)
+end

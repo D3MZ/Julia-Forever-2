@@ -6,6 +6,7 @@ Base.@kwdef mutable struct ModelCatalog
     lock::ReentrantLock = ReentrantLock()
     models::Vector{String} = String[]
     expires_at::Float64 = 0.0
+    selected_model::String = ""
 end
 
 struct OpenAIProvider{F,G,P}
@@ -111,7 +112,14 @@ function select(provider::OpenAIProvider, request, context, headers, catalog)
         provider_failure("No ChatGPT models are available for this account.")
     else
         model = isempty(provider.model) ? first(catalog.models) : provider.model
-        model in catalog.models ? respond(provider, request, context, headers, model) : provider_failure("The configured ChatGPT model is not available for this account.")
+        if model in catalog.models
+            lock(provider.catalog.lock) do
+                provider.catalog.selected_model = model
+            end
+            respond(provider, request, context, headers, model)
+        else
+            provider_failure("The configured ChatGPT model is not available for this account.")
+        end
     end
 end
 

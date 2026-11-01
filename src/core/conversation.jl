@@ -30,15 +30,23 @@ UsageReport(data::AbstractDict) = canonical(get(data, "prompt_tokens", get(data,
 normalize_usage(data) = UsageReport(data)
 
 
+"""A compacted request view over an immutable prefix of the original conversation."""
+struct CompactionEntry
+    summary::String
+    first_kept::Int
+end
+
 mutable struct Conversation{H}
     messages::H
     lock::ReentrantLock
     usage::Usage
     revision::UInt
     changes::Vector{Int}
+    compaction::Union{Nothing,CompactionEntry}
 end
 
-Conversation(messages=Message[]) = Conversation(messages, ReentrantLock(), Usage(), UInt(0), Int[])
+Conversation(messages=Message[]; compaction=nothing) =
+    Conversation(messages, ReentrantLock(), Usage(), UInt(0), Int[], compaction)
 
 function changed_history!(conversation::Conversation, index::Int)
     conversation.revision += UInt(1)
@@ -57,6 +65,7 @@ end
 function clear_history!(conversation::Conversation)
     lock(conversation.lock) do
         empty!(conversation.messages)
+        conversation.compaction = nothing
         changed_history!(conversation, 1)
     end
     return nothing
@@ -65,6 +74,9 @@ end
 function replace_message!(conversation::Conversation, index::Integer, message)
     lock(conversation.lock) do
         conversation.messages[index] = message
+        if !isnothing(conversation.compaction) && index < conversation.compaction.first_kept
+            conversation.compaction = nothing
+        end
         changed_history!(conversation, Int(index))
     end
     return message
@@ -81,6 +93,39 @@ end
 function history_snapshot(conversation::Conversation, known_revision=nothing)
     lock(conversation.lock) do
         known_revision == conversation.revision ? nothing : snapshot(conversation, known_revision)
+    end
+end
+
+"""Return the full retained history and its active compaction marker atomically."""
+function compaction_snapshot(conversation::Conversation)
+    lock(conversation.lock) do
+        conversation.compaction
+    end
+end
+
+"""Project only summary plus unsummarized turns to the model; retain archival messages."""
+function context_messages(conversation::Conversation)
+    lock(conversation.lock) do
+        entry = conversation.compaction
+        if isnothing(entry)
+            copy(conversation.messages)
+        else
+            vcat(Message[Message(:user, entry.summary)],
+                conversation.messages[entry.first_kept:end])
+        end
+    end
+end
+
+"""Install a summary only if no messages or other compaction changed during generation."""
+function commit_compaction!(conversation::Conversation, revision::UInt, entry::CompactionEntry)
+    lock(conversation.lock) do
+        if conversation.revision == revision
+            conversation.compaction = entry
+            changed_history!(conversation, 1)
+            true
+        else
+            false
+        end
     end
 end
 
