@@ -1,13 +1,11 @@
-mutable struct Usage
-    input_tokens::Int
-    output_tokens::Int
-    cost::Float64
-    reported::Bool
-    cost_known::Bool
-    partial::Bool
+Base.@kwdef mutable struct Usage
+    input_tokens::Int = 0
+    output_tokens::Int = 0
+    cost::Float64 = 0.0
+    reported::Bool = false
+    cost_known::Bool = true
+    partial::Bool = false
 end
-
-Usage() = Usage(0, 0, 0.0, false, true, false)
 
 usage_tokens(value) = nothing
 usage_tokens(::Bool) = nothing
@@ -21,14 +19,14 @@ struct UsageReport
     input_tokens::Union{Nothing,Int}
     output_tokens::Union{Nothing,Int}
     cost::Union{Nothing,Float64}
-
-    UsageReport(input, output, cost) = new(usage_tokens(input), usage_tokens(output), usage_cost(cost))
 end
 
 UsageReport() = UsageReport(nothing, nothing, nothing)
 UsageReport(report::UsageReport) = report
 UsageReport(data) = UsageReport()
-UsageReport(data::AbstractDict) = UsageReport(get(data, "prompt_tokens", get(data, "input_tokens", nothing)), get(data, "completion_tokens", get(data, "output_tokens", nothing)), get(data, "cost", nothing))
+canonical(input, output, cost) = UsageReport(usage_tokens(input), usage_tokens(output), usage_cost(cost))
+canonical(report::UsageReport) = canonical(report.input_tokens, report.output_tokens, report.cost)
+UsageReport(data::AbstractDict) = canonical(get(data, "prompt_tokens", get(data, "input_tokens", nothing)), get(data, "completion_tokens", get(data, "output_tokens", nothing)), get(data, "cost", nothing))
 normalize_usage(data) = UsageReport(data)
 
 
@@ -113,6 +111,7 @@ function accumulate!(usage::Usage, cost::Float64)
 end
 
 function record_usage!(conversation::Conversation, report::UsageReport)
+    report = canonical(report)
     lock(conversation.lock) do
         accumulate!(accumulate!(conversation.usage, report.input_tokens, report.output_tokens), report.cost)
     end

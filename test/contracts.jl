@@ -52,11 +52,12 @@ end
     @test JuliaForever2.AgentDecision(Reply(:unsupported, "unused")) isa Failure
 end
 
-@testset "Usage report construction establishes canonical values" begin
+@testset "Usage reports preserve provider fields until accounting" begin
     report = JuliaForever2.UsageReport(-2, 4, Inf)
-    @test isnothing(report.input_tokens)
+    @test report.input_tokens == -2
     @test report.output_tokens == 4
-    @test isnothing(report.cost)
+    @test report.cost == Inf
+    @test JuliaForever2.normalize_usage(report) === report
     conversation = Conversation()
     JuliaForever2.record_usage!(conversation, report)
     accounting = JuliaForever2.usage_snapshot(conversation)
@@ -67,6 +68,18 @@ end
     @test JuliaForever2.UsageReport(valid) === valid
     @test JuliaForever2.UsageReport(Dict("input_tokens" => 2, "output_tokens" => 4, "cost" => 0.25)) === valid
     @test JuliaForever2.UsageReport(nothing) === JuliaForever2.UsageReport()
+    @test JuliaForever2.UsageReport(-4, 3, 0.25).input_tokens == -4
+    @test JuliaForever2.UsageReport(2, 3, -0.5).cost == -0.5
+    dictionary = Dict("input_tokens" => -2, "output_tokens" => 4, "cost" => Inf)
+    normalized = JuliaForever2.normalize_usage(dictionary)
+    @test isnothing(normalized.input_tokens)
+    @test normalized.output_tokens == 4
+    @test isnothing(normalized.cost)
+    malformed = Dict("input_tokens" => "invalid", "output_tokens" => 4, "cost" => true)
+    parsed = JuliaForever2.UsageReport(malformed)
+    @test isnothing(parsed.input_tokens)
+    @test parsed.output_tokens == 4
+    @test isnothing(parsed.cost)
 end
 
 @testset "Constructors compose definitions and independent profiles" begin
@@ -134,4 +147,89 @@ JuliaForever2.agent_decision(response::CustomDecisionResponse) = Answer(response
     @test JuliaForever2.AgentDecision(response) == Answer("external")
     @test JuliaForever2.AgentDecision(Answer("identity")) == Answer("identity")
     @test JuliaForever2.AgentDecision(RunJulia("1 + 1")).action.source == "1 + 1"
+end
+
+@testset "Keyword defaults preserve constructor APIs and fresh state" begin
+    usage = JuliaForever2.Usage()
+    @test usage.input_tokens == 0
+    @test usage.cost_known
+    @test JuliaForever2.Usage(input_tokens=7, partial=true).input_tokens == 7
+
+    first_kernel, second_kernel = Kernel(), Kernel()
+    @test first_kernel.entries !== second_kernel.entries
+    @test Kernel(closed=true).closed
+    first_plugins, second_plugins = JuliaForever2.PluginRegistry(), JuliaForever2.PluginRegistry()
+    @test first_plugins.plugins !== second_plugins.plugins
+    first_providers, second_providers = JuliaForever2.ProviderRegistry(), JuliaForever2.ProviderRegistry()
+    @test first_providers.descriptors !== second_providers.descriptors
+
+    first_catalog, second_catalog = JuliaForever2.ModelCatalog(), JuliaForever2.ModelCatalog()
+    @test first_catalog.models !== second_catalog.models
+    @test JuliaForever2.ModelCatalog(expires_at=4.5).expires_at == 4.5
+    first_store, second_store = JuliaForever2.MemoryModelStore(), JuliaForever2.MemoryModelStore()
+    @test first_store.entries !== second_store.entries
+
+    factory = JuliaForever2.ProviderFactory(identity)
+    @test isempty(factory.models())
+    @test isnothing(factory.select())
+    @test JuliaForever2.ProviderFactory(; create=identity).create === identity
+
+    provider = (messages, session) -> Answer("ok")
+    definition = AgentDefinition(provider; wrappers=[identity])
+    @test definition.wrappers == (identity,)
+    @test definition.executor_factory === JuliaForever2.JuliaExecutor
+    @test definition.protocol == JuliaForever2.provider_protocol(provider)
+    @test AgentDefinition(; provider, protocol=:custom).protocol == :custom
+
+    registration = JuliaForever2.ResourceRegistration(:example, Returns(nothing))
+    @test registration.active
+    @test registration.lock isa ReentrantLock
+    @test !JuliaForever2.ResourceRegistration(; value=:example, cleanup=Returns(nothing), active=false).active
+end
+
+@testset "Type-dispatched validation retains JSON and protocol semantics" begin
+    @test JuliaForever2.validindex(nothing)
+    @test JuliaForever2.validindex(1)
+    @test !JuliaForever2.validindex(0)
+    @test !JuliaForever2.validindex(true)
+    @test !JuliaForever2.validindex(1.0)
+
+    @test JuliaForever2.json_number(1.25)
+    @test !JuliaForever2.json_number(true)
+    @test !JuliaForever2.json_number(-0.0)
+    @test !JuliaForever2.json_number(Inf)
+    @test !JuliaForever2.json_number("1")
+    @test JuliaForever2.json_object((value=1,))
+    @test JuliaForever2.json_object(Dict("value" => 1))
+    @test !JuliaForever2.json_object([1])
+    @test JuliaForever2.json_scalar_equal(1, 1.0)
+    @test JuliaForever2.json_scalar_equal(true, true)
+    @test !JuliaForever2.json_scalar_equal(true, 1)
+    @test !JuliaForever2.json_scalar_equal(1, true)
+    @test JuliaForever2.entry_patch_equal(1, 1.0)
+    @test !JuliaForever2.entry_patch_equal(true, 1)
+
+    @test JuliaForever2.JSONRPCTransport.rpc_id("request")
+    @test JuliaForever2.JSONRPCTransport.rpc_id(2)
+    @test !JuliaForever2.JSONRPCTransport.rpc_id(true)
+    @test !JuliaForever2.JSONRPCTransport.rpc_id(nothing)
+    @test isnothing(JuliaForever2.JSONRPCTransport.rpc_error_code(false))
+    @test JuliaForever2.JSONRPCTransport.rpc_error_code(3) == 3
+    @test JuliaForever2.JSONRPCTransport.rpc_error_message(4) == "JSON-RPC error"
+
+    @test JuliaForever2.lifetime(120)
+    @test !JuliaForever2.lifetime(true)
+    @test !JuliaForever2.lifetime(0)
+    @test !JuliaForever2.lifetime("120")
+
+    metadata = Dict("family" => "example")
+    @test JuliaForever2.model_metadata_value(metadata) === metadata
+    @test isempty(JuliaForever2.model_metadata_value(nothing))
+    @test JuliaForever2.model_request_options(metadata, nothing, nothing) === metadata
+    @test JuliaForever2.model_request_options((model, request) -> (dynamic=true,), nothing, nothing) == (dynamic=true,)
+
+    @test isnothing(JuliaForever2.codex_completed_usage("other"))
+    @test isnothing(JuliaForever2.codex_completed_usage(Dict("type" => "turn.started")))
+    completed = JuliaForever2.codex_completed_usage(Dict("type" => "turn.completed", "usage" => Dict("input_tokens" => 7)))
+    @test completed.input_tokens == 7
 end

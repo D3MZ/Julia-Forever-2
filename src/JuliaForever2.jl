@@ -19,6 +19,7 @@ public ModelSpec, ProviderFactory, ModelProvider, respond_model, select_model, p
 public HTTPModelBackend, OpenAIChatProtocol, AnthropicMessagesProtocol, StreamedCompletion
 public MemoryModelStore, read_model_catalog, write_model_catalog!, delete_model_catalog!
 public provider_id, provider_from_name, configured_provider, provider_name, provider_detail, usage_label, main
+public ProviderIdentity, provider_identity
 public component_snapshot, provider_selection_snapshot, provider_settings_snapshot, select_provider!
 public ResponseProgress, protocol_progress, emit_protocol_progress!, operation_id
 public usage_snapshot, model_request, own_resource!
