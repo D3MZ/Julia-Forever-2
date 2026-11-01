@@ -1215,6 +1215,10 @@ function session_titles_result(input)
             @test session_api_request!(api, "session/title/rename",
                 Dict("session" => "named", "title" => input["rename"])) isa RpcError
         end
+        close(titles)
+        @test isnothing(JuliaForever2.session_title(titles, api.sessions["named"]))
+        @test isnothing(JuliaForever2.rename_session_title!(titles, api.sessions["named"], "retired"))
+        @test isnothing(JuliaForever2.refresh_session_title!(titles, api.sessions["named"]))
         close(api)
     end
     return normalize(Dict("normalized" => normalized, "fallback" => fallback, "renamed" => renamed))
