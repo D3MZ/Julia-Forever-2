@@ -11,6 +11,7 @@ const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), St
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
+CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -664,6 +665,33 @@ function tool_arguments_result(input)
     return normalize(Dict("violations" => violations, "accepted" => actual.ok, "schema" => exposed))
 end
 
+function tool_outputs_result(input)
+    schema = JuliaForever2.CheckedJSONSchema(input["schema"])
+    called = Ref(0)
+    scope = JuliaForever2.ExtensionScope()
+    specification = JuliaForever2.ToolSpec(:checked_output, Dict("type" => "object"), arguments -> begin
+        called[] += 1
+        input["value"]
+    end; output_schema=schema)
+    registration = JuliaForever2.register_tool!(scope, specification)
+    registration.ok || error(registration.reason)
+    exposed = only(JuliaForever2.tools_snapshot(scope)).schema
+    exposed == Dict("type" => "object") || error("Output policy leaked into the model argument schema")
+    actual = JuliaForever2.invoke_tool!(scope, :checked_output, Dict{String,Any}())
+    violations = sort!(JuliaForever2.tool_output_violations(schema, input["value"]))
+    close(scope)
+    called[] == 1 || error("Checked output prevented tool execution")
+    actual.ok == isempty(violations) || error("Tool result disagreed with checked output admission")
+    if actual.ok
+        actual.value == input["value"] || error("Checked output changed a valid result")
+    else
+        isnothing(actual.value) || error("Invalid tool output escaped in the result value")
+        startswith(actual.text, "Invalid tool result: ") || error("Invalid output was not diagnosed")
+    end
+    return normalize(Dict("violations" => violations, "accepted" => actual.ok,
+        "schema" => JuliaForever2.tool_schema_definition(schema)))
+end
+
 function session_query_result(input)
     return mktempdir() do directory
         matches = if get(input, "source", "stored") == "live"
@@ -743,7 +771,7 @@ end
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
-            ("tool_arguments", tool_arguments_result),
+            ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),
