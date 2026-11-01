@@ -556,6 +556,7 @@ tool_activation(predicate, context::ToolActivationContext) = Base.invokelatest(p
 function Base.close(selection::ToolSet)
     lock(selection.scope.lock) do
         selection.closed = true
+        empty!(selection.entries)
     end
     return nothing
 end
