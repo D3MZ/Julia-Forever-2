@@ -41,6 +41,7 @@ public SessionStore, save_session!, load_session, session_store_plugin, session_
 public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, search_history, session_names
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer
 public start_web_server, web_server_plugin, web_url, web_launch_url
+public UpdateCheck, installation_root, check_for_updates, update_available, apply_update!, auto_updates_enabled, set_auto_updates!
 
 include("kernel.jl")
 include("agent.jl")
@@ -60,6 +61,7 @@ include("runtime/backends.jl")
 include("core/profile_patches.jl")
 include("auth.jl")
 include("providers.jl")
+include("application/updates.jl")
 include("application/presentation.jl")
 
 """Create a session retaining the currently active plugin composition."""

@@ -12,7 +12,9 @@ const UNIT_TEST_FILES = [
     "providers.jl",
     "adapters_architecture.jl",
     "auth.jl",
+    "updates.jl",
     "smoke.jl",
+    "update_tui.jl",
 ]
 const DIFFERENTIAL_TEST_FILES = ["dsh_differential.jl", "dsh_runtime_differential.jl", "pi_parity.jl"]
 const TEST_FILES = vcat(UNIT_TEST_FILES, DIFFERENTIAL_TEST_FILES, ["lint_tests.jl", "aqua.jl", "jet.jl"])
@@ -28,7 +30,9 @@ const TEST_GROUPS = Dict(
     "streaming" => ["streaming.jl"],
     "adapters" => ["adapters_architecture.jl"],
     "core" => ["kernel.jl", "agent.jl", "contracts.jl", "architecture.jl", "architecture_contracts.jl"],
-    "tui" => ["tui.jl"],
+    "tui" => ["tui.jl", "update_tui.jl"],
+    "updates" => ["updates.jl"],
+    "update-tui" => ["tui.jl", "update_tui.jl"],
     "providers" => ["providers.jl", "adapters_architecture.jl"],
     "auth" => ["auth.jl"],
     "smoke" => ["smoke.jl"],

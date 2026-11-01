@@ -24,6 +24,16 @@ Base.@kwdef mutable struct SettingsState
 end
 SettingsState(directory::AbstractString, registry::ProviderRegistry) = SettingsState(; directory=String(directory), registry)
 
+Base.@kwdef mutable struct UpdateState
+    automatic::Bool = false
+    latest::Union{UpdateCheck,Nothing} = nothing
+    checking::Bool = false
+    installing::Bool = false
+    requested_install::Bool = false
+    monitor::Union{Task,Nothing} = nothing
+end
+UpdateState(directory::AbstractString) = UpdateState(; automatic=auto_updates_enabled(directory))
+
 Base.@kwdef mutable struct TranscriptState
     width::Int = 0
     revision::UInt = typemax(UInt)
@@ -61,6 +71,7 @@ mutable struct App{S<:Session} <: Model
     commands::Vector{CommandSpec}
     event_handlers::Dict{Symbol,Vector{EventHandler}}
     settings::SettingsState
+    updates::UpdateState
     transcript::TranscriptState
     operations::OperationState
 end
