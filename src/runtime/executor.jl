@@ -26,4 +26,3 @@ execute!(executor::JuliaExecutor, code::AbstractString, ::ExecutionContext) =
 
 execute!(executor::JuliaExecutor, action::RunJulia, context::ExecutionContext) =
     execute!(executor, action.source, context)
-

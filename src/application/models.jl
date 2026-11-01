@@ -32,14 +32,14 @@ catalog_models(factory) = ModelSpec[]
 
 """Read last-known model metadata; catalog callbacks must not perform network or authentication work."""
 function provider_models(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY; provider=nothing, kind=:chat)
-    descriptors = provider_descriptors(registry)
+    descriptors = isnothing(provider) ? provider_descriptors(registry) :
+        (provider_descriptor(registry, Symbol(provider)),)
     result = ModelSpec[]
     for descriptor in descriptors
-        if isnothing(provider) || descriptor.id == Symbol(provider)
-            for model in catalog_models(descriptor.create)
-                if kind == :all || model.kind == kind
-                    push!(result, model)
-                end
+        isnothing(descriptor) && continue
+        for model in catalog_models(descriptor.create)
+            if kind == :all || model.kind == kind
+                push!(result, model)
             end
         end
     end
@@ -52,6 +52,19 @@ function provider_model(registry::ProviderRegistry, provider, id::AbstractString
     index = findfirst(model -> model.id == id, models)
     return isnothing(index) ? nothing : models[index]
 end
+"""Resolve one named provider's model without snapshotting unrelated provider descriptors."""
+function provider_model(registry::ProviderRegistry, provider::Union{Symbol,AbstractString},
+        id::AbstractString; kind=:chat)
+    descriptor = provider_descriptor(registry, Symbol(provider))
+    isnothing(descriptor) && return nothing
+    for model in catalog_models(descriptor.create)
+        if model.id == id && (kind == :all || model.kind == kind)
+            return model
+        end
+    end
+    return nothing
+end
+
 provider_model(provider, id::AbstractString; kwargs...) =
     provider_model(DEFAULT_PROVIDER_REGISTRY, provider, id; kwargs...)
 

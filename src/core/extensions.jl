@@ -2,18 +2,44 @@ abstract type AbstractEventListener end
 abstract type AbstractToolEntry end
 abstract type AbstractToolGuard end
 
-struct ToolSpec{S,F}
+struct ToolSpec{S,F,O,P,R}
     name::Symbol
     schema::S
     call::F
     description::String
+    output_schema::O
+    concurrency_policy::P
+    output_renderer::R
 end
 
 """Describe a tool independently of its executor, provider schema, or presentation protocol."""
-ToolSpec(name, schema, callback; description="") = ToolSpec(Symbol(name), schema, callback, String(description))
-ToolSpec(name, callback; schema=(type="object",), description="") = ToolSpec(name, schema, callback; description)
+ToolSpec(name, schema, callback; description="", output_schema=nothing, concurrency_safe=false, render_output=nothing) =
+    ToolSpec(Symbol(name), schema, callback, String(description), output_schema, concurrency_safe, render_output)
+ToolSpec(name::Symbol, schema, callback, description::AbstractString) =
+    ToolSpec(name, schema, callback, String(description), nothing, false, nothing)
+ToolSpec(name::Symbol, schema, callback, description::String, output_schema) =
+    ToolSpec(name, schema, callback, description, output_schema, false, nothing)
+ToolSpec(name::Symbol, schema, callback, description::String, output_schema, concurrency_policy) =
+    ToolSpec(name, schema, callback, description, output_schema, concurrency_policy, nothing)
+ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing, concurrency_safe=false, render_output=nothing) =
+    ToolSpec(name, schema, callback; description, output_schema, concurrency_safe, render_output)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}, schema; kwargs...) = ToolSpec(name, schema, callback; kwargs...)
 ToolSpec(callback::Function, name::Union{Symbol,AbstractString}; kwargs...) = ToolSpec(name, callback; kwargs...)
+
+"""A tool declares parallel safety explicitly; plugins can dispatch on their policy type."""
+tool_concurrency_safe(policy::Bool, arguments) = policy
+tool_concurrency_safe(policy, arguments) = Base.invokelatest(policy, arguments)
+tool_concurrency_safe(spec::ToolSpec, arguments) =
+    tool_concurrency_safe(spec.concurrency_policy, arguments)
+
+"""Approval requests are values returned by tool guards; the authority remains a replaceable Julia service."""
+abstract type AbstractToolApprovalRequest end
+
+struct ToolApprovalRequest <: AbstractToolApprovalRequest
+    reason::Union{Nothing,String}
+end
+
+ToolApprovalRequest() = ToolApprovalRequest(nothing)
 
 struct ToolRestriction
     allow::Union{Nothing,Set{Symbol}}
@@ -138,15 +164,20 @@ function Base.close(scope::ExtensionScope)
         end
         (children, resources=extension_resources!(scope))
     end
+    # Empty scopes are common during streaming. No children or owned resources
+    # means there is nothing for a cleanup task to execute.
+    isempty(retired.children) && isempty(retired.resources) && return nothing
     failures = Task[]
     for child in retired.children
         worker = spawn_cleanup(() -> close(child))
         wait(worker; throw=false)
         istaskfailed(worker) && push!(failures, worker)
     end
-    worker = spawn_cleanup(() -> dispose_extension_resources!(retired.resources))
-    wait(worker; throw=false)
-    istaskfailed(worker) && push!(failures, worker)
+    if !isempty(retired.resources)
+        worker = spawn_cleanup(() -> dispose_extension_resources!(retired.resources))
+        wait(worker; throw=false)
+        istaskfailed(worker) && push!(failures, worker)
+    end
     isempty(failures) || fetch(first(failures))
     return nothing
 end
@@ -247,9 +278,15 @@ function release!(invocation::EventInvocation)
         empty!(invocation.scopes)
         pending
     end
+    isempty(resources) && isnothing(invocation.retention) && return nothing
     failures = Task[]
-    for cleanup in (() -> dispose_extension_resources!(resources), () -> isnothing(invocation.retention) || release!(invocation.retention))
-        worker = spawn_cleanup(cleanup)
+    if !isempty(resources)
+        worker = spawn_cleanup(() -> dispose_extension_resources!(resources))
+        wait(worker; throw=false)
+        istaskfailed(worker) && push!(failures, worker)
+    end
+    if !isnothing(invocation.retention)
+        worker = spawn_cleanup(() -> release!(invocation.retention))
         wait(worker; throw=false)
         istaskfailed(worker) && push!(failures, worker)
     end
@@ -390,6 +427,11 @@ end
 """Dispatch scoped callbacks with synchronous, bail, serial, parallel, or continuation composition."""
 function dispatch_event!(scope::ExtensionScope, name::Symbol, arguments...; mode::Symbol=:emit)
     invocations = event_invocations(scope, name)
+    # The empty dispatch is common during streaming and needs no worker or cleanup.
+    # Preserve waterfall's terminal continuation and unsupported mode errors.
+    if isempty(invocations) && mode in (:emit, :bail, :serial, :parallel)
+        return nothing
+    end
     worker = spawn_scoped(() -> dispatch_listeners(Val(mode), invocations, arguments))
     wait(worker; throw=false)
     cleanup = spawn_cleanup() do
@@ -521,7 +563,7 @@ end
 function tools_snapshot(scope::ExtensionScope)
     return lock(scope.lock) do
         view = tool_view(scope)
-        return [(name=name, schema=deepcopy(view.entries[name].spec.schema),
+        return [(name=name, schema=deepcopy(tool_schema_definition(view.entries[name].spec.schema)),
             description=view.entries[name].spec.description) for name in view.names]
     end
 end
@@ -572,7 +614,7 @@ function retire_tool_guard!(entry::ToolGuardEntry)
     return nothing
 end
 
-"""Register a reversible, scope-inherited tool denial policy owned by a plugin or scope."""
+"""Register a reversible, scope-inherited tool denial or approval policy owned by a plugin."""
 function register_tool_guard!(scope::ExtensionScope, callback; owner=nothing)
     entry = ToolGuardEntry(scope, callback, owner, true)
     accepted = lock(scope.lock) do
@@ -604,12 +646,37 @@ function acquire_tool_guards(scope::ExtensionScope)
     end
 end
 
-"""Evaluate root-to-leaf guards; only `nothing` permits the next policy."""
-function first_tool_denial(invocations, call)
+"""The approval protocol is independently replaceable by dispatch on the request type."""
+tool_approval_reason(::AbstractToolApprovalRequest) = nothing
+tool_approval_reason(request::ToolApprovalRequest) = request.reason
+
+"""Resolve a request through Julia-owned scoped event listeners, never an external runtime."""
+tool_approval_outcome(scope::ExtensionScope, call, request::AbstractToolApprovalRequest) =
+    dispatch_event!(scope, :tool_approval, call, request; mode=:serial)
+
+"""Fail closed for missing, rejected, cancelled, or unsupported approval outcomes."""
+function tool_approval_denial(scope::ExtensionScope, call, request::AbstractToolApprovalRequest)
+    outcome = Base.invokelatest(tool_approval_outcome, scope, call, request)
+    outcome === :allowed_once && return nothing
+    outcome === :rejected && return "the user rejected tool \"$(call.name)\""
+    outcome === :cancelled && return "approval for tool \"$(call.name)\" was cancelled"
+    outcome === :unavailable && return "tool \"$(call.name)\" requires approval, but no approval channel is available"
+    if isnothing(outcome)
+        reason = Base.invokelatest(tool_approval_reason, request)
+        return isnothing(reason) ? "tool \"$(call.name)\" requires approval (not yet supported)" : String(reason)
+    end
+    return "Unsupported approval outcome for tool \"$(call.name)\""
+end
+
+"""Evaluate root-to-leaf tool guards; approval never grants an exemption from later guards."""
+function first_tool_denial(invocations, call, scope::ExtensionScope)
     for invocation in invocations
-        denial = Base.invokelatest(invocation.listener.callback, call)
+        decision = Base.invokelatest(invocation.listener.callback, call)
+        denial = decision isa AbstractToolApprovalRequest ?
+            tool_approval_denial(scope, call, decision) : decision
         isnothing(denial) && continue
-        return denial isa AbstractString ? String(denial) : "Tool guard must return a string or nothing"
+        return denial isa AbstractString ? String(denial) :
+            "Tool guard must return a string, an approval request, or nothing"
     end
     return nothing
 end
@@ -648,16 +715,88 @@ end
 tool_result(value::ExecutionResult) = value
 tool_result(value) = ExecutionResult(true, value isa AbstractString ? value : repr(value), value)
 
-"""Invoke a tool only after all inherited plugin-owned guards permit its call."""
-function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
+"""Request a fail-closed rejection of one completed tool call, withholding its value."""
+struct ToolResultBlock
+    reason::String
+end
+ToolResultBlock(reason::AbstractString) = ToolResultBlock(String(reason))
+
+"""Change the text shown for a completed call without modifying its successful value."""
+struct ToolResultText
+    text::String
+end
+ToolResultText(text::AbstractString) = ToolResultText(String(text))
+
+"""Select a post-execution policy through scoped events or independent multiple dispatch."""
+tool_completion_decision(scope::ExtensionScope, call, result::ExecutionResult) =
+    dispatch_event!(scope, :tool_completion, call, result; mode=:serial)
+
+apply_tool_completion(::Nothing, result::ExecutionResult) = result
+apply_tool_completion(decision::ToolResultBlock, result::ExecutionResult) =
+    ExecutionResult(false, decision.reason)
+apply_tool_completion(decision::ToolResultText, result::ExecutionResult) =
+    ExecutionResult(result.ok, decision.text, result.ok ? result.value : nothing)
+apply_tool_completion(decision, result::ExecutionResult) =
+    ExecutionResult(false, "Unsupported tool completion decision")
+
+"""Render model-visible tool text independently of the validated canonical value."""
+tool_output_text(renderer, arguments, value) = Base.invokelatest(renderer, arguments, value)
+
+"""A renderer is opt-in; its failure must not expose an otherwise valid tool value."""
+function present_tool_result(spec::ToolSpec, arguments, result::ExecutionResult)
+    isnothing(spec.output_renderer) && return result
+    worker = spawn_scoped(() -> Base.invokelatest(tool_output_text,
+        spec.output_renderer, arguments, result.value))
+    wait(worker; throw=false)
+    istaskfailed(worker) && return ExecutionResult(false, "Tool output renderer failed")
+    text = fetch(worker)
+    text isa AbstractString || return ExecutionResult(false, "Tool output renderer must return text")
+    return ExecutionResult(true, String(text), result.value)
+end
+
+"""Validate successful canonical values before rendering them for the model."""
+function checked_tool_result(spec::ToolSpec, arguments, returned)
+    result = tool_result(returned)
+    result.ok || return result
+    violations = tool_output_violations(spec.output_schema, result.value)
+    isempty(violations) || return ExecutionResult(false,
+        string("Invalid tool result: ", join(violations, "; ")))
+    return present_tool_result(spec, arguments, result)
+end
+
+"""Evaluate admission and argument checks before starting the Julia-owned tool callback."""
+function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, arguments, context)
+    denial = first_tool_denial(guards, call, scope)
+    isnothing(denial) || return ExecutionResult(false, denial)
+    cancelled(context) && return ExecutionResult(false, "Tool call aborted before dispatch")
+    violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
+    isempty(violations) || return ExecutionResult(false, string(join(violations, "; ")))
+    cancelled(context) && return ExecutionResult(false, "Tool call aborted before dispatch")
+    returned = event_value(Base.invokelatest(invocation.listener.spec.call, arguments...))
+    return checked_tool_result(invocation.listener.spec, call.arguments, returned)
+end
+
+"""Complete an admitted tool result using an independently replaceable Julia policy."""
+function complete_tool_result(scope::ExtensionScope, call, raw::ExecutionResult, context)
+    decision = Base.invokelatest(tool_completion_decision, scope, call, raw)
+    settled = Base.invokelatest(apply_tool_completion, decision, raw)
+    return cancelled(context) && settled.ok ?
+        ExecutionResult(false, "Tool call aborted") : settled
+end
+
+"""Invoke a tool only after inherited guards permit it; post-policy cannot revive a failure."""
+function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context=current_context())
     invocation = acquire_tool!(scope, name)
     isnothing(invocation) && return ExecutionResult(false, "Unknown tool: $name")
     guards = acquire_tool_guards(scope)
     worker = spawn_scoped() do
         call = ToolCall(name, length(arguments) == 1 ? first(arguments) : arguments)
-        denial = first_tool_denial(guards, call)
-        isnothing(denial) ? event_value(Base.invokelatest(invocation.listener.spec.call, arguments...)) :
-            ExecutionResult(false, denial)
+        if cancelled(context)
+            ExecutionResult(false, "Tool call aborted before dispatch")
+        else
+            raw = admitted_tool_result(invocation, guards, scope, call, arguments, context)
+            complete_tool_result(scope, call, raw, context)
+        end
     end
     wait(worker; throw=false)
     guard_cleanup = spawn_cleanup(() -> release_event_invocations!(guards))
@@ -692,7 +831,7 @@ close_executor!(executor::ToolExecutor) = executor.owns_scope ? close(executor.s
 """Execute a protocol-independent tool action through an injected scoped tool registry."""
 function execute!(executor::ToolExecutor, action::ToolCall, context::ExecutionContext)
     cancelled(context) && return ExecutionResult(false, "Cancelled")
-    result = invoke_tool!(executor.scope, action.name, action.arguments)
+    result = invoke_tool!(executor.scope, action.name, action.arguments; context)
     emit!(context, HarnessEvent(:tool_result, (name=action.name, result)))
     return result
 end

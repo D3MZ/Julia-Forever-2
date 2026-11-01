@@ -93,8 +93,10 @@ function anthropic_block_delta!(state::ModelStreamState, event::AbstractDict)
         block["thinkingSignature"] = get(block, "thinkingSignature", "") * delta["signature"]
     elseif kind == "input_json_delta"
         state.arguments[index] *= delta["partial_json"]
-        arguments = parse_json(state.arguments[index])
-        arguments isa AbstractDict && (block["arguments"] = arguments)
+        if possible_tool_object(state.arguments[index])
+            arguments = parse_json(state.arguments[index])
+            arguments isa AbstractDict && (block["arguments"] = arguments)
+        end
         model_event!(state, "toolcall_delta"; contentIndex=index - 1, delta=delta["partial_json"])
     end
     return nothing

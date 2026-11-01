@@ -38,6 +38,8 @@
     "vendor/schemastery/src/index.ts": "a6647b515659cf439b701fa9f9574c9c310ce3872d26a13a81e9fa4d02ba10ad",
     "packages/llm/llm/src/error.ts": "cd8657420bb84060ee45b1e72fa668df26b090532afd8afd2a96da983a74f792",
     "packages/sdk/client/src/api.ts": "a287a1ef52d732455e5ac8f8610bb9cdabcc24a27c7347cb938673249db193ba",
-    "packages/sdk/client/src/launch.ts": "d7187537945618d6190bf98ab5893de9a1a059e4e2ec4d3778386eaffe5148af"
+    "packages/sdk/client/src/launch.ts": "d7187537945618d6190bf98ab5893de9a1a059e4e2ec4d3778386eaffe5148af",
+    "packages/session-query/session-query/src/filters.ts": "574759cf15980ad2e0b69791d26c596c6a573bae52d613294e12770ac583ecdc",
+    "packages/session-query/session-query/src/config.ts": "5850ab0dd78a26843d6ff899f5bb85af4cc8745f163ff71a17586bcda5da570f"
   }
 }

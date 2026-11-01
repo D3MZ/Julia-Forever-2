@@ -80,12 +80,19 @@ function history_snapshot(conversation::Conversation, known_revision=nothing)
 end
 
 function record_usage!(conversation::Conversation, report::UsageReport)
+    report = UsageReport(usage_tokens(report.input_tokens), usage_tokens(report.output_tokens), usage_cost(report.cost))
     lock(conversation.lock) do
         usage = conversation.usage
         if !isnothing(report.input_tokens) && !isnothing(report.output_tokens)
-            usage.input_tokens += report.input_tokens
-            usage.output_tokens += report.output_tokens
-            usage.reported = true
+            input, input_overflow = Base.Checked.add_with_overflow(usage.input_tokens, report.input_tokens)
+            output, output_overflow = Base.Checked.add_with_overflow(usage.output_tokens, report.output_tokens)
+            if input_overflow || output_overflow
+                usage.partial = true
+            else
+                usage.input_tokens = input
+                usage.output_tokens = output
+                usage.reported = true
+            end
         else
             usage.partial = true
         end

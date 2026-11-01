@@ -141,6 +141,17 @@ function repair_model_json(text::AbstractString)
     return String(take!(output))
 end
 
+"""Check whether a streamed JSON argument prefix can be a complete object."""
+function possible_tool_object(text::String)
+    index = lastindex(text)
+    while index > 0
+        character = text[index]
+        isspace(character) || return character == '}'
+        index = prevind(text, index)
+    end
+    return false
+end
+
 function parse_model_tool_arguments(text::AbstractString)
     parsed = parse_json(text)
     return isnothing(parsed) ? parse_json(repair_model_json(text)) : parsed

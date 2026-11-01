@@ -311,3 +311,116 @@ end
     @test !isopen(deep)
     close(shallow)
 end
+
+
+using UUIDs: UUID, uuid5
+using JSON
+
+@testset "Saved session descendants preserve ordering and cycle handling" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        namespace = UUID("e52b186c-827a-496f-9899-3d9cae157522")
+        ids = [uuid5(namespace, "lineage-$index") for index in 1:8]
+        function persist_lineage(name, index, parent)
+            lineage = Dict("id" => string(ids[index]),
+                "parent_id" => isnothing(parent) ? nothing : string(ids[parent]),
+                "root_id" => string(ids[1]))
+            record = Dict("format" => "JuliaForever2.session", "version" => 2,
+                "name" => name, "working_directory" => directory,
+                "messages" => Any[], "lineage" => lineage)
+            write(joinpath(directory, string(name, ".json")), JSON.json(record))
+        end
+        persist_lineage("root", 1, nothing)
+        persist_lineage("alpha", 2, 1)
+        persist_lineage("beta", 3, 1)
+        persist_lineage("grandchild", 4, 2)
+        persist_lineage("unrelated", 5, nothing)
+        persist_lineage("cycle-a", 6, 7)
+        persist_lineage("cycle-b", 7, 6)
+        persist_lineage("orphan", 8, 5)
+        @test JuliaForever2.session_descendants(store, ids[1]) == ["alpha", "beta", "grandchild"]
+        @test JuliaForever2.session_descendants(store, "root"; include_self=true) ==
+            ["alpha", "beta", "grandchild", "root"]
+        @test JuliaForever2.session_descendants(store, ids[2]) == ["grandchild"]
+        @test JuliaForever2.session_descendants(store, ids[6]) == ["cycle-b"]
+        @test JuliaForever2.session_descendants(store, ids[6]; include_self=true) ==
+            ["cycle-a", "cycle-b"]
+        @test JuliaForever2.session_descendants(store, ids[5]) == ["orphan"]
+        @test isempty(JuliaForever2.session_descendants(store,
+            UUID("00000000-0000-0000-0000-000000000000")))
+    end
+end
+
+@testset "Empty extension scopes retire without skipping owned cleanup" begin
+    root = JuliaForever2.ExtensionScope()
+    child = JuliaForever2.ExtensionScope(root)
+    @test isopen(root)
+    @test isopen(child)
+    close(root)
+    @test !isopen(root)
+    @test !isopen(child)
+    close(root)
+    close(child)
+
+    unobserved = JuliaForever2.ExtensionScope()
+    @test isnothing(JuliaForever2.dispatch_event!(unobserved, :unobserved, 1))
+    close(unobserved)
+    @test !isopen(unobserved)
+
+    cleaned = Ref(0)
+    owned = JuliaForever2.ExtensionScope()
+    JuliaForever2.own_resource!(owned, :sentinel; cleanup=value -> begin
+        value === :sentinel || error("Wrong cleanup resource")
+        cleaned[] += 1
+        nothing
+    end)
+    close(owned)
+    close(owned)
+    @test cleaned[] == 1
+end
+
+
+@testset "Unowned event invocations do not schedule empty cleanup workers" begin
+    scope = JuliaForever2.ExtensionScope()
+    JuliaForever2.on!(_ -> nothing, scope, :no_cleanup)
+
+    function release_batch!(invocations)
+        for invocation in invocations
+            JuliaForever2.release!(invocation)
+        end
+        return nothing
+    end
+
+    # Compile and exercise the same release method before recording allocations.
+    warm = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:8]
+    release_batch!(warm)
+
+    # Acquisition and test setup do not contribute to the release measurement.
+    invocations = [only(JuliaForever2.event_invocations(scope, :no_cleanup)) for _ in 1:100]
+    @test all(invocation -> isnothing(invocation.retention), invocations)
+    @test scope.users == 100
+    GC.gc()
+    bytes = @allocated release_batch!(invocations)
+    println("Unowned listener release allocations for 100 warmed invocations: ",
+        bytes, " bytes; predefined target <= 32768 bytes")
+    @test bytes <= 32_768
+    @test scope.users == 0
+    close(scope)
+end
+
+
+@testset "Deferred event cleanup honors held scope resources" begin
+    scope = JuliaForever2.ExtensionScope()
+    cleaned = Symbol[]
+    JuliaForever2.own_resource!(scope, :owned; cleanup=value -> push!(cleaned, value))
+    JuliaForever2.on!(_ -> nothing, scope, :held)
+    invocation = only(JuliaForever2.event_invocations(scope, :held))
+    @test scope.users == 1
+
+    close(scope)
+    @test !isopen(scope)
+    @test isempty(cleaned)
+    JuliaForever2.release!(invocation)
+    @test scope.users == 0
+    @test cleaned == [:owned]
+end

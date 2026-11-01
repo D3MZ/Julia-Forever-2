@@ -144,6 +144,20 @@ end
     end
 end
 
+@testset "UTF-8 scalar validation agrees with Julia's String validator" begin
+    # Boundary values exercise overlong encodings, surrogate exclusions,
+    # incomplete continuations and the maximal Unicode scalar.
+    for lead in UInt8[0xc2, 0xdf, 0xe0, 0xe1, 0xed, 0xef, 0xf0, 0xf1, 0xf4],
+            second in UInt8[0x00, 0x7f, 0x80, 0x8f, 0x90, 0x9f, 0xa0, 0xbf, 0xc0],
+            third in UInt8[0x7f, 0x80, 0xbf, 0xc0],
+            fourth in UInt8[0x7f, 0x80, 0xbf, 0xc0]
+        bytes = UInt8[lead, second, third, fourth]
+        size = JuliaForever2.protocol_utf8_size(lead)
+        @test JuliaForever2.protocol_utf8_valid(bytes, 1, size) ==
+            isvalid(String, @view bytes[1:size])
+    end
+end
+
 @testset "Protocol strings combine unchanged spans and decoded escapes" begin
     policy = CodeModePolicy()
     for expected in ("", "unchanged ASCII", "λ你好🚀", "\nleading", "trailing\t", "a\nb\tc\\d\"e", "λ\n你好\t🚀", "\0\b\f\r/\x1f")

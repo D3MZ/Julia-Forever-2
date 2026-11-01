@@ -107,3 +107,51 @@ end
     @test JuliaForever2.usage_snapshot(ordinary).cost == 0.75
     @test JuliaForever2.usage_snapshot(ordinary).cost_known
 end
+
+@testset "Accumulated token counts do not overflow" begin
+    for (initial_input, initial_output) in ((typemax(Int), 5), (5, typemax(Int)))
+        conversation = Conversation()
+        JuliaForever2.record_usage!(conversation, JuliaForever2.UsageReport(initial_input, initial_output, 0.25))
+        JuliaForever2.record_usage!(conversation, JuliaForever2.UsageReport(1, 2, 0.5))
+        totals = JuliaForever2.usage_snapshot(conversation)
+        # An unrepresentable pair must not corrupt either counter.
+        @test (totals.input_tokens, totals.output_tokens) == (initial_input, initial_output)
+        @test totals.partial
+        @test totals.reported
+        @test totals.cost == 0.75
+        @test totals.cost_known
+    end
+end
+
+@testset "Typed provider usage reports cannot corrupt accounting" begin
+    invalid_tokens = Conversation()
+    JuliaForever2.record_usage!(invalid_tokens, JuliaForever2.UsageReport(-4, 3, 0.25))
+    tokens = JuliaForever2.usage_snapshot(invalid_tokens)
+    @test tokens.input_tokens == 0
+    @test tokens.output_tokens == 0
+    @test tokens.partial
+    @test !tokens.reported
+    @test tokens.cost == 0.25
+    @test tokens.cost_known
+
+    invalid_cost = Conversation()
+    JuliaForever2.record_usage!(invalid_cost, JuliaForever2.UsageReport(2, 3, -0.5))
+    cost = JuliaForever2.usage_snapshot(invalid_cost)
+    @test cost.input_tokens == 2
+    @test cost.output_tokens == 3
+    @test cost.reported
+    @test !cost.cost_known
+    @test cost.cost == 0.0
+end
+
+@testset "Typed and dictionary provider usage share validation" begin
+    for (input, output, cost) in ((-4, 3, 0.25), (2, 3, -0.5),
+            (2, 3, 0.5), (2, -3, nothing))
+        typed = Conversation()
+        raw = Conversation()
+        JuliaForever2.record_usage!(typed, JuliaForever2.UsageReport(input, output, cost))
+        JuliaForever2.record_usage!(raw, Dict("input_tokens" => input,
+            "output_tokens" => output, "cost" => cost))
+        @test JuliaForever2.usage_snapshot(typed) == JuliaForever2.usage_snapshot(raw)
+    end
+end

@@ -160,13 +160,15 @@ end
 
 function child_session(session::Session, definition::AgentDefinition, isolated)
     return Session(definition; messages=empty(session.conversation.messages),
-        working_directory=working_directory(session))
+        working_directory=working_directory(session), parent_id=session.runtime.id,
+        root_id=session.runtime.root_id)
 end
 
 function child_session(session::Session, ::Nothing, isolated::Bool)
     kernel = isolated ? fork_kernel(session.kernel) : session.kernel
     return Session(kernel; executor=fork_executor(session.runtime.executor), messages=empty(session.conversation.messages),
-        definition=session.definition, owns_kernel=isolated, working_directory=working_directory(session))
+        definition=session.definition, owns_kernel=isolated, working_directory=working_directory(session),
+        parent_id=session.runtime.id, root_id=session.runtime.root_id)
 end
 
 """Spawn a child; isolated=true snapshots composition, while an explicit definition replaces it."""
