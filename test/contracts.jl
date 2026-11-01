@@ -137,8 +137,8 @@ end
     end
     @test_throws "Session query limit must be nonnegative" JuliaForever2.HistoryQuery("needle"; limit=-1)
     @test_throws "Session query must contain non-whitespace text" JuliaForever2.HistoryQuery("   ")
-    @test_throws MethodError JuliaForever2.HistoryQuery("needle"; limit=1.0)
-    @test_throws MethodError JuliaForever2.HistoryQuery("needle"; limit=nothing)
+    @test_throws TypeError JuliaForever2.HistoryQuery("needle"; limit=1.0)
+    @test_throws TypeError JuliaForever2.HistoryQuery("needle"; limit=nothing)
 end
 
 struct UnreadResponse end
