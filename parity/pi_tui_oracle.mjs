@@ -10,7 +10,7 @@ if (!root || !process.argv[2] && !process.env.PI_REFERENCE) {
   throw new Error("PI_REFERENCE is required; refusing to use a copied fixture");
 }
 const require = createRequire(join(root, "package.json"));
-const ts = require("typescript");
+const ts = require("@typescript/typescript6");
 const load = (name) => import(pathToFileURL(join(root, name)).href);
 const source = (name) => readFileSync(join(root, name), "utf8");
 const parse = (name) => ts.createSourceFile(name, source(name), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
