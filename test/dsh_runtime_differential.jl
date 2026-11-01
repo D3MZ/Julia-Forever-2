@@ -665,7 +665,10 @@ end
             end
             @testset "Native Julia interactive Web console and persisted session controls" begin
                 actual, expected = native_web_console_comparison(sdk_web_reference[], reference, directory, temporary)
-                @test actual == expected
+                @test sort!(collect(keys(actual))) == sort!(collect(keys(expected)))
+                @testset "Projection: $key" for key in sort!(collect(keys(expected)))
+                    @test actual[key] == expected[key]
+                end
             end
         end
         @testset "Successful local model turn and persisted continuation" begin
