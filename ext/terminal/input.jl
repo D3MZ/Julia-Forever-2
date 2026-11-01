@@ -96,7 +96,7 @@ end
 function kitty_edit_key(code::Int)
     if code in (8, 127, 57347)
         :backspace
-    elseif code in (57349,)
+    elseif code == 57349
         :delete
     elseif code == 57350
         :left
@@ -154,9 +154,9 @@ end
 
 """Only apply raw shortcuts when the decoded event matches their expected key."""
 function terminal_edit_action(event::KeyEvent, raw::AbstractVector{UInt8})
-    binding = raw_edit_binding(raw)
-    if !isnothing(binding) && event.key == binding[1]
-        binding[2]
+    if event.key in (:unknown, :backspace, :delete, :left, :right)
+        binding = raw_edit_binding(raw)
+        !isnothing(binding) && event.key == binding[1] ? binding[2] : nothing
     else
         nothing
     end
