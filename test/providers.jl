@@ -614,7 +614,7 @@ end
                     "index" => 0, "delta" => Dict(
                         "type" => "input_json_delta", "partial_json" => fragment)))
             end
-            @test state.arguments[1] == join(fragments[1:position])
+            @test JuliaForever2.model_tool_argument_text(state.arguments[1]) == join(fragments[1:position])
             arguments = state.message["content"][1]["arguments"]
             if position < length(fragments)
                 @test isempty(arguments)
@@ -624,6 +624,32 @@ end
         end
         JuliaForever2.finish_model_block!(state, 1)
         @test state.message["content"][1]["arguments"] == expected
+        close(context)
+    end
+end
+
+@testset "Large fragmented tool arguments preserve complete values" begin
+    text = JSON.json(Dict("payload" => repeat("opaque-1234567890", 900), "nested" => Dict("ok" => true)))
+    fragments = [String(text[start:min(start + 96, lastindex(text))]) for start in 1:97:lastindex(text)]
+    for protocol in (:openai, :anthropic)
+        context = ExecutionContext()
+        state = JuliaForever2.ModelStreamState(JuliaForever2.ModelSpec(:test, "large-tool"), context)
+        if protocol == :anthropic
+            JuliaForever2.anthropic_block_start!(state, Dict("index" => 0,
+                "content_block" => Dict("type" => "tool_use", "id" => "id", "name" => "call", "input" => Dict{String,Any}())))
+        end
+        for fragment in fragments
+            if protocol == :openai
+                JuliaForever2.openai_tool_delta!(state, Dict("index" => 0, "id" => "id",
+                    "function" => Dict("name" => "call", "arguments" => fragment)))
+            else
+                JuliaForever2.anthropic_block_delta!(state, Dict("index" => 0,
+                    "delta" => Dict("type" => "input_json_delta", "partial_json" => fragment)))
+            end
+        end
+        @test JuliaForever2.model_tool_argument_text(state.arguments[1]) == text
+        JuliaForever2.finish_model_block!(state, 1)
+        @test state.message["content"][1]["arguments"] == JSON.parse(text)
         close(context)
     end
 end

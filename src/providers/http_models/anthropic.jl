@@ -74,7 +74,7 @@ function insertblock!(state::ModelStreamState, key, block::AbstractDict)
     index = length(state.message["content"])
     state.blocks[key] = index
     if block["type"] == "toolCall"
-        state.arguments[index] = ""
+        state.arguments[index] = IOBuffer()
         model_event!(state, "toolcall_start"; contentIndex=index - 1)
     else
         model_event!(state, string(block["type"], "_start"); contentIndex=index - 1)
@@ -99,11 +99,8 @@ function appenddelta!(state::ModelStreamState, index, delta)
     elseif kind == "signature_delta"
         block["thinkingSignature"] = get(block, "thinkingSignature", "") * delta["signature"]
     elseif kind == "input_json_delta"
-        state.arguments[index] *= delta["partial_json"]
-        if possible_tool_object(state.arguments[index])
-            arguments = parse_json(state.arguments[index])
-            arguments isa AbstractDict && (block["arguments"] = arguments)
-        end
+        arguments = append_model_tool_arguments!(state, index, delta["partial_json"])
+        arguments isa AbstractDict && (block["arguments"] = arguments)
         model_event!(state, "toolcall_delta"; contentIndex=index - 1, delta=delta["partial_json"])
     end
     return nothing
