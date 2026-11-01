@@ -57,11 +57,11 @@ end
         outside = joinpath(root, "outside.json")
         write(outside, JSON.json(Dict("access_token" => "outside")))
         @test isnothing(load_credentials(directory, Symbol("../outside")))
-        @test_throws ArgumentError save_credentials!(directory, Symbol("../outside"),
+        @test_throws ErrorException save_credentials!(directory, Symbol("../outside"),
             Dict("access_token" => "overwritten"))
         @test JSON.parsefile(outside)["access_token"] == "outside"
         @test isnothing(load_credentials(directory, Symbol("nested\\escape")))
-        @test_throws ArgumentError save_credentials!(directory, Symbol("nested\\escape"),
+        @test_throws ErrorException save_credentials!(directory, Symbol("nested\\escape"),
             Dict("access_token" => "nested"))
         if !Sys.iswindows()
             symlink(outside, joinpath(directory, "linked.json"))
