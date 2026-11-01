@@ -44,11 +44,8 @@ function update_checked!(app::App, check::UpdateCheck; installer=apply_update!)
     return nothing
 end
 
-function update_check_finished!(app::App, value)
-    check = value isa Task ? fetch(value) : value
-    update_checked!(app, check)
-    return nothing
-end
+update_check_finished!(app::App, task::Task) = update_checked!(app, fetch(task))
+update_check_finished!(app::App, check::UpdateCheck) = update_checked!(app, check)
 
 function update_installed!(app::App, task::Task)
     result = fetch(task)
