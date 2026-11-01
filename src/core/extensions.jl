@@ -526,7 +526,7 @@ end
 function tools_snapshot(scope::ExtensionScope)
     return lock(scope.lock) do
         view = tool_view(scope)
-        return [(name=name, schema=deepcopy(view.entries[name].spec.schema),
+        return [(name=name, schema=deepcopy(tool_schema_definition(view.entries[name].spec.schema)),
             description=view.entries[name].spec.description) for name in view.names]
     end
 end
@@ -661,8 +661,13 @@ function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...)
     worker = spawn_scoped() do
         call = ToolCall(name, length(arguments) == 1 ? first(arguments) : arguments)
         denial = first_tool_denial(guards, call)
-        isnothing(denial) ? event_value(Base.invokelatest(invocation.listener.spec.call, arguments...)) :
+        if !isnothing(denial)
             ExecutionResult(false, denial)
+        else
+            violations = tool_argument_violations(invocation.listener.spec.schema, call.arguments)
+            isempty(violations) ? event_value(Base.invokelatest(invocation.listener.spec.call, arguments...)) :
+                ExecutionResult(false, join(violations, "; "))
+        end
     end
     wait(worker; throw=false)
     guard_cleanup = spawn_cleanup(() -> release_event_invocations!(guards))

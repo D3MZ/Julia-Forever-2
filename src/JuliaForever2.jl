@@ -29,6 +29,7 @@ public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileSt
 public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
 public ToolSpec, ToolCall, ToolExecutor, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!
+public CheckedJSONSchema, tool_argument_violations, tool_schema_definition
 public RpcError, RpcResult, JsonRpcPeer, request!, notify!, feed!, start!, drain!
 public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!, start_runtime, finish_runtime!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
@@ -45,6 +46,7 @@ include("core/profile_store.jl")
 include("core/session_store.jl")
 include("core/session_query.jl")
 include("core/session_api.jl")
+include("core/tool_schemas.jl")
 include("core/extensions.jl")
 include("core/event_context.jl")
 include("features/code_mode/streaming.jl")

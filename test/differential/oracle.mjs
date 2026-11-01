@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
 const { filterSessionEventDocuments } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
+const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
 
 const { applyEntryPatches } = await importSource('vendor/include/src/index.ts', source => {
   const start = source.indexOf('export function applyEntryPatches(')
@@ -28,6 +29,12 @@ const { composeEntries } = await importSource('packages/boot/app-boot/src/profil
   return include.slice(patchStart, patchEnd) + '\n' + source.slice(start)
 })
 const settle = () => new Promise(resolve => setImmediate(resolve))
+
+function toolArgumentsCase(input) {
+  assertSupportedJsonSchema(input.schema)
+  const violations = validateJsonSchemaValue(input.schema, input.value, 'arguments').sort()
+  return { violations, accepted: violations.length === 0, schema: input.schema }
+}
 
 function patchCase(input) {
   const warnings = []
@@ -560,6 +567,7 @@ function sessionQueryCase(input) {
 }
 
 async function execute(input) {
+  if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)

@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim.",
+  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -400,6 +400,29 @@
         "The reference receives simple semantic text documents; Julia searches user/assistant message text. Full DSH event extraction, index-backed ranking, lineage, other event types and complete session-query service parity are unverified.",
         "Only the eleven pinned differential fixtures are checked.",
         "Index is an independent Julia implementation: current store writes invalidate it, while external file modifications require explicit refresh_index!; no DSH indexing algorithm equivalence is claimed."
+      ]
+    },
+    {
+      "kind": "tool_arguments",
+      "case_count": 31,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/json-schema.ts",
+          "symbols": [
+            "assertSupportedJsonSchema",
+            "validateJsonSchemaValue"
+          ]
+        }
+      ],
+      "compares": [
+        "schema-enforced object, array, scalar, enum, const and exact-one union argument admission",
+        "path-qualified missing, type, closed-object and union diagnostics on pinned JSON fixtures",
+        "native ToolExecutor blocks rejected arguments before a user callback and exposes the underlying schema"
+      ],
+      "limits": [
+        "Only 31 JSON-compatible fixtures against the original pinned validator; unsupported-schema diagnostics, unbounded nesting, non-JSON objects, batch execution and every other DSH tool-executor behavior remain unverified.",
+        "Validation is opt-in via CheckedJSONSchema; existing opaque ToolSpec schemas remain caller-defined. This does not establish native parity for DSH tool approval, scheduling, cancellation, or output validation."
       ]
     }
   ],
@@ -934,7 +957,8 @@
       "compatibility_route": "native-implementation-unverified",
       "compared_subsets": [
         "tools",
-        "events"
+        "events",
+        "tool_arguments"
       ],
       "packages": [
         {

@@ -1,0 +1,393 @@
+[
+  {
+    "name": "open object accepts empty arguments",
+    "schema": {
+      "type": "object"
+    },
+    "value": {}
+  },
+  {
+    "name": "object rejects scalar arguments",
+    "schema": {
+      "type": "object"
+    },
+    "value": 4
+  },
+  {
+    "name": "object rejects array arguments",
+    "schema": {
+      "type": "object"
+    },
+    "value": []
+  },
+  {
+    "name": "required property accepted",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "value": {
+      "name": "Julia"
+    }
+  },
+  {
+    "name": "required property missing",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "value": {}
+  },
+  {
+    "name": "optional property omitted",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer"
+        }
+      }
+    },
+    "value": {}
+  },
+  {
+    "name": "optional property wrong type",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer"
+        }
+      }
+    },
+    "value": {
+      "count": "three"
+    }
+  },
+  {
+    "name": "closed object allows declared fields",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "id": 3
+    }
+  },
+  {
+    "name": "closed object rejects undeclared fields",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "value": {
+      "id": 3,
+      "debug": true
+    }
+  },
+  {
+    "name": "nested required field",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "options": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ]
+        }
+      },
+      "required": [
+        "options"
+      ]
+    },
+    "value": {
+      "options": {}
+    }
+  },
+  {
+    "name": "nested typed field accepted",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "options": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled"
+          ]
+        }
+      },
+      "required": [
+        "options"
+      ]
+    },
+    "value": {
+      "options": {
+        "enabled": false
+      }
+    }
+  },
+  {
+    "name": "array item checked",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "value": [
+      "a",
+      3,
+      "b"
+    ]
+  },
+  {
+    "name": "array items accepted",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "value": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "name": "array root rejects object",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "value": {
+      "0": 1
+    }
+  },
+  {
+    "name": "string enum accepted",
+    "schema": {
+      "type": "string",
+      "enum": [
+        "fast",
+        "slow"
+      ]
+    },
+    "value": "fast"
+  },
+  {
+    "name": "string enum rejected",
+    "schema": {
+      "type": "string",
+      "enum": [
+        "fast",
+        "slow"
+      ]
+    },
+    "value": "medium"
+  },
+  {
+    "name": "string const rejected",
+    "schema": {
+      "type": "string",
+      "const": "fixed"
+    },
+    "value": "changed"
+  },
+  {
+    "name": "numeric finite number accepted",
+    "schema": {
+      "type": "number"
+    },
+    "value": 1.5
+  },
+  {
+    "name": "number rejects booleans",
+    "schema": {
+      "type": "number"
+    },
+    "value": true
+  },
+  {
+    "name": "integer rejects fractional",
+    "schema": {
+      "type": "integer"
+    },
+    "value": 1.5
+  },
+  {
+    "name": "integer accepts whole floating representation",
+    "schema": {
+      "type": "integer"
+    },
+    "value": 6
+  },
+  {
+    "name": "null accepts null",
+    "schema": {
+      "type": "null"
+    },
+    "value": null
+  },
+  {
+    "name": "null rejects text",
+    "schema": {
+      "type": "null"
+    },
+    "value": "null"
+  },
+  {
+    "name": "exactly one union branch accepted",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "value": 9
+  },
+  {
+    "name": "oneOf no branch matches",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
+    },
+    "value": "none"
+  },
+  {
+    "name": "oneOf ambiguous matching branches",
+    "schema": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "string",
+          "enum": [
+            "same"
+          ]
+        }
+      ]
+    },
+    "value": "same"
+  },
+  {
+    "name": "nested union property",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "oneOf": [
+            {
+              "type": "string",
+              "const": "yes"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "required": [
+        "value"
+      ]
+    },
+    "value": {
+      "value": false
+    }
+  },
+  {
+    "name": "annotation-only accepts arbitrary JSON",
+    "schema": {
+      "description": "any JSON"
+    },
+    "value": {
+      "nested": [
+        null,
+        false,
+        "Δ",
+        4
+      ]
+    }
+  },
+  {
+    "name": "empty schema accepts array root",
+    "schema": {},
+    "value": [
+      1,
+      "é",
+      null
+    ]
+  },
+  {
+    "name": "boolean enum rejects unexpected true",
+    "schema": {
+      "type": "boolean",
+      "enum": [
+        false
+      ]
+    },
+    "value": true
+  },
+  {
+    "name": "string handles escaped Unicode value",
+    "schema": {
+      "type": "string",
+      "const": "line\n雪"
+    },
+    "value": "line\n雪"
+  }
+]
