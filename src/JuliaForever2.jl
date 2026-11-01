@@ -39,7 +39,7 @@ public runtime_transport_plugin, process_launcher_plugin
 public SessionStore, save_session!, load_session, session_store_plugin, session_lineage, session_descendants
 public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, search_history, session_names
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer
-public start_web_server, web_server_plugin, web_url
+public start_web_server, web_server_plugin, web_url, web_launch_url
 
 include("kernel.jl")
 include("agent.jl")
@@ -68,6 +68,7 @@ Session(host::PluginHost; kwargs...) = Session(fork_kernel(host); owns_kernel=tr
 function start_web_server end
 function web_server_plugin end
 function web_url end
+function web_launch_url end
 
 """Run an installed frontend."""
 function main end
