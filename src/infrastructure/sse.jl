@@ -24,33 +24,46 @@ Base.flush(::SSEDecoder) = nothing
 Base.close(::SSEDecoder) = nothing
 
 function sse_line!(decoder::SSEDecoder)
-    line = String(@view decoder.line[:])
-    empty!(decoder.line)
+    bytes = decoder.line
+    start = 1
     if decoder.first_line
-        startswith(line, "\ufeff") && (line = chop(line; head=1, tail=0))
+        if length(bytes) >= 3 && bytes[1] == 0xef && bytes[2] == 0xbb && bytes[3] == 0xbf
+            start = 4
+        end
         decoder.first_line = false
     end
-    if isempty(line)
+    if start > length(bytes)
         if !isempty(decoder.data)
             data = length(decoder.data) == 1 ? only(decoder.data) : join(decoder.data, '\n')
             decoder.sink(SSEEvent(isempty(decoder.event) ? "message" : decoder.event, data, decoder.id))
         end
         empty!(decoder.data)
         decoder.event = ""
+        empty!(bytes)
         return nothing
     end
-    startswith(line, ':') && return nothing
-    colon = findfirst(isequal(':'), line)
-    field = isnothing(colon) ? line : SubString(line, firstindex(line), prevind(line, colon))
-    value = isnothing(colon) ? "" : SubString(line, nextind(line, colon))
-    startswith(value, ' ') && (value = SubString(value, nextind(value, firstindex(value))))
-    if field == "data"
-        push!(decoder.data, String(value))
-    elseif field == "event"
-        decoder.event = String(value)
-    elseif field == "id" && !occursin('\0', value)
-        decoder.id = String(value)
+    if bytes[start] == 0x3a
+        empty!(bytes)
+        return nothing
     end
+    colon = findnext(==(0x3a), bytes, start)
+    field_end = isnothing(colon) ? length(bytes) : colon - 1
+    value_start = isnothing(colon) ? length(bytes) + 1 : colon + 1
+    if value_start <= length(bytes) && bytes[value_start] == 0x20
+        value_start += 1
+    end
+    field_length = field_end - start + 1
+    if field_length == 4 && bytes[start] == 0x64 && bytes[start + 1] == 0x61 &&
+            bytes[start + 2] == 0x74 && bytes[start + 3] == 0x61
+        push!(decoder.data, value_start > length(bytes) ? "" : String(@view bytes[value_start:end]))
+    elseif field_length == 5 && bytes[start] == 0x65 && bytes[start + 1] == 0x76 &&
+            bytes[start + 2] == 0x65 && bytes[start + 3] == 0x6e && bytes[start + 4] == 0x74
+        decoder.event = value_start > length(bytes) ? "" : String(@view bytes[value_start:end])
+    elseif field_length == 2 && bytes[start] == 0x69 && bytes[start + 1] == 0x64 &&
+            isnothing(findnext(==(0x00), bytes, value_start))
+        decoder.id = value_start > length(bytes) ? "" : String(@view bytes[value_start:end])
+    end
+    empty!(bytes)
     return nothing
 end
 
