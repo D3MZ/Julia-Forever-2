@@ -12,6 +12,7 @@ CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "prof
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
+CASES["tool_batch"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_batch.json"), String))
 const COVERAGE = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "coverage.json"), String))
 
 normalize(value) = JSON.parse(JSON.json(value))
@@ -692,6 +693,72 @@ function tool_outputs_result(input)
         "schema" => JuliaForever2.tool_schema_definition(schema)))
 end
 
+"""Compare native tool-batch scheduling with the original pinned DSH scheduler."""
+function tool_batch_result(input)
+    scope = JuliaForever2.ExtensionScope()
+    context = ExecutionContext()
+    entered = Dict(specification["id"] => Base.Event() for specification in input["calls"])
+    started = String[]
+    active = Ref(0)
+    peak = Ref(0)
+    exclusive_safe = Ref(true)
+    state_lock = ReentrantLock()
+    for specification in input["calls"]
+        get(specification, "registered", true) || continue
+        callback = arguments -> begin
+            lock(state_lock) do
+                active[] += 1
+                peak[] = max(peak[], active[])
+                if get(specification, "mode", "exclusive") != "parallel" && active[] != 1
+                    exclusive_safe[] = false
+                end
+                push!(started, specification["id"])
+                notify(entered[specification["id"]])
+            end
+            haskey(specification, "wait_for") && wait(entered[specification["wait_for"]])
+            lock(state_lock) do
+                active[] -= 1
+            end
+            get(specification, "cancel", false) && cancel!(context)
+            return specification["id"]
+        end
+        tool_spec = JuliaForever2.ToolSpec(Symbol(specification["id"]), Dict("type" => "object"),
+            callback; concurrency_safe=get(specification, "mode", "exclusive") == "parallel")
+        registered = JuliaForever2.register_tool!(scope, tool_spec)
+        registered.ok || error(registered.reason)
+        if get(specification, "deny", false)
+            denied_name = Symbol(specification["id"])
+            guard = JuliaForever2.register_tool_guard!(scope,
+                call -> call.name === denied_name ? "Tool unavailable" : nothing)
+            guard.ok || error(guard.reason)
+        end
+    end
+    get(input, "cancel_before", false) && cancel!(context)
+    calls = JuliaForever2.ToolCall[
+        JuliaForever2.ToolCall(Symbol(specification["id"]), Dict{String,Any}())
+        for specification in input["calls"]
+    ]
+    results = if get(input, "session", false)
+        kernel = Kernel()
+        session = Session(kernel; executor=JuliaForever2.ToolExecutor(scope))
+        outcome = evaluate!(session, JuliaForever2.ToolBatch(calls; max_parallel=input["max_parallel"]); context)
+        close(session)
+        close(kernel)
+        outcome.value
+    else
+        JuliaForever2.invoke_tool_batch!(scope, calls; max_parallel=input["max_parallel"], context)
+    end
+    close(scope)
+    close(context)
+    return normalize(Dict(
+        "results" => [Dict("id" => input["calls"][index]["id"], "ok" => result.ok)
+            for (index, result) in enumerate(results)],
+        "executed" => sort!(started),
+        "barrierSafe" => exclusive_safe[],
+        "overlap" => get(input, "check_overlap", false) ? peak[] >= 2 : nothing,
+    ))
+end
+
 function session_query_result(input)
     return mktempdir() do directory
         matches = if get(input, "source", "stored") == "live"
@@ -772,6 +839,7 @@ end
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
             ("session_query", session_query_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
+            ("tool_batch", tool_batch_result),
             ("transport", transport_result), ("outgoing", outgoing_result), ("lifecycle", lifecycle_result),
             ("recovery", recovery_result), ("events", event_result), ("final_response", final_response_result),
             ("launch", launch_result), ("tools", tool_result), ("replacements", replacement_result),
