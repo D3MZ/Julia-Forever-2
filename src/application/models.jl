@@ -141,8 +141,11 @@ selected_model(provider) = hasproperty(provider, :model) &&
 selected_model(provider::ModelProvider) = provider.model
 selected_model(provider::OpenRouterProvider) = provider_model(:openrouter, provider.model)
 selected_model(provider::CodexProvider) = provider_model(:codex, provider.model)
-selected_model(provider::OpenAIProvider) = isempty(provider.model) ?
-    nothing : provider_model(:chatgpt, provider.model)
+function selected_model(provider::OpenAIProvider)
+    model = isempty(provider.model) ?
+        lock(() -> provider.catalog.selected_model, provider.catalog.lock) : provider.model
+    isempty(model) ? nothing : provider_model(:chatgpt, model)
+end
 
 model_context_window(provider) = model_context_window(selected_model(provider))
 model_context_window(::Nothing) = nothing
@@ -168,8 +171,12 @@ function refresh_pi_model_catalog!(registry::ProviderRegistry, provider::Symbol;
             (ok=false, reason="Provider has no model factory", count=0)
         else
             factory = descriptor.create
+            existing = catalog_models(factory)
+            preserved = ModelSpec[model for model in existing if
+                !any(remote -> remote.kind == model.kind && remote.id == model.id, catalog)]
+            updated = vcat(preserved, catalog)
             replacement = ProviderFactory(factory.create;
-                models=() -> copy(catalog), select=factory.select)
+                models=() -> copy(updated), select=factory.select)
             register_provider!(registry, ProviderDescriptor(descriptor, replacement))
             (ok=true, reason="", count=length(catalog))
         end

@@ -191,7 +191,8 @@ function context_overflow(result)
         text = lowercase(reply.content)
         occursin("context length", text) || occursin("context window", text) ||
             occursin("request too large", text) || occursin("http 413", text) ||
-            occursin("maximum context", text)
+            occursin("maximum context", text) || occursin("context_length_exceeded", text) ||
+            occursin("prompt is too long", text)
     else
         false
     end

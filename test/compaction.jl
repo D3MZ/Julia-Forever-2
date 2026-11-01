@@ -71,6 +71,9 @@ end
     @test selected isa ModelSpec
     @test model_context_window(selected) == 200_000
     @test model_output_limit(selected) == 12_000
+    @test JuliaForever2.pi_catalog_provider(:codex) == "openai-codex"
+    @test JuliaForever2.pi_catalog_provider(:chatgpt) == "openai-codex"
+    @test JuliaForever2.pi_catalog_provider(:openrouter) == "openrouter"
     @test !refresh_pi_model_catalog!(registry, :fixture;
         fetcher=_ -> """{"models":[{"id":"bad","contextWindow":-1}]}""").ok
     @test model_context_window(provider_model(registry, :fixture, "code/large")) == 200_000
@@ -158,5 +161,60 @@ end
     @test run_turn!(session, "What now?").ok
     @test length(unknown.requests) == 1
     @test isnothing(compaction_snapshot(session))
+    close(session)
+end
+
+
+mutable struct OverflowFixtureProvider
+    model::ModelSpec
+    requests::Vector{ModelRequest}
+    first_error::String
+    turn_requests::Int
+end
+
+function JuliaForever2.respond(provider::OverflowFixtureProvider, request::ModelRequest,
+        context::ExecutionContext)
+    push!(provider.requests, request)
+    if occursin("Summarize", request.instructions)
+        JuliaForever2.ProviderResult(Reply(:answer, "Recovered context summary"), nothing)
+    else
+        provider.turn_requests += 1
+        answer = provider.turn_requests == 1 ?
+            Reply(:error, provider.first_error) : Reply(:answer, "Recovered")
+        JuliaForever2.ProviderResult(answer, nothing)
+    end
+end
+
+@testset "One overflow compact-and-retry, other errors never retried" begin
+    for (failure, expected_count, works) in (("context_length_exceeded", 3, true),
+            ("Request failed: HTTP 413", 3, true), ("Server timed out", 1, false))
+        provider = OverflowFixtureProvider(ModelSpec(:fixture, "unknown"),
+            ModelRequest[], failure, 0)
+        session = Session(Kernel(provider); compaction=CompactionSettings(;
+            keep_recent_tokens=0), messages=[Message(:user, "old"),
+                Message(:assistant, "earlier"), Message(:user, "latest")])
+        result = run_turn!(session, "New question")
+        @test result.ok == works
+        @test length(provider.requests) == expected_count
+        @test provider.turn_requests == (works ? 2 : 1)
+        @test isnothing(compaction_snapshot(session)) == !works
+        if works
+            @test [message.content for message in provider.requests[end].messages] ==
+                ["Recovered context summary", "New question"]
+        end
+        close(session)
+    end
+end
+
+@testset "Disabled automatic compaction preserves complete model context" begin
+    provider = CompactionFixtureProvider(ModelSpec(:fixture, "small";
+        metadata=Dict("contextWindow" => 1000)), ModelRequest[])
+    session = Session(Kernel(provider); compaction=CompactionSettings(;
+        enabled=false, reserve_tokens=100), messages=[
+        Message(:user, repeat("prior ", 1000)), Message(:assistant, "previous")])
+    @test run_turn!(session, "Current").ok
+    @test length(provider.requests) == 1
+    @test isnothing(compaction_snapshot(session))
+    @test length(only(provider.requests).messages) == 3
     close(session)
 end
