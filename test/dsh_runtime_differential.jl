@@ -507,6 +507,83 @@ function web_console_rpc(origin, cookie, method, params=Dict{String,Any}())
     JSON.parse(String(response.body))
 end
 
+
+"""Compare cookie-authorized turn cancellation with the pinned ACP admission/cancel control trace."""
+function native_web_stop_comparison()
+    cases = JSON.parsefile(joinpath(@__DIR__, "differential", "session_control.json"))
+    scenario = only(filter(case -> case["name"] == "rejected overlapping turn does not steal cancellation", cases))
+    command = Cmd([NODE_EXECUTABLE, "--disable-warning=ExperimentalWarning",
+        joinpath(@__DIR__, "differential", "oracle.mjs")])
+    request = JSON.json(Dict("kind" => "session_control", "cases" => [scenario])) * "\n"
+    reference = only(JSON.parse(read(pipeline(command; stdin=IOBuffer(request)), String)))
+
+    entered = Channel{Base.Event}(2)
+    factory = () -> begin
+        kernel = Kernel()
+        loop = (session, prompt, max_steps) -> begin
+            release = Base.Event()
+            put!(entered, release)
+            wait(release)
+            JuliaForever2.cancelled(JuliaForever2.current_execution_context()) ?
+                ExecutionResult(false, "Cancelled") : ExecutionResult(true, "Complete")
+        end
+        installed = JuliaForever2.install!(kernel, JuliaForever2.ComponentSpec(:loop, loop))
+        installed.ok || error(installed.reason)
+        kernel
+    end
+    api = JuliaForever2.SessionAPI(; factory)
+    server = JuliaForever2.start_web_server(api)
+    origin = JuliaForever2.web_url(server)
+    released = Base.Event[]
+    exchange = HTTP.request("GET", JuliaForever2.web_launch_url(server);
+        redirect=false, status_exception=false)
+    cookie = first(split(HTTP.header(exchange, "Set-Cookie"), ';'))
+    web_console_rpc(origin, cookie, "session/open", Dict("session" => "controlled"))
+    observations = Any[]
+    function submit()
+        reply = web_console_rpc(origin, cookie, "session/turn",
+            Dict("session" => "controlled", "prompt" => "scripted"))
+        Dict("accepted" => haskey(reply, "result") &&
+            get(reply["result"], "accepted", false))
+    end
+    push!(observations, submit())
+    timedwait(() -> isready(entered), 5; pollint=0.01) === :ok ||
+        error("First local Julia turn did not start")
+    first_release = take!(entered)
+    push!(released, first_release)
+    push!(observations, submit())
+    cancelled = web_console_rpc(origin, cookie, "session/cancel", Dict("session" => "controlled"))
+    push!(observations, Dict("cancelled" => cancelled["result"]["cancelled"]))
+    notify(first_release)
+    waited = web_console_rpc(origin, cookie, "session/wait", Dict("session" => "controlled"))["result"]
+    push!(observations, Dict("cancelled" => !waited["ok"]))
+    push!(observations, submit())
+    timedwait(() -> isready(entered), 5; pollint=0.01) === :ok ||
+        error("Second local Julia turn did not start")
+    second_release = take!(entered)
+    push!(released, second_release)
+    notify(second_release)
+    continued = web_console_rpc(origin, cookie, "session/wait", Dict("session" => "controlled"))["result"]
+    push!(observations, Dict("cancelled" => !continued["ok"]))
+    page = HTTP.request("GET", origin * "/", ["Cookie" => cookie]; status_exception=false)
+    script = HTTP.request("GET", origin * "/app.js", ["Cookie" => cookie]; status_exception=false)
+    html = String(page.body)
+    javascript = String(script.body)
+    actual = Dict("control" => observations, "stopUI" =>
+        page.status == 200 && script.status == 200 &&
+        occursin("id=\"stop\"", html) &&
+        occursin("session/cancel", javascript) &&
+        occursin("runningSession", javascript))
+    expected = Dict("control" => reference, "stopUI" => true)
+    foreach(notify, released)
+    while isready(entered)
+        notify(take!(entered))
+    end
+    close(server)
+    close(api)
+    actual, expected
+end
+
 function native_web_console_comparison(sdk_reference, web_reference, directory, temporary)
     operations = Dict(entry["name"] => entry["result"] for entry in sdk_reference["operations"])
     store = JuliaForever2.SessionStore(joinpath(temporary, "web-console-sessions"))
@@ -661,6 +738,10 @@ end
             end
             @testset "Native Julia one-use browser launch and cookie authentication" begin
                 actual, expected = native_web_launch_comparison(reference)
+                @test actual == expected
+            end
+            @testset "Native Julia Web stop control against pinned ACP cancellation semantics" begin
+                actual, expected = native_web_stop_comparison()
                 @test actual == expected
             end
             @testset "Native Julia interactive Web console and persisted session controls" begin
