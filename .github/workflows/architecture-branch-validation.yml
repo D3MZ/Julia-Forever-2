@@ -8,9 +8,9 @@ permissions:
   contents: read
 
 jobs:
-  offline:
+  regression-and-quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 55
+    timeout-minutes: 40
     env:
       JULIA_NUM_THREADS: '2'
     steps:
@@ -19,10 +19,71 @@ jobs:
         with:
           version: '1.13.3'
       - uses: julia-actions/cache@v2
-      - name: Install test environment
+      - name: Instantiate Julia test environment
         run: julia --project=test -e 'using Pkg; Pkg.instantiate()'
-      - name: Full offline Julia suite including differential, lint, Aqua, and JET
+      - name: Full offline unit regression, source lint, Aqua and JET
         shell: bash
         run: |
           set -o pipefail
-          julia --project=test test/runtests.jl all
+          julia --project=test test/runtests.jl unit lint aqua jet
+
+  pinned-differential:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      JULIA_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read reviewed Pi pin
+        id: pi
+        run: python3 -c 'import json, os; print("commit=" + json.load(open("parity/pi-lock.json"))["commit"], file=open(os.environ["GITHUB_OUTPUT"], "a"))'
+      - uses: actions/checkout@v4
+        with:
+          repository: earendil-works/pi
+          ref: ${{ steps.pi.outputs.commit }}
+          path: .pi-reference
+          persist-credentials: false
+      - name: Keep Pi oracle outside package and lint trees
+        run: |
+          echo "PI_REFERENCE=$RUNNER_TEMP/pi-reference" >> "$GITHUB_ENV"
+          echo "PI_PARITY_REPORT=$RUNNER_TEMP/pi-parity.json" >> "$GITHUB_ENV"
+          mv .pi-reference "$RUNNER_TEMP/pi-reference"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - name: Install pinned Pi dependencies without lifecycle scripts
+        working-directory: ${{ runner.temp }}/pi-reference
+        run: npm ci --ignore-scripts --workspace packages/ai --workspace packages/telemetry --include-workspace-root --no-audit --no-fund
+      - name: Fetch pinned DSH differential oracle
+        shell: bash
+        run: |
+          DSH_REFERENCE_ROOT="$RUNNER_TEMP/deepseek-harness"
+          echo "DSH_REFERENCE_ROOT=$DSH_REFERENCE_ROOT" >> "$GITHUB_ENV"
+          echo "DSH_BIN=$DSH_REFERENCE_ROOT/apps/cli/lib/bin.js" >> "$GITHUB_ENV"
+          git init "$DSH_REFERENCE_ROOT"
+          git -C "$DSH_REFERENCE_ROOT" remote add origin https://github.com/deepseek-ai/deepseek-harness.git
+          git -C "$DSH_REFERENCE_ROOT" fetch --depth 1 origin ce7073d51254c26cd63b22a60835b8f948deb447
+          git -C "$DSH_REFERENCE_ROOT" checkout --detach FETCH_HEAD
+      - name: Build pinned DSH runtime oracle
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          npm install --prefix "$RUNNER_TEMP/dsh-build-tools" --ignore-scripts --no-audit --no-fund pnpm@11.28.5
+          export PATH="$RUNNER_TEMP/dsh-build-tools/node_modules/.bin:$PATH"
+          pnpm --dir "$DSH_REFERENCE_ROOT" install --frozen-lockfile --ignore-scripts
+          pnpm --dir "$DSH_REFERENCE_ROOT" run build:native-system
+          pnpm --dir "$DSH_REFERENCE_ROOT" exec tsx scripts/compile-referenced-projects.ts host-libraries
+          pnpm --dir "$DSH_REFERENCE_ROOT" run build:lib:client
+          pnpm --dir "$DSH_REFERENCE_ROOT" run build:web
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Instantiate Julia test environment
+        run: julia --project=test -e 'using Pkg; Pkg.instantiate()'
+      - name: Run pinned DSH/Pi differential suite without live provider calls
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl differential-all
