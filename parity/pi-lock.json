@@ -2,7 +2,7 @@
   "schema_version": 1,
   "repository": "https://github.com/earendil-works/pi",
   "commit": "2c8d1feb147f6b3d97e855da803bfe7b19f3c403",
-  "tree": "7c6dfedf00183a2640e39d580edb1f8828aa906",
+  "tree": "456cd293a23ac5f5f0cfdd15cd2f72bc134b20a6",
   "ref_at_pin": "refs/heads/main",
   "package_versions": {"ai": "1.4.0", "telemetry": "1.4.0"},
   "update_policy": "Explicit reviewed updates only; monitoring must not advance this pin.",
