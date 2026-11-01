@@ -395,3 +395,62 @@ end
     istaskdone(dispatch) && @test fetch(dispatch) === nothing
     close(scope)
 end
+
+
+@testset "Tool lookup ignores unrelated registry size" begin
+    function populated_scope(extra_tools)
+        scope = JuliaForever2.ExtensionScope()
+        selected = JuliaForever2.ToolSpec(:selected, identity)
+        @test JuliaForever2.register_tool!(scope, selected).ok
+        for index in 1:extra_tools
+            descriptor = JuliaForever2.ToolSpec(Symbol("unrelated_", index), identity)
+            @test JuliaForever2.register_tool!(scope, descriptor).ok
+        end
+        @test JuliaForever2.tool(scope, :selected) === selected
+        return scope
+    end
+
+    function lookup_count(scope, repetitions)
+        hits = 0
+        for _ in 1:repetitions
+            hits += JuliaForever2.tool(scope, :selected) !== nothing
+        end
+        return hits
+    end
+
+    narrow = populated_scope(0)
+    wide = populated_scope(256)
+    repetitions = 100
+    @test lookup_count(narrow, repetitions) == repetitions
+    @test lookup_count(wide, repetitions) == repetitions
+    GC.gc()
+    narrow_bytes = @allocated lookup_count(narrow, repetitions)
+    GC.gc()
+    wide_bytes = @allocated lookup_count(wide, repetitions)
+    println("Tool lookup allocations across ", repetitions, " warmed calls: ",
+        "1 registered tool=", narrow_bytes, " bytes; ",
+        "257 registered tools=", wide_bytes, " bytes; target growth <= 32768 bytes")
+    @test wide_bytes <= narrow_bytes + 32_768
+    close(wide)
+    close(narrow)
+end
+
+@testset "Direct tool lookup respects scope shadowing and restrictions" begin
+    root = JuliaForever2.ExtensionScope()
+    child = JuliaForever2.ExtensionScope(root)
+    inherited = JuliaForever2.ToolSpec(:shared, identity)
+    local_tool = JuliaForever2.ToolSpec(:shared, identity)
+    @test JuliaForever2.register_tool!(root, inherited).ok
+    @test JuliaForever2.tool(child, :shared) === inherited
+    restriction = JuliaForever2.restrict_tools!(child; deny=[:shared])
+    @test restriction.ok
+    @test JuliaForever2.tool(child, :shared) === nothing
+    local_registration = JuliaForever2.register_tool!(child, local_tool)
+    @test local_registration.ok
+    @test JuliaForever2.tool(child, :shared) === local_tool
+    JuliaForever2.release!(local_registration.registration)
+    @test JuliaForever2.tool(child, :shared) === nothing
+    JuliaForever2.release!(restriction.registration)
+    @test JuliaForever2.tool(child, :shared) === inherited
+    close(root)
+end
