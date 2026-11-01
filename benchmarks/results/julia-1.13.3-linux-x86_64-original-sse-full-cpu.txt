@@ -1,0 +1,134 @@
+ Count  Overhead File                    Line Function
+ =====  ======== ====                    ==== ========
+     1         0 @Base/array.jl         1203 _growend!
+     1         1 @Base/int.jl             86 -
+     1         1 @Base/strings/search.jl  198 _search
+     1         0 @JuliaForever2/…infrastructure/sse.jl   48 sse_line!(decoder::Main.OriginalC…
+     1         0 @Base/strings/substring.jl  119 ==
+     1         0 @Base/strings/string.jl  175 _memcmp
+     1         0 @Base/strings/string.jl  180 _memcmp
+     1         1 @Base/cmem.jl            56 memcmp
+     1         0 @Base/strings/substring.jl  113 nextind
+     1         1 @Base/strings/string.jl  229 _nextind_str
+     1         0 @Base/strings/basic.jl  180 lastindex
+     1         0 @Base/strings/string.jl  197 thisind
+     1         1 @Base/strings/string.jl  201 _thisind_str
+     1         1 @Base/int.jl             87 +
+     1         1 @JuliaForever2/…infrastructure/sse.jl   33 sse_line!(decoder::Main.OriginalC…
+     1         0 @Base/strings/string.jl  159 pointer
+     1         1 @Base/pointer.jl        314 +
+     1         0 @Base/iobuffer.jl       627 ensureroom_slowpath(io::IOBuffer,…
+     1         0 @Base/iobuffer.jl       663 get_used_span
+     1         1 @Base/promotion.jl        ? startswith
+     1         0 @JuliaForever2/…infrastructure/sse.jl   73 unsafe_write(decoder::Main.Origin…
+     1         0 @Base/iobuffer.jl       903 unsafe_write(to::IOBuffer, p::Ptr…
+     1         0 @Base/promotion.jl      652 max
+     1         1 @Base/essentials.jl     854 ifelse
+     1         0 @Base/iobuffer.jl       545 _resize!(io::IOBuffer, new_size::…
+     1         1 @Base/iobuffer.jl       896 unsafe_write(to::IOBuffer, p::Ptr…
+     1         0 @Base/strings/basic.jl  183 first
+     1         0 @Base/strings/substring.jl  101 getindex
+     1         0 @Base/strings/string.jl  490 getindex
+     1         0 @Base/int.jl            582 <<
+     1         1 @Base/int.jl            575 <<
+     1         0 @Base/iobuffer.jl       844 takestring!(io::IOBuffer)
+     1         1 @Base/strings/substring.jl    ? SubString{String}(s::String, i::I…
+     1         1 @JuliaForever2/…infrastructure/sse.jl   46 sse_line!(decoder::Main.OriginalC…
+     1         1 @Base/boot.jl           594 memoryref
+     1         0 @Base/strings/string.jl  136 _string_n
+     2         0 @Base/genericmemory.jl  139 unsafe_copyto!
+     2         0 @Base/strings/substring.jl   56 SubString
+     2         0 @Base/strings/substring.jl   31 SubString{String}(s::String, i::I…
+     2         2 @Base/int.jl            560 <=
+     2         2 @Base/array.jl         1202 _growend!
+     2         2 @Base/iobuffer.jl       835 takestring!(io::IOBuffer)
+     2         2 @Base/Base_compiler.jl   61 setproperty!
+     2         0 @Base/strings/basic.jl  181 isempty
+     2         0 @Base/number.jl          42 iszero
+     3         0 @Base/iobuffer.jl       905 unsafe_write(to::IOBuffer, p::Ptr…
+     3         0 @Base/iobuffer.jl       936 _unsafe_write
+     3         0 @Base/array.jl          260 unsafe_copyto!
+     3         0 @Base/array.jl          385 copy
+     3         3 @Base/strings/search.jl  196 _search
+     3         0 @Base/strings/substring.jl   49 SubString
+     3         0 @JuliaForever2/…infrastructure/sse.jl   44 sse_line!(decoder::Main.OriginalC…
+     3         0 @JuliaForever2/…infrastructure/sse.jl   49 sse_line!(decoder::Main.OriginalC…
+     3         0 @Base/strings/util.jl    40 startswith
+     4         0 @JuliaForever2/…infrastructure/sse.jl   42 sse_line!(decoder::Main.OriginalC…
+     4         0 @Base/array.jl         2505 findfirst
+     4         0 @Base/strings/search.jl  165 findnext(pred::Base.Fix2{typeof(i…
+     4         4 @JuliaForever2/…infrastructure/sse.jl   26 sse_line!(decoder::Main.OriginalC…
+     4         4 @JuliaForever2/…infrastructure/sse.jl   57 write
+     5         5 @Base/cmem.jl            28 memmove
+     5         0 @Base/array.jl          384 copy
+     5         5 @Base/int.jl             83 <
+     5         0 @Base/strings/substring.jl   51 SubString
+     5         0 @Base/strings/io.jl     105 sprint(::typeof(join), ::Vector{S…
+     5         0 @Base/iobuffer.jl       245 GenericIOBuffer
+     5         0 @Base/iobuffer.jl       266 #IOBuffer#384
+     5         5 @Base/iobuffer.jl       106 _new_generic_iobuffer
+     7         0 @Base/array.jl         1197 _growend!
+     7         0 @JuliaForever2/…infrastructure/sse.jl   45 sse_line!(decoder::Main.OriginalC…
+     7         0 @Base/iobuffer.jl       840 takestring!(io::IOBuffer)
+     7         7 @Base/iobuffer.jl       800 unsafe_takestring!(io::IOBuffer)
+     8         0 @JuliaForever2/…infrastructure/sse.jl   47 sse_line!(decoder::Main.OriginalC…
+     8         2 @JuliaForever2/…infrastructure/sse.jl   61 write
+     9         9 @Base/strings/string.jl  126 unsafe_string
+     9         0 @Base/array.jl         1349 _push!
+     9         9 @Base/array.jl         1044 __safe_setindex!
+     9         9 @Base/Base_compiler.jl   57 getproperty
+     9         9 @Base/promotion.jl      641 ==
+    10         0 @Base/strings/substring.jl   77 String
+    10        10 @Base/strings/io.jl     104 sprint(::typeof(join), ::Vector{S…
+    10         0 @Base/strings/io.jl     113 sprint(::typeof(join), ::Vector{S…
+    12         7 @Base/array.jl         1204 _growend!
+    13         0 @JuliaForever2/…infrastructure/sse.jl   37 sse_line!(decoder::Main.OriginalC…
+    13         0 @Base/array.jl         2130 empty!
+    13         0 @Base/array.jl         1289 _deleteend!
+    14        13 @Base/range.jl          928 iterate
+    14         0 @Base/array.jl         1205 _growend!
+    14         0 @Base/array.jl         1181 _growend_internal!(a::Vector{Tupl…
+    14         0 @Base/array.jl         1101 array_new_memory
+    15         0 …hmarks/performance.jl   86 #sse_workload##0
+    16        16 @Base/strings/string.jl  147 unsafe_wrap
+    17         0 @Base/iobuffer.jl       544 _resize!(io::IOBuffer, new_size::…
+    17         0 @Base/iobuffer.jl       296 _similar_data
+    17         0 @Base/iobuffer.jl       167 StringMemory
+    18         0 @Base/iobuffer.jl       654 ensureroom_slowpath(io::IOBuffer,…
+    19         0 @Base/iobuffer.jl       897 unsafe_write(to::IOBuffer, p::Ptr…
+    19         0 @Base/iobuffer.jl       611 ensureroom
+    19        19 @Base/boot.jl           588 GenericMemory
+    19        19 @Base/strings/string.jl   71 String
+    24         0 @Base/strings/io.jl     345 join(io::IOBuffer, iterator::Vect…
+    24         0 @Base/strings/io.jl     241 print
+    24         0 @Base/strings/io.jl     239 write
+    28         0 @JuliaForever2/…infrastructure/sse.jl   27 sse_line!(decoder::Main.OriginalC…
+    31         0 @JuliaForever2/…infrastructure/sse.jl   65 write
+    33         9 @Base/strings/io.jl     111 sprint(::typeof(join), ::Vector{S…
+    36         0 @Base/array.jl         1348 _push!
+    47         2 @Base/array.jl         1345 push!
+    58         0 @Base/strings/io.jl     370 join
+    58         0 @Base/strings/io.jl     352 _join_preserve_annotations
+    58         0 @Base/strings/io.jl     104 sprint
+    73         0 @JuliaForever2/…infrastructure/sse.jl   35 sse_line!(decoder::Main.OriginalC…
+   146         0 @JuliaForever2/…infrastructure/sse.jl   62 write
+   189         0 @JuliaForever2/…infrastructure/sse.jl   72 unsafe_write(decoder::Main.Origin…
+   190         0 @Base/client.jl         577 _start()
+   190         0 @Base/client.jl         344 exec_options(opts::Base.JLOptions)
+   190         0 @Base/Base.jl           309 include(mod::Module, _path::Strin…
+   190         0 @Base/loading.jl       3124 _include(mapexpr::Function, mod::…
+   190         0 @Base/loading.jl       3064 include_string(mapexpr::typeof(id…
+   190         0 @Base/boot.jl           489 eval(m::Module, e::Any)
+   190         0 …hmarks/performance.jl  251 run_benchmarks(options::@NamedTup…
+   190         0 @Base/file.jl           971 mktempdir
+   190         0 @Base/file.jl           975 mktempdir(fn::var"#run_benchmarks…
+   190         0 …hmarks/performance.jl  283 (::var"#run_benchmarks##0#run_ben…
+   190         0 …hmarks/performance.jl  216 profile_workload(function_value::…
+   190         0 @Profile/src/Profile.jl   60 macro expansion
+   190         0 …hmarks/performance.jl  219 macro expansion
+   190         0 …hmarks/performance.jl  152 #workloads##0
+   190         0 …hmarks/performance.jl   87 sse_workload(make_decoder::var"#7…
+   190         0 …hmarks/performance.jl   79 write_chunks!
+   190         0 @Base/io.jl             861 write
+   190         0 @Base/io.jl             827 unsafe_write
+Total snapshots: 190. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.

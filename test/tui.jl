@@ -206,6 +206,27 @@ end
     @test any(occursin("cafe\u0301", line) for line in lines)
     @test Terminal.wrap_conversation_line("", 8) == [""]
 
+    for (content, width, expected) in (
+            ("one two three", 7, ["one ", "two ", "three"]),
+            ("a  b", 3, ["a  ", "b"]),
+            (" a b", 3, [" a ", "b"]),
+            ("abc def", 7, ["abc def"]),
+            ("你好a", 1, ["你", "好", "a"]),
+            ("e\u0301x", 1, ["e\u0301", "x"]),
+            ("🇨🇦🇺🇸", 2, ["🇨🇦", "🇺🇸"]),
+            ("👩\u200d💻!", 1, ["👩\u200d💻", "!"]),
+            ("a\tb", 1, ["a\t", "b"]),
+            (" a", 0, [" ", "a"]),
+            ("abc", -1, ["a", "b", "c"]))
+        wrapped = Terminal.wrap_conversation_line(content, width)
+        @test wrapped == expected
+        @test join(wrapped) == content
+        @test eltype(wrapped) === String
+    end
+    surrounding = "prefix: Hello 你好 cafe\u0301 and a verylongword :suffix"
+    content = SubString(surrounding, nextind(surrounding, 0, 9), prevind(surrounding, lastindex(surrounding), 8))
+    @test Terminal.wrap_conversation_line(content, 8) == lines
+
     app = App(default_kernel())
     update!(app, KeyEvent('/'))
     for _ in 1:4

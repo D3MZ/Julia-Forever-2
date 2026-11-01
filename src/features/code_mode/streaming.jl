@@ -75,31 +75,43 @@ function protocol_utf8_size(byte::UInt8)
     return 0
 end
 
-protocol_string_result(output, index, status) = (text=String(take!(output)), next=index, status)
+protocol_string_buffer(::Nothing) = IOBuffer()
+protocol_string_buffer(output::IOBuffer) = output
+
+protocol_string_result(::Nothing, bytes, pending, index, status) =
+    (text=String(@view bytes[pending]), next=index, status)
+
+function protocol_string_result(output::IOBuffer, bytes, pending, index, status)
+    write(output, @view bytes[pending])
+    return (text=takestring!(output), next=index, status)
+end
 
 """Read the complete decoded prefix of one JSON string without accepting unfinished escapes."""
 function protocol_string(bytes, index)
-    output = IOBuffer()
     if index > length(bytes)
-        return protocol_string_result(output, index, :incomplete)
+        return (text="", next=index, status=:incomplete)
     elseif bytes[index] != 0x22
-        return protocol_string_result(output, index, :invalid)
+        return (text="", next=index, status=:invalid)
     end
     index += 1
+    first = index
+    output = nothing
     while index <= length(bytes)
         byte = bytes[index]
         if byte == 0x22
-            return protocol_string_result(output, index + 1, :complete)
+            return protocol_string_result(output, bytes, first:(index - 1), index + 1, :complete)
         elseif byte == 0x5c
             if index == length(bytes)
-                return protocol_string_result(output, index, :incomplete)
+                return protocol_string_result(output, bytes, first:(index - 1), index, :incomplete)
             end
             escape = bytes[index + 1]
             if escape == 0x75
                 character = protocol_unicode_escape(bytes, index + 2)
                 if character.status != :complete
-                    return protocol_string_result(output, index, character.status)
+                    return protocol_string_result(output, bytes, first:(index - 1), index, character.status)
                 end
+                output = protocol_string_buffer(output)
+                write(output, @view bytes[first:(index - 1)])
                 print(output, Char(character.value))
                 index = character.next
             else
@@ -107,32 +119,31 @@ function protocol_string(bytes, index)
                     escape == 0x6e ? 0x0a : escape == 0x72 ? 0x0d :
                     escape == 0x74 ? 0x09 : escape in (0x22, 0x5c, 0x2f) ? escape : nothing
                 if isnothing(escaped)
-                    return protocol_string_result(output, index, :invalid)
+                    return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
                 end
+                output = protocol_string_buffer(output)
+                write(output, @view bytes[first:(index - 1)])
                 write(output, escaped)
                 index += 2
             end
+            first = index
         elseif byte < 0x20
-            return protocol_string_result(output, index, :invalid)
+            return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
         elseif byte < 0x80
-            write(output, byte)
             index += 1
         else
             size = protocol_utf8_size(byte)
             if size == 0
-                return protocol_string_result(output, index, :invalid)
+                return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
             elseif index + size - 1 > length(bytes)
-                return protocol_string_result(output, index, :incomplete)
+                return protocol_string_result(output, bytes, first:(index - 1), index, :incomplete)
+            elseif !isvalid(String, @view bytes[index:(index + size - 1)])
+                return protocol_string_result(output, bytes, first:(index - 1), index, :invalid)
             end
-            character = String(collect(@view bytes[index:(index + size - 1)]))
-            if !isvalid(character)
-                return protocol_string_result(output, index, :invalid)
-            end
-            write(output, character)
             index += size
         end
     end
-    return protocol_string_result(output, index, :incomplete)
+    return protocol_string_result(output, bytes, first:(index - 1), index, :incomplete)
 end
 
 response_progress(kind, content::Nothing) = nothing

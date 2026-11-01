@@ -1,0 +1,122 @@
+ Count  Overhead File                    Line Function
+ =====  ======== ====                    ==== ========
+     1         1 @Base/iobuffer.jl       607 ensureroom
+     1         1 @Base/iobuffer.jl       932 _unsafe_write
+     1         0 @Base/iobuffer.jl       946 write
+     1         0 @Base/strings/string.jl   67 String
+     1         1 @Base/essentials.jl      10 size
+     1         0 @JuliaForever2/…ode_mode/streaming.jl   90 protocol_string(bytes::Base.CodeU…
+     1         0 @Base/strings/basic.jl  793 getindex
+     1         0 @Base/strings/string.jl  167 codeunit
+     1         1 @Base/pointer.jl        151 unsafe_load
+     1         0 @Base/strings/string.jl  440 _byte_string_classify_nonascii(by…
+     1         0 @Base/iobuffer.jl       929 _unsafe_write
+     1         0 @Base/int.jl            566 <
+     1         1 @Base/int.jl            559 <
+     1         1 @JuliaForever2/…ode_mode/streaming.jl  124 protocol_string(bytes::Base.CodeU…
+     1         1 @Base/abstractarray.jl    ? copyto_unaliased!(deststyle::Inde…
+     1         0 @Base/iobuffer.jl       903 unsafe_write(to::IOBuffer, p::Ptr…
+     1         0 @Base/strings/string.jl   70 String
+     1         0 @Base/pointer.jl        310 ==
+     1         1 @Base/int.jl             83 <
+     1         0 @JuliaForever2/…ode_mode/streaming.jl   82 protocol_string(bytes::Base.CodeU…
+     1         0 @Base/iobuffer.jl       245 GenericIOBuffer
+     1         0 @Base/iobuffer.jl       266 #IOBuffer#384
+     1         1 @Base/iobuffer.jl       106 _new_generic_iobuffer
+     1         0 @JuliaForever2/…ode_mode/streaming.jl  121 protocol_string(bytes::Base.CodeU…
+     1         1 @JuliaForever2/…ode_mode/streaming.jl   72 protocol_utf8_size
+     1         0 @Base/iobuffer.jl       953 write
+     1         1 @Base/Base_compiler.jl   61 setproperty!
+     1         0 @Base/strings/string.jl   77 String
+     1         0 @Base/boot.jl           594 memoryref
+     2         2 @Base/strings/string.jl  433 _byte_string_classify_nonascii(by…
+     2         2 @Base/strings/string.jl  387 _isvalid_utf8_dfa
+     2         0 @JuliaForever2/…ode_mode/streaming.jl   89 protocol_string(bytes::Base.CodeU…
+     2         0 @Base/iobuffer.jl       905 unsafe_write(to::IOBuffer, p::Ptr…
+     2         0 @JuliaForever2/…ode_mode/streaming.jl  164 protocol_progress(::Main.Original…
+     2         0 @Base/promotion.jl      652 max
+     2         2 @Base/strings/basic.jl  627 _isascii
+     2         2 @Base/strings/string.jl  431 _byte_string_classify_nonascii(by…
+     2         2 @Base/Base_compiler.jl   57 getproperty
+     2         0 @Base/range.jl            5 Colon
+     2         0 @Base/range.jl          417 UnitRange
+     2         0 @Base/range.jl          428 unitrange_last
+     2         0 @Base/operators.jl      481 >=
+     2         0 @Base/strings/string.jl  429 _byte_string_classify_nonascii(by…
+     2         0 @Base/promotion.jl      653 min
+     2         2 @Base/iobuffer.jl       602 ensureroom
+     3         0 @Base/iobuffer.jl       897 unsafe_write(to::IOBuffer, p::Ptr…
+     3         0 @Base/iobuffer.jl       163 get_offset
+     3         3 @Base/strings/string.jl  425 _byte_string_classify_nonascii(by…
+     3         0 @Base/abstractarray.jl 1090 copyto_unaliased!(deststyle::Inde…
+     3         0 @Base/abstractarray.jl 1259 isempty
+     3         0 @Base/subarray.jl        65 size
+     3         0 @Base/subarray.jl       512 axes
+     3         0 @Base/subarray.jl       517 _indices_sub
+     3         0 @Base/abstractarray.jl  102 axes
+     3         0 @Base/range.jl          695 size
+     3         0 @Base/range.jl          788 length
+     3         1 @Base/strings/string.jl  419 byte_string_classify
+     3         2 @Base/range.jl          928 iterate
+     3         3 @Base/iobuffer.jl       913 unsafe_write(to::IOBuffer, p::Ptr…
+     3         3 @Base/promotion.jl      641 ==
+     4         4 @Base/abstractarray.jl 1089 copyto_unaliased!(deststyle::Inde…
+     4         4 @Base/genericmemory.jl  259 _setindex!
+     4         4 @Base/strings/string.jl    ? _byte_string_classify_nonascii(by…
+     4         4 @Base/int.jl            560 <=
+     4         4 @Base/essentials.jl     854 ifelse
+     4         0 @Base/strings/string.jl  434 _byte_string_classify_nonascii(by…
+     4         0 @Base/essentials.jl      11 length
+     4         1 @Base/strings/basic.jl  626 _isascii
+     4         3 @Base/iobuffer.jl       609 ensureroom
+     4         4 @Base/iobuffer.jl       896 unsafe_write(to::IOBuffer, p::Ptr…
+     4         0 @Base/iobuffer.jl       611 ensureroom
+     4         0 @Base/iobuffer.jl       654 ensureroom_slowpath(io::IOBuffer,…
+     4         0 @Base/iobuffer.jl       544 _resize!(io::IOBuffer, new_size::…
+     4         0 @Base/iobuffer.jl       296 _similar_data
+     4         0 @Base/iobuffer.jl       167 StringMemory
+     4         4 @Base/strings/string.jl  136 _string_n
+     5         5 @Base/genericmemory.jl  260 _setindex!
+     5         0 @Base/strings/string.jl  386 _isvalid_utf8_dfa
+     5         0 @Base/strings/string.jl  382 _utf_dfa_step
+     5         5 @Base/int.jl            393 &
+     6         0 @Base/iobuffer.jl       608 ensureroom
+     7         0 @Base/strings/string.jl  439 _byte_string_classify_nonascii(by…
+     7         7 @Base/int.jl             86 -
+     7         7 @Base/boot.jl           649 Array
+     8         0 @Base/array.jl          784 _collect_indices
+     9         0 @Base/iobuffer.jl       949 write
+     9         0 @Base/genericmemory.jl  267 setindex!
+    14         0 @Base/iobuffer.jl       942 write
+    16         0 @JuliaForever2/…ode_mode/streaming.jl  131 protocol_string(bytes::Base.CodeU…
+    16         3 @Base/strings/io.jl     239 write
+    25         0 @Base/strings/string.jl  422 byte_string_classify
+    25         0 @JuliaForever2/…ode_mode/streaming.jl  118 protocol_string(bytes::Base.CodeU…
+    28         0 @Base/strings/string.jl  451 isvalid
+    28         0 @Base/strings/string.jl  448 isvalid
+    29         1 @JuliaForever2/…ode_mode/streaming.jl  128 protocol_string(bytes::Base.CodeU…
+    35        35 @Base/strings/string.jl   71 String
+    41         0 @Base/boot.jl           648 Array
+    41        41 @Base/boot.jl           588 GenericMemory
+    48         0 @Base/array.jl          782 _collect_indices
+    48         0 @Base/boot.jl           671 Array
+    48         0 @Base/boot.jl           661 Array
+    56         0 @Base/array.jl          761 collect
+    96         0 @JuliaForever2/…ode_mode/streaming.jl  127 protocol_string(bytes::Base.CodeU…
+   170         0 @JuliaForever2/…ode_mode/streaming.jl  177 protocol_progress(::Main.Original…
+   172         0 @Base/client.jl         577 _start()
+   172         0 @Base/client.jl         344 exec_options(opts::Base.JLOptions)
+   172         0 @Base/Base.jl           309 include(mod::Module, _path::Strin…
+   172         0 @Base/loading.jl       3124 _include(mapexpr::Function, mod::…
+   172         0 @Base/loading.jl       3064 include_string(mapexpr::typeof(id…
+   172         0 @Base/boot.jl           489 eval(m::Module, e::Any)
+   172         0 …hmarks/performance.jl  251 run_benchmarks(options::@NamedTup…
+   172         0 @Base/file.jl           971 mktempdir
+   172         0 @Base/file.jl           975 mktempdir(fn::var"#run_benchmarks…
+   172         0 …hmarks/performance.jl  283 (::var"#run_benchmarks##0#run_ben…
+   172         0 …hmarks/performance.jl  216 profile_workload(function_value::…
+   172         0 @Profile/src/Profile.jl   60 macro expansion
+   172         0 …hmarks/performance.jl  219 macro expansion
+   172         0 …hmarks/performance.jl  157 #workloads##2
+   172         0 …hmarks/performance.jl   40 #13
+Total snapshots: 172. Utilization: 100% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.

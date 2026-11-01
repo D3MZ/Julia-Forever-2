@@ -1,0 +1,13 @@
+pipeline/coalesced: 24.22% median runtime reduction
+pipeline/every_delta: 53.48% median runtime reduction
+protocol/ascii: 67.45% median runtime reduction
+protocol/escapes: 12.97% median runtime reduction
+protocol/unicode: 70.74% median runtime reduction
+provider/respond_coalesced: 35.64% median runtime reduction
+sse/chunk_1024: 56.24% median runtime reduction
+sse/chunk_64: 42.55% median runtime reduction
+sse/chunk_full: 48.37% median runtime reduction
+wrap/ascii: 58.35% median runtime reduction
+wrap/escapes: 45.21% median runtime reduction
+wrap/unicode: 56.29% median runtime reduction
+Saved /workspace/scratch/dcd5ea4dd962/Julia-Forever-2/benchmarks/results/julia-1.13.3-linux-x86_64.json
