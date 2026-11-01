@@ -158,7 +158,7 @@ jobs:
               result.message["stopReason"] == "toolUse" || error("Unexpected stop reason")
               result.reply.kind == :error || error("Tool-aware completion reply contract changed")
               kinds = [event.data["type"] for event in observation.events if event.kind == :model_stream]
-              count(==("toolcall_end"), kinds) == count || error("Missing completion events")
+              Base.count(==("toolcall_end"), kinds) == count || error("Missing completion events")
               return (blocks, kinds, result.message["stopReason"], result.reply.kind)
           end
           
