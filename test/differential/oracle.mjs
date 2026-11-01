@@ -85,7 +85,7 @@ async function toolBatchCase(input) {
         isError: exec.arguments.fail === true,
       } }
     },
-    async complete(slot) { return slot.result },
+    async complete(execution, slot) { return slot.result },
   }
   const calls = input.calls.map((call, index) => ({
     id: String(index + 1),
