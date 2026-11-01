@@ -174,10 +174,10 @@ function Base.close(api::SessionAPI)
     sessions = lock(api.lock) do
         api.closed && return Session[]
         api.closed = true
-        values = collect(values(api.sessions))
+        snapshot = collect(values(api.sessions))
         empty!(api.sessions)
         empty!(api.handles)
-        return values
+        return snapshot
     end
     for session in sessions
         close(session)
