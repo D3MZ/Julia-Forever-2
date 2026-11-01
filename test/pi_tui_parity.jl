@@ -77,6 +77,22 @@ using JSON
                 @test Tachikoma.text(app.input) == result["scenarios"]["default"]["completed"]
                 terminal.command!(app, "new")
                 @test occursin("New session started", app.status)
+
+                mktempdir() do directory
+                    skill_dir = joinpath(directory, ".pi", "skills", "discovered")
+                    mkpath(skill_dir)
+                    write(joinpath(skill_dir, "SKILL.md"),
+                        "---\nname: discovered\ndescription: Discovered dynamically\n---\nInstructions")
+                    local_app = terminal.App(JuliaForever2.default_kernel(); settings_dir=directory)
+                    terminal.discover_disk_resources!(local_app;
+                        directory, agent_dir=joinpath(directory, "agent"))
+                    @test "skill:discovered" in [command.name
+                        for command in terminal.discover_commands(local_app)]
+                    rm(joinpath(skill_dir, "SKILL.md"))
+                    terminal.remove_skill!(local_app, "discovered")
+                    @test !("skill:discovered" in [command.name
+                        for command in terminal.discover_commands(local_app)])
+                end
             end
         end
     end

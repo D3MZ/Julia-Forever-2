@@ -29,6 +29,11 @@ provider_settings_snapshot(dir::AbstractString=config_dir(); registry::ProviderR
 
 """Select and persist a provider only after its component is installed successfully."""
 select_provider!(kernel::Kernel, id::Symbol; dir::AbstractString=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) = select!(kernel, provider_from_name(id; dir, registry), id, dir)
+"""Select an available provider model without changing the surrounding session history."""
+select_provider_model!(kernel::Kernel, id::Symbol, model::AbstractString;
+        dir::AbstractString=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) =
+    select!(kernel, provider_from_name(id; dir, registry, model), id, dir)
+
 select!(kernel::Kernel, ::Nothing, id::Symbol, directory) = (ok=false, reason="Provider is unavailable.")
 
 function select!(kernel::Kernel, provider, id::Symbol, directory)
