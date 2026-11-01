@@ -80,7 +80,15 @@ end
 
 object_params(value::AbstractDict) = value
 object_params(value) = Dict{String,Any}()
-rpc_id(value) = value isa AbstractString || (value isa Real && !(value isa Bool))
+rpc_id(value) = false
+rpc_id(::AbstractString) = true
+rpc_id(::Real) = true
+rpc_id(::Bool) = false
+rpc_error_code(value) = nothing
+rpc_error_code(value::Real) = value
+rpc_error_code(::Bool) = nothing
+rpc_error_message(value) = "JSON-RPC error"
+rpc_error_message(value::AbstractString) = value
 
 resolve_handler_result(worker::Task) = resolve(worker)
 resolve(value) = value
@@ -111,7 +119,7 @@ end
 function RpcError(detail::AbstractDict)
     code = get(detail, "code", nothing)
     message = get(detail, "message", "JSON-RPC error")
-    RpcError(code isa Real && !(code isa Bool) ? code : nothing, message isa AbstractString ? message : "JSON-RPC error"; data=get(detail, "data", missing))
+    RpcError(rpc_error_code(code), rpc_error_message(message); data=get(detail, "data", missing))
 end
 function track_handler!(peer::JsonRpcPeer, task::Task)
     lock(peer.lock) do

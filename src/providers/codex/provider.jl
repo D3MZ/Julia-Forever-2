@@ -11,13 +11,14 @@ CodexProvider(executable::AbstractString, model::AbstractString, reasoning::Abst
 CodexProvider(provider::CodexProvider, model::AbstractString) = CodexProvider(provider.executable; model, reasoning=provider.reasoning, policy=provider.policy)
 (provider::CodexProvider)(messages, session) = call_provider(provider, messages, session)
 
+codex_completed_usage(event) = nothing
+codex_completed_usage(event::AbstractDict) = get(event, "type", "") == "turn.completed" ? UsageReport(get(event, "usage", nothing)) : nothing
+
 function codex_usage(events)
     report = UsageReport()
     for line in events
-        event = parse_json(line)
-        if event isa AbstractDict && get(event, "type", "") == "turn.completed"
-            report = UsageReport(get(event, "usage", nothing))
-        end
+        completed = codex_completed_usage(parse_json(line))
+        isnothing(completed) || (report = completed)
     end
     report
 end

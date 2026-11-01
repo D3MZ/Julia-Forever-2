@@ -9,6 +9,8 @@
 - Read and follow the [Julia style guide](https://docs.julialang.org/en/v1/manual/style-guide/) and [performance tips](https://docs.julialang.org/en/v1/manual/performance-tips/).
 - Keep docstrings to a single line immediately above the function whenever possible.
 - Prefer multiple dispatch and small functions over early short-circuit returns for unexpected behavior and over try/catch.
+- Use `Base.@kwdef` when a struct's fields have sensible independent defaults; keep defaults beside the fields instead of repeating them in outer constructor arguments. Preserve established positional APIs with thin forwarding constructors, and retain inner constructors where validation or normalization is required.
+- Review `if` statements for dispatch opportunities: use specialized methods for distinctions based on argument types (`Nothing`, `Bool`, collections, tasks, etc.), but keep conditionals for dynamic state, validation, ordering, and external protocol values. Test behavior across both paths.
 - Do not write or edit documentation or README files; the user handles those. Update this instructions file when the user explicitly asks.
 - The repository lint forbids `throw`, `rethrow`, `@assert`, and `try`/`catch` in Julia source.
 

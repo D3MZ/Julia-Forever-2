@@ -13,7 +13,9 @@ end
 const CHECKED_SCHEMA_TYPES = Set(("object", "array", "string", "number", "integer", "boolean", "null"))
 const CHECKED_SCHEMA_ANNOTATIONS = Set(("description", "title", "default", "examples"))
 
-json_number(value) = value isa Real && !(value isa Bool) && isfinite(value) && !(iszero(value) && signbit(value))
+json_number(value) = false
+json_number(value::Real) = isfinite(value) && !(iszero(value) && signbit(value))
+json_number(::Bool) = false
 
 json_lossless(::Nothing) = true
 json_lossless(::Bool) = true
@@ -24,7 +26,9 @@ json_lossless(value::AbstractDict) = all(key isa AbstractString && json_lossless
 json_lossless(value::NamedTuple) = all(json_lossless, values(value))
 json_lossless(value) = false
 
-json_object(value) = value isa AbstractDict || value isa NamedTuple
+json_object(value) = false
+json_object(value::AbstractDict) = true
+json_object(value::NamedTuple) = true
 json_property(value::AbstractDict, key) = get(value, key, missing)
 json_property(value::NamedTuple, key) = get(value, Symbol(key), missing)
 json_has_property(value::AbstractDict, key) = haskey(value, key)
@@ -32,7 +36,10 @@ json_has_property(value::NamedTuple, key) = haskey(value, Symbol(key))
 
 json_scalar_equal(left, right) = left === right
 json_scalar_equal(left::AbstractString, right::AbstractString) = left == right
-json_scalar_equal(left::Real, right::Real) = left isa Bool || right isa Bool ? left === right : left == right
+json_scalar_equal(left::Real, right::Real) = left == right
+json_scalar_equal(left::Bool, right::Real) = false
+json_scalar_equal(left::Real, right::Bool) = false
+json_scalar_equal(left::Bool, right::Bool) = left === right
 
 json_schema_matches(kind, value) = false
 json_schema_matches(kind, ::Nothing) = kind == "null"

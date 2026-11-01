@@ -12,40 +12,38 @@ mutable struct EventHandler{F}
     action::F
 end
 
-mutable struct SettingsState
+Base.@kwdef mutable struct SettingsState
     directory::String
     registry::ProviderRegistry
-    providers::Vector{ProviderDescriptor}
-    labels::Vector{String}
-    auth_flow::Union{AuthFlow,Nothing}
-    auth_task::Union{Task,Nothing}
-    auth_url::String
-    auth_provider::Symbol
+    providers::Vector{ProviderDescriptor} = ProviderDescriptor[]
+    labels::Vector{String} = String[]
+    auth_flow::Union{AuthFlow,Nothing} = nothing
+    auth_task::Union{Task,Nothing} = nothing
+    auth_url::String = ""
+    auth_provider::Symbol = :none
 end
-SettingsState(directory::AbstractString, registry::ProviderRegistry) = SettingsState(String(directory), registry, ProviderDescriptor[], String[], nothing, nothing, "", :none)
+SettingsState(directory::AbstractString, registry::ProviderRegistry) = SettingsState(; directory=String(directory), registry)
 
-mutable struct TranscriptState
-    width::Int
-    revision::UInt
-    messages::Vector{Message}
-    chunks::Vector{Vector{TranscriptLine}}
-    offsets::Vector{Int}
-    lines::Vector{TranscriptLine}
-    preview::Union{ResponseProgress,Nothing}
-    preview_operation_id::UInt64
-    preview_width::Int
-    preview_dirty::Bool
-    preview_lines::Vector{TranscriptLine}
+Base.@kwdef mutable struct TranscriptState
+    width::Int = 0
+    revision::UInt = typemax(UInt)
+    messages::Vector{Message} = Message[]
+    chunks::Vector{Vector{TranscriptLine}} = Vector{TranscriptLine}[]
+    offsets::Vector{Int} = Int[]
+    lines::Vector{TranscriptLine} = TranscriptLine[]
+    preview::Union{ResponseProgress,Nothing} = nothing
+    preview_operation_id::UInt64 = UInt64(0)
+    preview_width::Int = 0
+    preview_dirty::Bool = false
+    preview_lines::Vector{TranscriptLine} = TranscriptLine[]
 end
-TranscriptState() = TranscriptState(0, typemax(UInt), Message[], Vector{TranscriptLine}[], Int[], TranscriptLine[], nothing, UInt64(0), 0, false, TranscriptLine[])
 
-mutable struct OperationState
-    active::Union{TaskHandle,Nothing}
-    closing::Threads.Atomic{Bool}
-    event_lock::ReentrantLock
-    watchers::Vector{Task}
+Base.@kwdef mutable struct OperationState
+    active::Union{TaskHandle,Nothing} = nothing
+    closing::Threads.Atomic{Bool} = Threads.Atomic{Bool}(false)
+    event_lock::ReentrantLock = ReentrantLock()
+    watchers::Vector{Task} = Task[]
 end
-OperationState() = OperationState(nothing, Threads.Atomic{Bool}(false), ReentrantLock(), Task[])
 
 mutable struct App{S<:Session} <: Model
     session::S

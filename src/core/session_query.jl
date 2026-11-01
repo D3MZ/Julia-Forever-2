@@ -39,7 +39,9 @@ struct SearchWindow{F,T}
 end
 
 validindex(::Nothing) = true
-validindex(value) = value isa Integer && !(value isa Bool) && value >= 1
+validindex(value) = false
+validindex(value::Integer) = value >= 1
+validindex(::Bool) = false
 selected(index, window::SearchWindow) = (isnothing(window.first) || index >= window.first) && (isnothing(window.last) || index <= window.last)
 session_index_selected(index, first, last) = selected(index, SearchWindow(first, last))
 session_search_window(first, last) = (SearchWindow(first, last); nothing)

@@ -13,7 +13,10 @@ entry_patch_copy(values::AbstractDict) = Dict{String,Any}(String(key) => entry_p
 
 entry_patch_equal(left, right) = left === right
 entry_patch_equal(left::AbstractString, right::AbstractString) = left == right
-entry_patch_equal(left::Real, right::Real) = left isa Bool || right isa Bool ? left === right : left == right
+entry_patch_equal(left::Real, right::Real) = left == right
+entry_patch_equal(left::Bool, right::Real) = false
+entry_patch_equal(left::Real, right::Bool) = false
+entry_patch_equal(left::Bool, right::Bool) = left === right
 
 function index_patch_entries!(index, entries)
     for entry in entries
