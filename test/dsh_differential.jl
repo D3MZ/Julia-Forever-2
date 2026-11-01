@@ -10,6 +10,7 @@ include(joinpath(DIFFERENTIAL_DIRECTORY, "dsh_reference_profiles.jl"))
 const CASES = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "cases.json"), String))
 CASES["profile_groups"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "profile_groups.json"), String))
 CASES["session_query"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_query.json"), String))
+CASES["session_control"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "session_control.json"), String))
 CASES["tool_arguments"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_arguments.json"), String))
 CASES["tool_outputs"] = deepcopy(CASES["tool_arguments"])
 CASES["tool_output_projection"] = JSON.parse(read(joinpath(DIFFERENTIAL_DIRECTORY, "tool_output_projection.json"), String))
@@ -1136,6 +1137,65 @@ end
     @test actual == expected
 end
 
+"""Compare native per-session turn admission and cancellation to the pinned ACP control projection."""
+function session_control_result(input)
+    entered = Channel{Base.Event}(8)
+    factory = () -> begin
+        kernel = Kernel()
+        loop = (session, prompt, max_steps) -> begin
+            release = Base.Event()
+            put!(entered, release)
+            wait(release)
+            JuliaForever2.cancelled(JuliaForever2.current_execution_context()) ?
+                ExecutionResult(false, "Cancelled") : ExecutionResult(true, "Complete")
+        end
+        installed = install!(kernel, ComponentSpec(:loop, loop))
+        installed.ok || error(installed.reason)
+        kernel
+    end
+    api = JuliaForever2.SessionAPI(; factory)
+    opened = JuliaForever2.session_api_request!(api, "session/open", Dict("session" => "controlled"))
+    opened isa AbstractDict || error("Failed to open controlled native session")
+    observations = Any[]
+    active = nothing
+    release = nothing
+    for operation in input["operations"]
+        if operation == "submit"
+            result = JuliaForever2.session_api_request!(api, "session/turn",
+                Dict("session" => "controlled", "prompt" => "fixture"))
+            accepted = result isa AbstractDict && get(result, "accepted", false)
+            push!(observations, Dict("accepted" => accepted))
+            if accepted
+                handle = lock(() -> api.handles["controlled"], api.lock)
+                if isnothing(active)
+                    active = handle
+                    timedwait(() -> isready(entered), 5; pollint=0.01) === :ok ||
+                        error("Controlled native turn did not begin")
+                    release = take!(entered)
+                else
+                    cancel!(handle)
+                end
+            end
+        elseif operation == "cancel"
+            result = JuliaForever2.session_api_request!(api, "session/cancel",
+                Dict("session" => "controlled"))
+            push!(observations, Dict("cancelled" => result isa AbstractDict &&
+                get(result, "cancelled", false)))
+        elseif operation == "settle"
+            isnothing(active) && error("Fixture attempted to settle an absent turn")
+            notify(release)
+            result = fetch(active)
+            push!(observations, Dict("cancelled" => !result.ok))
+            active = nothing
+            release = nothing
+        else
+            error("Unknown session-control fixture operation: $operation")
+        end
+    end
+    close(api)
+    return normalize(observations)
+end
+
 @testset "DSH full-product proof requires complete native differential evidence" begin
     verified = COVERAGE["verified_source_families"]
     cases = Set(area["kind"] for area in COVERAGE["native_comparisons"])
@@ -1152,7 +1212,7 @@ end
 
 @testset "Pinned DSH differential behavior" begin
     candidates = (("patches", patch_result), ("layers", layer_result), ("profile_groups", profile_group_result),
-            ("session_query", session_query_result),
+            ("session_query", session_query_result), ("session_control", session_control_result),
             ("tool_arguments", tool_arguments_result), ("tool_outputs", tool_outputs_result),
             ("tool_output_projection", tool_output_projection_result),
             ("tool_batch", tool_batch_result), ("tool_cancellation", tool_cancellation_result),
