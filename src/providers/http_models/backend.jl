@@ -42,6 +42,7 @@ mutable struct ModelStreamState{M,C}
     message::Dict{String,Any}
     blocks::Dict{Any,Int}
     arguments::Dict{Int,String}
+    text_buffers::Dict{Int,IOBuffer}
     closed_blocks::Set{Int}
     received_start::Bool
     received_stop::Bool
@@ -51,7 +52,8 @@ mutable struct ModelStreamState{M,C}
     started_at::UInt64
 end
 ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model),
-    Dict{Any,Int}(), Dict{Int,String}(), Set{Int}(), false, false, false, false, "", time_ns())
+    Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(),
+    false, false, false, false, "", time_ns())
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -95,10 +97,10 @@ function text_model_block!(state::ModelStreamState, kind::String, delta::Abstrac
         push!(state.message["content"], block)
         index = length(state.message["content"])
         state.blocks[kind] = index
+        state.text_buffers[index] = IOBuffer()
         model_event!(state, kind * "_start"; contentIndex=index - 1)
     end
-    block = state.message["content"][index]
-    block[kind] *= delta
+    write(state.text_buffers[index], delta)
     model_event!(state, kind * "_delta"; contentIndex=index - 1, delta=String(delta))
     return nothing
 end
@@ -158,6 +160,9 @@ function finish_model_block!(state::ModelStreamState, index::Int)
         end
         model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))
     else
+        if haskey(state.text_buffers, index)
+            block[kind] = String(take!(pop!(state.text_buffers, index)))
+        end
         model_event!(state, string(kind, "_end"); contentIndex=index - 1, content=block[kind])
     end
     return nothing
