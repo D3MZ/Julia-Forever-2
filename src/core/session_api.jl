@@ -1,16 +1,18 @@
 """An owned, replaceable interface to independent Julia sessions and their durable state."""
-mutable struct SessionAPI{F,S}
+mutable struct SessionAPI{F,S,Q}
     factory::F
     store::S
+    query::Q
     lock::ReentrantLock
     sessions::Dict{String,Session}
     handles::Dict{String,TaskHandle}
     closed::Bool
 end
 
-"""Construct a native session API; factories return a Kernel or AgentDefinition."""
-SessionAPI(; factory=Kernel, store=nothing) =
-    SessionAPI(factory, store, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), false)
+"""Construct a native session API with optional independently replaceable durable search."""
+SessionAPI(; factory=Kernel, store=nothing, query=nothing) =
+    SessionAPI(factory, store, query, ReentrantLock(),
+        Dict{String,Session}(), Dict{String,TaskHandle}(), false)
 
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
@@ -89,15 +91,41 @@ function api_session_messages(api::SessionAPI, params::AbstractDict)
         [api_message(message) for message in history_snapshot(session).messages]
 end
 
-function api_session_search(api::SessionAPI, params::AbstractDict)
-    session = api_session(api, params)
-    session isa RpcError && return session
+"""Validate shared live/durable search predicates at the framework-neutral API boundary."""
+function api_search_parameters(params::AbstractDict)
     text = api_parameter(params, "text")
     text isa AbstractString && !isempty(strip(text)) || return RpcError(-32602, "Search text is required")
     roles = get(params, "roles", nothing)
+    (isnothing(roles) || (roles isa AbstractVector &&
+        all(role -> role isa Union{Symbol,AbstractString}, roles))) ||
+        return RpcError(-32602, "Search roles must be an array of strings")
     limit = get(params, "limit", typemax(Int))
-    limit isa Integer && limit >= 0 || return RpcError(-32602, "Invalid search limit")
-    return [api_hit(hit) for hit in search_history(session, text; roles, limit)]
+    limit isa Integer && !(limit isa Bool) && limit >= 0 ||
+        return RpcError(-32602, "Invalid search limit")
+    return (text=String(text), roles, limit)
+end
+
+function api_session_search(api::SessionAPI, params::AbstractDict)
+    session = api_session(api, params)
+    session isa RpcError && return session
+    selection = api_search_parameters(params)
+    selection isa RpcError && return selection
+    return [api_hit(hit) for hit in search_history(session, selection.text;
+        roles=selection.roles, limit=selection.limit)]
+end
+
+"""Search persisted history without opening or executing sessions; query sources use Julia dispatch."""
+function api_persisted_search(api::SessionAPI, params::AbstractDict)
+    source = lock(api.lock) do
+        api.closed && return RpcError(-32000, "Session API is closed")
+        return isnothing(api.query) ? api.store : api.query
+    end
+    source isa RpcError && return source
+    isnothing(source) && return RpcError(-32601, "No persistent session search service is configured")
+    selection = api_search_parameters(params)
+    selection isa RpcError && return selection
+    return [api_hit(hit) for hit in search_history(source, selection.text;
+        roles=selection.roles, limit=selection.limit)]
 end
 
 function api_session_workspace(api::SessionAPI, params::AbstractDict; change=false)
@@ -156,6 +184,7 @@ function session_api_request!(api::SessionAPI, method::AbstractString, params::A
     method == "session/describe" && return api_session_detail(api, params)
     method == "session/messages" && return api_session_messages(api, params)
     method == "session/search" && return api_session_search(api, params)
+    method == "session/search/all" && return api_persisted_search(api, params)
     method == "session/workspace/get" && return api_session_workspace(api, params)
     method == "session/workspace/set" && return api_session_workspace(api, params; change=true)
     method == "session/save" && return api_session_save(api, params)
@@ -187,12 +216,17 @@ end
 
 """Install the replaceable Julia session API service under a profile."""
 function session_api_plugin(; name=:session_api, service_name=:session_api,
-        store_service=nothing, factory=Kernel)
+        store_service=nothing, query_service=nothing, factory=Kernel)
     contract = Symbol(service_name)
-    dependencies = isnothing(store_service) ? Symbol[] : Symbol[Symbol(store_service)]
+    dependencies = Symbol[]
+    isnothing(store_service) || push!(dependencies, Symbol(store_service))
+    isnothing(query_service) || push!(dependencies, Symbol(query_service))
+    unique!(dependencies)
     setup = context -> begin
         store = isnothing(store_service) ? nothing : service(context, Symbol(store_service))
-        provide!(context, contract, SessionAPI(; factory, store); cleanup=close)
+        query = isnothing(query_service) ? nothing : service(context, Symbol(query_service))
+        provide!(context, contract, SessionAPI(; factory, store, query);
+            requires=dependencies, cleanup=close)
     end
     return PluginSpec(name, setup; requires=dependencies, provides=[contract])
 end

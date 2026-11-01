@@ -988,6 +988,96 @@ function indexed_rewrite_differential()
     end
 end
 
+"""Compare persisted-session RPC search with DSH's exact pinned text/type query predicates."""
+function session_api_persisted_search_result(input; indexed=false)
+    return mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        for specification in input["sessions"]
+            messages = Message[Message(Symbol(entry["role"]), entry["content"])
+                for entry in specification["messages"]]
+            session = Session(Kernel(); messages, owns_kernel=true)
+            saved = JuliaForever2.save_session!(store, specification["name"], session)
+            close(session)
+            saved.ok || error(saved.reason)
+        end
+        api = if indexed
+            query = JuliaForever2.SessionQuery(JuliaForever2.SessionSearchIndex(store))
+            JuliaForever2.SessionAPI(; store, query)
+        else
+            JuliaForever2.SessionAPI(; store)
+        end
+        parameters = Dict{String,Any}("text" => input["text"])
+        for key in ("roles", "limit")
+            haskey(input, key) && (parameters[key] = input[key])
+        end
+        reply = JuliaForever2.session_api_request!(api, "session/search/all", parameters)
+        close(api)
+        return normalize(Dict("ok" => !(reply isa JuliaForever2.RpcError),
+            "hits" => reply isa JuliaForever2.RpcError ? Any[] : reply))
+    end
+end
+
+"""A third-party search service can replace the entire indexed search implementation."""
+struct DifferentialSearchOverride{S}
+    source::S
+end
+
+JuliaForever2.search_history(view::DifferentialSearchOverride, text::AbstractString; kwargs...) =
+    JuliaForever2.search_history(view.source, text; kwargs...)
+
+function session_api_overridden_query_result(input)
+    return mktempdir() do directory
+        registry = JuliaForever2.PluginRegistry()
+        JuliaForever2.register_plugin!(registry, JuliaForever2.session_store_plugin(directory))
+        JuliaForever2.register_plugin!(registry, JuliaForever2.session_query_plugin())
+        replacement = JuliaForever2.PluginSpec(:replacement_query,
+            context -> JuliaForever2.provide!(context, :session_query,
+                DifferentialSearchOverride(JuliaForever2.service(context, :session_store)));
+            requires=[:session_store], provides=[:session_query])
+        JuliaForever2.register_plugin!(registry, replacement)
+        JuliaForever2.register_plugin!(registry,
+            JuliaForever2.session_api_plugin(; store_service=:session_store, query_service=:session_query))
+        base = Kernel()
+        host = JuliaForever2.PluginHost(base; registry)
+        profile = JuliaForever2.Profile(:custom_search,
+            [:session_store, :session_query, :replacement_query, :session_api];
+            bindings=Dict(:session_query => :replacement_query))
+        activated = JuliaForever2.activate!(host, profile)
+        activated.ok || error(activated.reason)
+        store = component(host, :session_store)
+        for specification in input["sessions"]
+            messages = Message[Message(Symbol(entry["role"]), entry["content"])
+                for entry in specification["messages"]]
+            session = Session(Kernel(); messages, owns_kernel=true)
+            saved = JuliaForever2.save_session!(store, specification["name"], session)
+            close(session)
+            saved.ok || error(saved.reason)
+        end
+        parameters = Dict{String,Any}("text" => input["text"])
+        for key in ("roles", "limit")
+            haskey(input, key) && (parameters[key] = input[key])
+        end
+        reply = JuliaForever2.session_api_request!(component(host, :session_api),
+            "session/search/all", parameters)
+        close(host)
+        close(base)
+        return normalize(Dict("ok" => !(reply isa JuliaForever2.RpcError),
+            "hits" => reply isa JuliaForever2.RpcError ? Any[] : reply))
+    end
+end
+
+@testset "Native persisted-session API search against pinned DSH predicates" begin
+    cases = filter(input -> get(input, "source", "stored") == "stored", CASES["session_query"])
+    expected = reference_results("session_query", cases)
+    for (input, reference) in zip(cases, expected)
+        @testset "$(input["name"])" begin
+            @test session_api_persisted_search_result(input) == reference
+            @test session_api_persisted_search_result(input; indexed=true) == reference
+        end
+    end
+    @test session_api_overridden_query_result(first(cases)) == first(expected)
+end
+
 @testset "Indexed search revision differentials against pinned upstream predicates" begin
     actual, expected = indexed_rewrite_differential()
     @test actual == expected
