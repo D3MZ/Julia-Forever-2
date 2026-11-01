@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       JULIA_NUM_THREADS: '2'
-      DSH_REFERENCE_ROOT: ${{ runner.temp }}/deepseek-harness
-      DSH_BIN: ${{ runner.temp }}/deepseek-harness/apps/cli/lib/bin.js
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,6 +21,9 @@ jobs:
       - name: Fetch pinned DSH differential oracle
         shell: bash
         run: |
+          DSH_REFERENCE_ROOT="$RUNNER_TEMP/deepseek-harness"
+          echo "DSH_REFERENCE_ROOT=$DSH_REFERENCE_ROOT" >> "$GITHUB_ENV"
+          echo "DSH_BIN=$DSH_REFERENCE_ROOT/apps/cli/lib/bin.js" >> "$GITHUB_ENV"
           git init "$DSH_REFERENCE_ROOT"
           git -C "$DSH_REFERENCE_ROOT" remote add origin https://github.com/deepseek-ai/deepseek-harness.git
           git -C "$DSH_REFERENCE_ROOT" fetch --depth 1 origin ce7073d51254c26cd63b22a60835b8f948deb447
