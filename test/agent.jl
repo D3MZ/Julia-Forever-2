@@ -269,3 +269,12 @@ end
         @test Base.invokelatest(component(session.kernel, :increment), 41) == 42
     end
 end
+
+
+@testset "Normalized provider usage costs remain finite after Float64 conversion" begin
+    enormous_cost = big(10)^400
+    # A finite arbitrary-precision cost must not become an infinite Float64.
+    @test isnothing(JuliaForever2.normalize_usage(Dict("cost" => enormous_cost)).cost)
+    @test JuliaForever2.normalize_usage(Dict("cost" => BigFloat("1.25"))).cost == 1.25
+    @test isnothing(JuliaForever2.normalize_usage(Dict("cost" => -1)).cost)
+end
