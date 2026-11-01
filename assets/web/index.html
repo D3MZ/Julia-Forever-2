@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>JuliaForever2 Sessions</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>JuliaForever2</h1>
+      <p>Local Julia session console</p>
+    </header>
+    <section aria-label="Session management" class="panel">
+      <div class="grid">
+        <label for="session-name">Session name (optional when opening)</label>
+        <input id="session-name" type="text" autocomplete="off" spellcheck="false">
+        <label for="workspace">Working directory (optional)</label>
+        <input id="workspace" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="actions">
+        <button id="open" type="button">New session</button>
+        <button id="resume" type="button">Resume saved session</button>
+        <button id="refresh" type="button">Refresh</button>
+      </div>
+      <div class="grid">
+        <label for="sessions">Open sessions</label>
+        <select id="sessions" aria-label="Open sessions"></select>
+      </div>
+      <div class="actions">
+        <button id="save" type="button" disabled>Save session</button>
+        <button id="close" type="button" disabled>Close session</button>
+      </div>
+    </section>
+    <section class="panel" aria-label="Conversation">
+      <h2>Messages</h2>
+      <ol id="history" aria-live="polite"></ol>
+      <form id="composer">
+        <label for="prompt">Message</label>
+        <textarea id="prompt" rows="4" placeholder="Enter a message" disabled></textarea>
+        <button id="send" type="submit" disabled>Send</button>
+      </form>
+    </section>
+    <p id="status" role="status" aria-live="polite">Loading sessions…</p>
+  </main>
+</body>
+</html>

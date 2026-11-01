@@ -458,6 +458,37 @@ end
         (rows=[(id=1, name="named tuple")],)))
 end
 
+@testset "Persisted lineage avoids materializing unrelated session messages" begin
+    mktempdir() do directory
+        store = JuliaForever2.SessionStore(directory)
+        root = uuid5(UUID("17cf245c-3b45-446d-97aa-550d286b98ac"), "root")
+        child = uuid5(root, "child")
+        for (name, identity, parent, version) in (
+                ("root", root, nothing, 2), ("child", child, root, 2),
+                ("legacy", root, nothing, 1))
+            data = Dict("format" => "JuliaForever2.session", "version" => version,
+                "name" => name, "working_directory" => directory,
+                "messages" => [Dict("role" => "user", "kind" => "text",
+                    "content" => repeat("unicode café λ record ", 32)) for _ in 1:24],
+                "lineage" => Dict("id" => string(identity),
+                    "parent_id" => isnothing(parent) ? nothing : string(parent),
+                    "root_id" => string(root)))
+            write(joinpath(directory, name * ".json"), JSON.json(data))
+        end
+        for name in ("root", "child", "legacy")
+            full = JuliaForever2.saved_session_record(store, name)
+            @test length(full.messages) == 24
+            @test JuliaForever2.session_lineage(store, name) == full.lineage
+            @test JuliaForever2.session_lineage(store, Symbol(name)) == full.lineage
+        end
+        @test JuliaForever2.session_descendants(store, "root") == ["child"]
+        @test JuliaForever2.session_descendants(store, "root"; include_self=true) ==
+            ["child", "root"]
+        @test isnothing(JuliaForever2.session_lineage(store, "missing"))
+        @test isnothing(JuliaForever2.session_lineage(store, "../invalid"))
+    end
+end
+
 @testset "Footer handles a missing provider and oversized cached usage" begin
     session = Session(Kernel())
     snapshot = JuliaForever2.session_footer_snapshot(session)
@@ -474,4 +505,27 @@ end
     @test cached_report(17, 10, 12).input_tokens == 0
     @test cached_report(0, typemax(Int), typemax(Int)).input_tokens == 0
     @test cached_report(1, typemax(Int), typemax(Int)).input_tokens == 0
+end
+
+@testset "Session API counts history changes without snapshotting messages" begin
+    session = Session(Kernel(); messages=[Message(:user, "first"), Message(:assistant, "second")])
+    api = JuliaForever2.SessionAPI()
+    api.sessions["counted"] = session
+    params = Dict{String,Any}("session" => "counted")
+    function verify_count(expected)
+        result = JuliaForever2.session_api_request!(api, "session/describe", params)
+        @test result == JuliaForever2.api_session_summary("counted", session)
+        @test result["messages"] == expected
+        @test length(JuliaForever2.session_api_request!(api, "session/messages", params)) == expected
+        @test JSON.parse(JSON.json(Dict("jsonrpc" => "2.0", "id" => 1,
+            "result" => result)))["result"]["messages"] == expected
+    end
+    verify_count(2)
+    append_message!(session, Message(:user, "third"))
+    verify_count(3)
+    replace_message!(session, 1, Message(:assistant, "replaced"))
+    verify_count(3)
+    clear_history!(session)
+    verify_count(0)
+    close(api)
 end

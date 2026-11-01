@@ -20,7 +20,7 @@ function api_session_summary(name::AbstractString, session::Session)
     return Dict("session" => String(name), "id" => string(lineage.id),
         "parent" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
         "root" => string(lineage.root_id), "workingDirectory" => working_directory(session),
-        "messages" => length(history_snapshot(session).messages))
+        "messages" => lock(() -> length(session.conversation.messages), session.conversation.lock))
 end
 
 api_message(message::Message) = Dict("role" => String(message.role), "kind" => String(message.kind), "content" => message.content)
