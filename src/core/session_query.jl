@@ -75,6 +75,8 @@ function validate(::Type{HistoryQuery}, text, limit)
     nothing
 end
 
+validate(::Type{HistoryQuery}, text, ::Bool) = error("Session query limit must be a non-Boolean integer")
+
 function pattern(text::String)
     stripped = strip(String(text))
     pattern = IOBuffer()
