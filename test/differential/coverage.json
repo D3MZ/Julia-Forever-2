@@ -6,7 +6,7 @@
     "source_lock": "reference-lock.json"
   },
   "superset_proven": false,
-  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity.",
+  "assessment": "Native Julia indexed session search, persistent parent-child session identities, a framework-neutral session API, and an optional token-authenticated HTTP frontend are implemented independently. Indexed text behavior is checked against DSH; SDK directory/validation and Web authentication/HTML capability have bounded behavioral projections. DSH-native protocol shape, complete UI, session lineage and other feature families remain unverified; no overall feature-superset claim. Opt-in native JSON tool argument validation is differentially compared on bounded fixtures; complete tool-executor parity remains unverified. Optional Julia-native successful tool-output schema checks reject invalid results without exposing their value; 31 schema-level differentials against pinned DSH cover supported JSON values, but DSH's canonical output rendering and complete tool pipeline remain unverified. Native Julia tool batching now supports ordered result correlation, explicit concurrency-safe tool declarations, exclusive barriers, bounded dispatch, and drained cancellation. A deterministic pinned-DSH scheduler differential covers a narrow externally observable projection only; complete approval session/UI routing, policy-stage ordering, complete tool-result presentation, deferred contexts, and durable event logs remain gaps. Julia-native tool guards can request one-call approval through scoped, replaceable Julia event services; missing channels and non-grants fail closed. Nine isolated approval-resolution projections are compared against the pinned upstream implementation, but complete pre/post policy and UI consent flows remain unverified. A pinned upstream tool-body differential now checks that mid-execution cancellation suppresses an otherwise successful native Julia tool value; this is a bounded body-lifecycle projection, not complete post-execute policy parity. Opt-in Julia tool output renderers now preserve validated typed values while independently producing model-facing text; 15 pinned-DSH registry/renderer projections cover bounded text and schema behavior. This does not establish parity with DSH's final content blocks, UI presenters, post-policy stages, or deferred contexts.",
   "oracle": {
     "runner": "oracle.mjs",
     "implementation": "Original pinned TypeScript source, transformed with Node built-in TypeScript support; no handwritten substitute oracle.",
@@ -446,6 +446,42 @@
       "limits": [
         "31 bounded JSON-compatible cases against original DSH schema validation, not the complete DSH output rendering or presentation pipeline.",
         "Julia output checks are optional and replaceable through tool_output_violations multiple dispatch; approval, batching, cancellation, and tool-output presentation parity remain unverified."
+      ]
+    },
+    {
+      "kind": "tool_output_projection",
+      "case_count": 15,
+      "status": "required-differential-cases",
+      "sources": [
+        {
+          "path": "packages/core/tools/src/index.ts",
+          "symbols": [
+            "ToolsService",
+            "register",
+            "get"
+          ]
+        },
+        {
+          "path": "packages/core/tools/src/json-schema.ts",
+          "symbols": [
+            "validateJsonSchemaValue"
+          ]
+        },
+        {
+          "path": "packages/core/tools/src/contracts.ts",
+          "symbols": [
+            "ToolOutputDefinition"
+          ]
+        }
+      ],
+      "compares": [
+        "Registered DSH tool bodies keep typed canonical return values distinct from output.render text blocks; Julia's optional render_output preserves the same distinction.",
+        "Passing output schemas admit readable model text, including empty text, Unicode, multiline values and numeric values; invalid canonical output does not reach the renderer.",
+        "Renderer invocation counts, preserved JSON-compatible values and rendered model-visible text for deterministic, independently authored fixture renderers."
+      ],
+      "limits": [
+        "15 bounded DSH registry/API and JSON Schema projections, not the full upstream ToolExecutionPipeline or final content-block snapshot semantics.",
+        "Julia currently exposes a single text projection rather than multimodal output blocks, presentation metadata, replayable UI views, post-execute waterfall hooks or deferred contexts."
       ]
     },
     {

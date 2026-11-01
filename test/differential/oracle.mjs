@@ -153,6 +153,45 @@ async function toolBatchCase(input) {
   }
 }
 
+/** Exercise the pinned DSH tool registry's typed return and separate model rendering contract. */
+async function toolOutputProjectionCase(input) {
+  const { ToolsService, SystemPrompt } = await toolsReference()
+  const { context } = await scopeFixture(input, async context => {
+    await context.plugin(SystemPrompt)
+    await context.plugin(ToolsService)
+  }, ['tools', 'systemPrompt'])
+  let invoked = 0
+  let rendered = 0
+  const text = (args, value) => {
+    if (input.format === 'label') return `${args.prefix ?? ''}${value.label}`
+    if (input.format === 'joined') return value.lines.join('|')
+    if (input.format === 'summary') return `${value.label} (${value.count})`
+    if (input.format === 'silent') return ''
+    if (input.format === 'scalar') return String(value)
+    throw new Error('Unknown fixture presentation')
+  }
+  const dispose = context.tools.register({
+    name: 'projection', description: '', parameters: { type: 'object' },
+    output: { schema: input.schema, render: (args, value) => {
+      rendered++
+      return [{ type: 'text', text: text(args, value) }]
+    } },
+    execute: async () => { invoked++; return input.value },
+  })
+  const tool = context.tools.get('projection')
+  const value = await tool.execute(input.arguments, {})
+  const allowed = validateJsonSchemaValue(tool.output.schema, value, 'result').length === 0
+  const content = allowed ? tool.output.render(input.arguments, value) : null
+  dispose()
+  await context.fiber.dispose()
+  return {
+    accepted: allowed,
+    invoked, rendered,
+    display: content === null ? null : content.map(block => block.text).join('\\n'),
+    value: allowed ? value : null,
+  }
+}
+
 function toolArgumentsCase(input) {
   assertSupportedJsonSchema(input.schema)
   const violations = validateJsonSchemaValue(input.schema, input.value, 'arguments').sort()
@@ -699,6 +738,7 @@ async function execute(input) {
   if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
   if (input.kind === 'tool_arguments') return input.cases.map(toolArgumentsCase)
   if (input.kind === 'tool_outputs') return input.cases.map(toolOutputsCase)
+  if (input.kind === 'tool_output_projection') return Promise.all(input.cases.map(toolOutputProjectionCase))
   if (input.kind === 'patches') return input.cases.map(patchCase)
   if (input.kind === 'layers') return input.cases.map(layerCase)
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
