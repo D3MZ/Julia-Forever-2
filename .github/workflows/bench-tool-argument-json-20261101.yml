@@ -1,0 +1,321 @@
+name: Tool argument stream JSON guard experiment
+on:
+  push:
+    branches:
+      - perf/tool-arguments-json-guard-20261101t0834
+permissions:
+  contents: read
+jobs:
+  paired-performance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: '373c424a2303b58e4452f339982ef9957e6dccb1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Prepare exact baseline worktree and capture environment
+        shell: bash
+        run: |
+          mkdir -p benchmark-evidence
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/tool-arguments-baseline" "$BASELINE_SHA"
+          echo "BASELINE_DIR=$RUNNER_TEMP/tool-arguments-baseline" >> "$GITHUB_ENV"
+          julia --version | tee benchmark-evidence/julia-version.txt
+          git rev-parse HEAD > benchmark-evidence/candidate-sha.txt
+          git -C "$RUNNER_TEMP/tool-arguments-baseline" rev-parse HEAD > benchmark-evidence/baseline-sha.txt
+          lscpu > benchmark-evidence/runner-cpu.txt
+          uname -a > benchmark-evidence/runner-os.txt
+          env | sort | grep -E '^(JULIA_|OPENBLAS_|GITHUB_SHA|RUNNER_OS|RUNNER_ARCH)' > benchmark-evidence/runner-environment.txt
+      - name: Instantiate pinned Julia test dependencies
+        shell: bash
+        run: |
+          julia --project=test -e 'using Pkg; Pkg.instantiate(); Pkg.status()'
+      - name: Seven alternating warmed-up exact-baseline integration pairs and profiles
+        shell: bash
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/tool-arguments-experiment.jl" <<'JULIA'
+          using JuliaForever2, JSON, Profile, Statistics, SHA
+          length(ARGS) == 2 || error("Expected baseline tree and evidence directory")
+          const baseline_dir = realpath(ARGS[1])
+          const evidence = abspath(ARGS[2])
+          mkpath(evidence)
+          module OriginalNamespace end
+          Base.include(OriginalNamespace, joinpath(baseline_dir, "src/JuliaForever2.jl"))
+          const Original = OriginalNamespace.JuliaForever2
+          const Candidate = JuliaForever2
+          
+          const argument_json = JSON.json(Dict(
+              "script" => repeat("println(\"tool output with escaping\"); ", 105),
+              "options" => Dict("timeout" => 40, "strict" => true),
+              "session" => "autonomous-performance"))
+          isascii(argument_json) || error("Fixture must be ASCII for byte-sized fragments")
+          const parsed_arguments = JSON.parse(argument_json)
+          
+          function split_arguments(width::Int)
+              bytes = codeunits(argument_json)
+              return [String(collect(bytes[i:min(i + width - 1, length(bytes))]))
+                  for i in 1:width:length(bytes)]
+          end
+          
+          function openai_wire(count::Int, width::Int)
+              output = IOBuffer()
+              for call_index in 0:(count - 1)
+                  for (part_index, fragment) in enumerate(split_arguments(width))
+                      function_data = Dict{String,Any}("arguments" => fragment)
+                      tool = Dict{String,Any}("index" => call_index, "function" => function_data)
+                      if part_index == 1
+                          tool["id"] = "tool_$(call_index)"
+                          function_data["name"] = "perform"
+                      end
+                      chunk = Dict("choices" => [Dict("index" => 0,
+                          "delta" => Dict("tool_calls" => [tool]))])
+                      write(output, "data: ", JSON.json(chunk), "\n\n")
+                  end
+              end
+              write(output, "data: ", JSON.json(Dict("choices" => [
+                  Dict("index" => 0, "delta" => Dict(), "finish_reason" => "tool_calls")])), "\n\n")
+              write(output, "data: [DONE]\n\n")
+              return String(take!(output))
+          end
+          
+          function anthropic_wire(count::Int, width::Int)
+              output = IOBuffer()
+              write(output, "event: message_start\ndata: ", JSON.json(Dict(
+                  "type" => "message_start", "message" => Dict(
+                      "id" => "message_1", "model" => "synthetic-tool-model",
+                      "usage" => Dict("input_tokens" => 24, "output_tokens" => 0)))), "\n\n")
+              for call_index in 0:(count - 1)
+                  write(output, "event: content_block_start\ndata: ", JSON.json(Dict(
+                      "type" => "content_block_start", "index" => call_index,
+                      "content_block" => Dict("type" => "tool_use", "id" => "tool_$(call_index)",
+                          "name" => "perform", "input" => Dict{String,Any}()))), "\n\n")
+                  for fragment in split_arguments(width)
+                      write(output, "event: content_block_delta\ndata: ", JSON.json(Dict(
+                          "type" => "content_block_delta", "index" => call_index,
+                          "delta" => Dict("type" => "input_json_delta",
+                              "partial_json" => fragment))), "\n\n")
+                  end
+                  write(output, "event: content_block_stop\ndata: ", JSON.json(Dict(
+                      "type" => "content_block_stop", "index" => call_index)), "\n\n")
+              end
+              write(output, "event: message_delta\ndata: ", JSON.json(Dict(
+                  "type" => "message_delta", "delta" => Dict("stop_reason" => "tool_use"),
+                  "usage" => Dict("output_tokens" => 10))), "\n\n")
+              write(output, "event: message_stop\ndata: ",
+                  JSON.json(Dict("type" => "message_stop")), "\n\n")
+              return String(take!(output))
+          end
+          
+          const fixtures = [
+              ("integration/openai-12-tools-fragmented-24", :openai, 12, 24),
+              ("integration/anthropic-8-tools-fragmented-24", :anthropic, 8, 24),
+              ("integration/openai-8-tools-fragmented-64", :openai, 8, 64),
+              ("integration/anthropic-4-tools-fragmented-64", :anthropic, 4, 64),
+              ("integration/openai-2-tools-single-fragment", :openai, 2, length(argument_json)),
+              ("integration/anthropic-2-tools-single-fragment", :anthropic, 2, length(argument_json)),
+          ]
+          const wires = Dict(name => (protocol == :openai ? openai_wire(count, width) :
+              anthropic_wire(count, width)) for (name, protocol, count, width) in fixtures)
+          
+          function execute_pipeline(package, wire::String, protocol::Symbol)
+              events = package.HarnessEvent[]
+              context = package.ExecutionContext(; event_sink=event -> push!(events, event))
+              model = package.ModelSpec(:benchmark, "synthetic-tool-model"; api="chat")
+              request = package.ModelRequest([package.Message(:user, "Perform a batch of tool calls.")],
+                  "", nothing, nothing, nothing)
+              backend = package.HTTPModelBackend(
+                  protocol == :openai ? package.OpenAIChatProtocol() :
+                      package.AnthropicMessagesProtocol(),
+                  "https://example.invalid";
+                  transport=(url, method, body, headers, ctx, sink) -> begin
+                      write(sink, wire)
+                      return (status=200, reason="OK")
+                  end)
+              result = package.respond_model(backend, model, request, context)
+              close(context)
+              return (result=result, events=events)
+          end
+          
+          function verify_result(observation, count)
+              result = observation.result
+              blocks = result.message["content"]
+              length(blocks) == count || error("Unexpected tool-call count")
+              for (index, block) in enumerate(blocks)
+                  block["type"] == "toolCall" || error("Unexpected block type")
+                  block["name"] == "perform" || error("Unexpected tool name")
+                  block["id"] == "tool_$(index - 1)" || error("Unexpected tool id")
+                  isequal(block["arguments"], parsed_arguments) || error("Incomplete JSON arguments")
+              end
+              result.message["stopReason"] == "toolUse" || error("Unexpected stop reason")
+              result.reply.kind == :error || error("Tool-aware completion reply contract changed")
+              kinds = [event.data["type"] for event in observation.events if event.kind == :model_stream]
+              count(==("toolcall_end"), kinds) == count || error("Missing completion events")
+              return (blocks, kinds, result.message["stopReason"], result.reply.kind)
+          end
+          
+          function measure(f)
+              GC.gc()
+              timings = Int[]
+              for _ in 1:7
+                  t0 = time_ns()
+                  f()
+                  push!(timings, time_ns() - t0)
+              end
+              return (times_ns=timings, median_ns=median(timings),
+                  allocated_bytes=Base.@allocated(f()),
+                  allocation_count=Base.@allocations(f()))
+          end
+          
+          function bootstrap_limits(gains)
+              seed = UInt64(0x43504647)
+              medians = Float64[]
+              for _ in 1:12000
+                  sampled = Float64[]
+                  for _ in eachindex(gains)
+                      seed = seed * UInt64(6364136223846793005) + UInt64(1442695040888963407)
+                      push!(sampled, gains[Int(mod(seed, UInt64(length(gains)))) + 1])
+                  end
+                  push!(medians, median(sampled))
+              end
+              return (lower=quantile(medians, 0.025), upper=quantile(medians, 0.975))
+          end
+          
+          function profile_workload(f, prefix)
+              f()
+              Profile.clear()
+              Profile.@profile begin
+                  until = time_ns() + 400_000_000
+                  while time_ns() < until
+                      f()
+                  end
+              end
+              open(joinpath(evidence, prefix * "-cpu.txt"), "w") do output
+                  Profile.print(output; format=:flat, sortedby=:count)
+              end
+              Profile.Allocs.clear()
+              Profile.Allocs.@profile sample_rate=0.02 f()
+              sites = Dict{String,Tuple{Int,Int}}()
+              for allocation in Profile.Allocs.fetch().allocs
+                  isempty(allocation.stacktrace) && continue
+                  frame = first(allocation.stacktrace)
+                  for location in allocation.stacktrace
+                      if occursin("http_models", string(location.file))
+                          frame = location
+                          break
+                      end
+                  end
+                  label = string(frame.file, ":", frame.line, " ", frame.func)
+                  count, bytes = get(sites, label, (0, 0))
+                  sites[label] = (count + 1, bytes + allocation.size)
+              end
+              records = [(site=site, count=value[1], bytes=value[2]) for (site, value) in sites]
+              sort!(records; by=x -> x.bytes, rev=true)
+              write(joinpath(evidence, prefix * "-allocation-sites.json"),
+                  JSON.json((sample_rate=0.02, sites=first(records, min(length(records), 100)))))
+              Profile.Allocs.clear()
+          end
+          
+          const metadata = (;
+              baseline_sha=readchomp(Cmd(["git", "-C", baseline_dir, "rev-parse", "HEAD"])),
+              candidate_sha=get(ENV, "GITHUB_SHA", "unknown"),
+              julia_version=string(VERSION), threads=Threads.nthreads(),
+              cpu=Sys.CPU_NAME, logical_cpus=Sys.CPU_THREADS, os=string(Sys.KERNEL),
+              architecture=string(Sys.ARCH), json_version=string(Base.pkgversion(JSON)),
+              project_sha256=bytes2hex(sha256(read("Project.toml"))),
+              baseline_project_sha256=bytes2hex(sha256(read(joinpath(baseline_dir,"Project.toml")))),
+              test_project_sha256=bytes2hex(sha256(read("test/Project.toml"))),
+              baseline_test_project_sha256=bytes2hex(sha256(read(joinpath(baseline_dir,"test/Project.toml")))),
+              pairs=7, repetitions_per_side=7, warmups_per_side=4,
+              alternating_order="AB,BA,AB,BA,AB,BA,AB",
+              confidence="12,000 deterministic bootstrap replicates of paired median improvements",
+              fixture_arguments_sha256=bytes2hex(sha256(argument_json)),
+              fixture_bytes=Dict(name => ncodeunits(wire) for (name, wire) in wires),
+              environment="same Julia process, packages, machine, threads, inputs; exact git worktree baseline")
+          metadata.project_sha256 == metadata.baseline_project_sha256 || error("Project manifest mismatch")
+          metadata.test_project_sha256 == metadata.baseline_test_project_sha256 || error("Test package mismatch")
+          write(joinpath(evidence, "environment.json"), JSON.json(metadata))
+          
+          results = Dict{String,Any}()
+          for (name, protocol, tool_count, width) in fixtures
+              wire = wires[name]
+              before = () -> execute_pipeline(Original, wire, protocol)
+              after = () -> execute_pipeline(Candidate, wire, protocol)
+              old_result = verify_result(before(), tool_count)
+              new_result = verify_result(after(), tool_count)
+              isequal(old_result, new_result) || error("Behavior mismatch for $(name)")
+              for _ in 1:4
+                  before()
+                  after()
+              end
+              old_samples, new_samples = Any[], Any[]
+              for pair in 1:7
+                  if isodd(pair)
+                      push!(old_samples, measure(before))
+                      push!(new_samples, measure(after))
+                  else
+                      push!(new_samples, measure(after))
+                      push!(old_samples, measure(before))
+                  end
+              end
+              gains = [1 - new_samples[i].median_ns / old_samples[i].median_ns for i in 1:7]
+              bounds = bootstrap_limits(gains)
+              record = (baseline=old_samples, candidate=new_samples, paired_improvements=gains,
+                  median_improvement=median(gains), ci95_lower_improvement=bounds.lower,
+                  ci95_upper_improvement=bounds.upper,
+                  baseline_median_ns=median(getproperty.(old_samples, :median_ns)),
+                  candidate_median_ns=median(getproperty.(new_samples, :median_ns)),
+                  baseline_median_allocations=median(getproperty.(old_samples, :allocation_count)),
+                  candidate_median_allocations=median(getproperty.(new_samples, :allocation_count)),
+                  baseline_median_bytes=median(getproperty.(old_samples, :allocated_bytes)),
+                  candidate_median_bytes=median(getproperty.(new_samples, :allocated_bytes)))
+              results[name] = record
+              write(joinpath(evidence, "paired-raw.json"), JSON.json((; metadata, results)))
+              println(name, ": gain ", round(100 * record.median_improvement; digits=2),
+                  "%, 95% lower ", round(100 * record.ci95_lower_improvement; digits=2),
+                  "%, allocations ", record.baseline_median_allocations, " -> ",
+                  record.candidate_median_allocations)
+              flush(stdout)
+          end
+          
+          profile_workload(() -> execute_pipeline(Original,
+              wires["integration/openai-12-tools-fragmented-24"], :openai), "baseline")
+          profile_workload(() -> execute_pipeline(Candidate,
+              wires["integration/openai-12-tools-fragmented-24"], :openai), "candidate")
+          
+          flagship = results["integration/openai-12-tools-fragmented-24"]
+          no_regressions = all(r.median_improvement > -0.03 && r.ci95_lower_improvement > -0.07
+              for (name, r) in results if name != "integration/openai-12-tools-fragmented-24")
+          gate = (; accepted=flagship.median_improvement > 0.10 &&
+              flagship.ci95_lower_improvement > 0.10 && no_regressions,
+              improvement=flagship.median_improvement,
+              lower95=flagship.ci95_lower_improvement,
+              no_material_regressions=no_regressions)
+          write(joinpath(evidence, "gate.json"), JSON.json(gate))
+          println("Acceptance gate: ", JSON.json(gate))
+          gate.accepted || error("Performance gate failed; no pull request allowed")
+          
+          JULIA
+          julia --project=test "$RUNNER_TEMP/tool-arguments-experiment.jl" "$BASELINE_DIR" "benchmark-evidence" 2>&1 | tee benchmark-evidence/benchmark.log
+      - name: Focused correctness, syntax lint and Aqua
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=test test/runtests.jl core providers streaming lint aqua 2>&1 | tee benchmark-evidence/verification.log
+      - name: Upload raw paired evidence even when benchmark gate or correctness fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tool-arguments-raw-paired-profiles-and-gate
+          path: benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30
