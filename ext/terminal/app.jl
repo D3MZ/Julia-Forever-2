@@ -16,15 +16,10 @@ function App(session::Session; settings_dir::AbstractString=config_dir(), regist
     input = TextInput(; label="", style=pi_style(:text), cursor_style=Tachikoma.Style(; fg=Tachikoma.ColorRGB(36, 41, 49), bg=Tachikoma.ColorRGB(255, 255, 255)))
     app = App(session, input, :chat, false, 1, false, false, TaskQueue(; capacity=typemax(Int)), "Ready", 0, Rect(),
         directory_label(), CommandSpec[], Dict{Symbol,Vector{EventHandler}}(),
-        SettingsState(settings_dir, registry), TranscriptState(), OperationState())
+        SettingsState(settings_dir, registry), TranscriptState(), OperationState(), MenusState())
     isnothing(component(kernel, :input)) && install!(kernel, ComponentSpec(:input, default_input!))
     isnothing(component(kernel, :view)) && install!(kernel, ComponentSpec(:view, default_view!))
-    register_command!(app, CommandSpec("settings", "Choose a provider", settings_command!))
-    register_command!(app, CommandSpec("components", "Inspect installed components", components_command!))
-    register_command!(app, CommandSpec("julia", "Run a Julia expression", julia_command!))
-    register_command!(app, CommandSpec("clear", "Clear the conversation", clear_command!))
-    register_command!(app, CommandSpec("quit", "Exit", quit_command!))
-    register_command!(app, CommandSpec("cancel", "Cancel the active operation", cancel_command!))
+    register_default_commands!(app)
     register_event_handler!(app, :turn, operation_finished!)
     register_event_handler!(app, :evaluation, operation_finished!)
     register_event_handler!(app, :auth_url, auth_url_received!)
