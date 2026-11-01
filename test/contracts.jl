@@ -241,8 +241,9 @@ end
     @test JuliaForever2.record_usage!(conversation,
         Dict("input_tokens" => 4, "output_tokens" => 5, "cost" => 0.5)) === conversation
     accounting = JuliaForever2.usage_snapshot(conversation)
-    @test accounting == (input_tokens=6, output_tokens=8, cost=0.75,
-        reported=true, cost_known=true, partial=false)
+    @test accounting == (input_tokens=6, output_tokens=8,
+        cache_read_tokens=0, cache_write_tokens=0, context_tokens=4, cache_hit_rate=0.0,
+        cost=0.75, reported=true, cost_known=true, partial=false)
 
     JuliaForever2.append_message!(conversation, Message(:user, "previous message"))
     revision = JuliaForever2.history_revision(conversation)
@@ -251,5 +252,7 @@ end
     @test isempty(cleared.messages)
     @test cleared.changed_from == 1
     @test cleared.revision == revision + UInt(1)
-    @test JuliaForever2.usage_snapshot(conversation) == accounting
+    cleared_accounting = JuliaForever2.usage_snapshot(conversation)
+    @test cleared_accounting.context_tokens === nothing
+    @test merge(cleared_accounting, (context_tokens=accounting.context_tokens,)) == accounting
 end

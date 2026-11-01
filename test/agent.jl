@@ -457,3 +457,21 @@ end
     @test isempty(JuliaForever2.tool_argument_violations(checked,
         (rows=[(id=1, name="named tuple")],)))
 end
+
+@testset "Footer handles a missing provider and oversized cached usage" begin
+    session = Session(Kernel())
+    snapshot = JuliaForever2.session_footer_snapshot(session)
+    @test snapshot.provider == JuliaForever2.provider_footer_status(nothing)
+    @test JuliaForever2.footer_model_label(snapshot.provider) == "no-model"
+    @test JuliaForever2.footer_usage_label(snapshot.usage, snapshot.provider) == "?/?"
+    close(session)
+
+    function cached_report(input, read, write)
+        return JuliaForever2.UsageReport(Dict("prompt_tokens" => input,
+            "prompt_tokens_details" => Dict("cached_tokens" => read, "cache_write_tokens" => write)))
+    end
+    @test cached_report(42, 10, 12).input_tokens == 20
+    @test cached_report(17, 10, 12).input_tokens == 0
+    @test cached_report(0, typemax(Int), typemax(Int)).input_tokens == 0
+    @test cached_report(1, typemax(Int), typemax(Int)).input_tokens == 0
+end
