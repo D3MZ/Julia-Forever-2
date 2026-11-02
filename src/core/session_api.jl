@@ -7,11 +7,12 @@ mutable struct SessionAPI{F,S,Q,T}
     lock::ReentrantLock
     sessions::Dict{String,Session}
     handles::Dict{String,TaskHandle}
+    closing::Set{String}
     closed::Bool
 end
 
 """Construct a native session API; factories return a Kernel or AgentDefinition."""
-SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing) = SessionAPI(factory, store, query, titles, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), false)
+SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing) = SessionAPI(factory, store, query, titles, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), Set{String}(), false)
 
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
@@ -60,7 +61,7 @@ function create!(api::SessionAPI, name::AbstractString, directory::AbstractStrin
     lock(api.lock) do
         if api.closed
             RpcError(-32000, "Session API is closed")
-        elseif haskey(api.sessions, String(name))
+        elseif haskey(api.sessions, String(name)) || String(name) in api.closing
             RpcError(-32000, "Session is already open: $name")
         else
             restore!(api, name, directory, resume)
@@ -69,13 +70,17 @@ function create!(api::SessionAPI, name::AbstractString, directory::AbstractStrin
 end
 
 function restore!(api::SessionAPI, name, directory, resume)
-    record = resume && !isnothing(api.store) ? saved_session_record(api.store, name) : nothing
-    if resume && isnothing(record)
-        RpcError(-32004, "Session was not saved: $name")
+    if !isnothing(api.store) && session_archived(api.store, name)
+        RpcError(-32000, "Session is archived: $name")
     else
-        session = restore(Base.invokelatest(api.factory), record, directory)
-        api.sessions[String(name)] = session
-        api_session_summary(name, session)
+        record = resume && !isnothing(api.store) ? saved_session_record(api.store, name) : nothing
+        if resume && isnothing(record)
+            RpcError(-32004, "Session was not saved: $name")
+        else
+            session = restore(Base.invokelatest(api.factory), record, directory)
+            api.sessions[String(name)] = session
+            api_session_summary(name, session)
+        end
     end
 end
 
@@ -87,8 +92,12 @@ function api_close_session!(api::SessionAPI, params::AbstractDict)
         lock(api.lock) do
             pop!(api.sessions, name, nothing)
             pop!(api.handles, name, nothing)
+            push!(api.closing, name)
         end
         close(session)
+        lock(api.lock) do
+            delete!(api.closing, name)
+        end
         Dict("closed" => true)
     end
 end
@@ -105,7 +114,16 @@ end
 
 saved_summaries(error::RpcError) = error
 saved_summaries(store) = session_summaries(store)
-api_saved_session_list(api::SessionAPI, ::AbstractDict) = saved_summaries(api_saved_store(api))
+saved_summaries(error::RpcError, archived) = error
+saved_summaries(store, ::Nothing) = session_summaries(store)
+saved_summaries(store, archived::Bool) = session_summaries(store; archived)
+
+function api_saved_session_list(api::SessionAPI, params::AbstractDict)
+    archived = get(params, "archived", nothing)
+    isnothing(archived) || archived isa Bool ?
+        saved_summaries(api_saved_store(api), archived) :
+        RpcError(-32602, "Archived filter must be Boolean")
+end
 
 saved_summary(error::RpcError, name) = error
 saved_summary(store, name) = RpcError(-32602, "Expected a session identifier")
@@ -115,6 +133,37 @@ saved_summary_lookup(store, name) = something(session_summary(store, name),
     RpcError(-32004, "Session was not saved: $name"))
 api_saved_session_detail(api::SessionAPI, params::AbstractDict) =
     saved_summary(api_saved_store(api), api_parameter(params, "session"))
+
+"""Set the durable archive status only after the live Julia session has closed."""
+function api_set_saved_archive!(api::SessionAPI, params::AbstractDict, archived::Bool)
+    name = api_parameter(params, "session")
+    if !(name isa AbstractString && !isempty(name))
+        RpcError(-32602, "Expected a session identifier")
+    elseif archived && get(params, "stopActivity", false) !== false
+        RpcError(-32602, "Stopping an active session during archive is not supported")
+    else
+        identity = String(name)
+        lock(api.lock) do
+            if api.closed
+                RpcError(-32000, "Session API is closed")
+            elseif isnothing(api.store)
+                RpcError(-32601, "No persistent session store is configured")
+            elseif archived && (haskey(api.sessions, identity) || identity in api.closing)
+                RpcError(-32000, "Close the live session before archiving: $name")
+            else
+                result = archived ? archive_session!(api.store, identity) :
+                    unarchive_session!(api.store, identity)
+                if result.ok
+                    Dict("archived" => archived)
+                elseif startswith(result.reason, "Session was not saved:")
+                    RpcError(-32004, result.reason)
+                else
+                    RpcError(-32602, result.reason)
+                end
+            end
+        end
+    end
+end
 
 """Export public session text through a Julia-owned, replaceable Markdown renderer."""
 function api_session_markdown(api::SessionAPI, params::AbstractDict)
@@ -211,6 +260,8 @@ function api_session_turn!(api::SessionAPI, params::AbstractDict)
                 previous = get(api.handles, name, nothing)
                 if api.closed || get(api.sessions, name, nothing) !== session
                     RpcError(-32000, "Session is not available: $name")
+                elseif !isnothing(api.store) && session_archived(api.store, name)
+                    RpcError(-32000, "Session is archived: $name")
                 elseif !isnothing(previous) && !istaskdone(previous)
                     RpcError(-32000, "Session already has an active turn: $name")
                 else
@@ -284,8 +335,10 @@ function api_fork_locked!(api::SessionAPI, source::String, destination::String, 
         RpcError(-32000, "Session API is closed")
     elseif !haskey(api.sessions, source)
         RpcError(-32004, "Unknown session: $source")
-    elseif haskey(api.sessions, destination)
+    elseif haskey(api.sessions, destination) || destination in api.closing
         RpcError(-32000, "Session is already open: $destination")
+    elseif !isnothing(api.store) && session_archived(api.store, destination)
+        RpcError(-32000, "Session is archived: $destination")
     else
         original = api.sessions[source]
         handle = get(api.handles, source, nothing)
@@ -363,6 +416,8 @@ const SESSION_OPERATIONS = Dict(
     "session/resume" => (api, params) -> api_open_session!(api, params; resume=true),
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
     "session/list/saved" => api_saved_session_list,
+    "session/archive" => (api, params) -> api_set_saved_archive!(api, params, true),
+    "session/unarchive" => (api, params) -> api_set_saved_archive!(api, params, false),
     "session/describe/saved" => api_saved_session_detail,
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,
@@ -399,6 +454,7 @@ function Base.close(api::SessionAPI)
             snapshot = collect(values(api.sessions))
             empty!(api.sessions)
             empty!(api.handles)
+            empty!(api.closing)
             snapshot
         end
     end

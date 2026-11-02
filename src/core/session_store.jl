@@ -21,7 +21,8 @@ function session_record(session::Session)
 end
 
 """Atomically persist a session's messages and workspace, excluding transient execution metadata."""
-save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session) = persist!(store, name, session, session_file(store, name))
+save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session) =
+    persist!(store, name, session, session_file(store, name))
 persist!(store::SessionStore, name, session::Session, ::Nothing) = (ok=false, reason="Invalid session name")
 
 function persist!(store::SessionStore, name, session::Session, path::AbstractString)
@@ -33,17 +34,21 @@ function persist!(store::SessionStore, name, session::Session, path::AbstractStr
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
     serialized = JSON.json(data) * "\n"
-    lock(store.lock) do
-        mkpath(store.directory; mode=0o700)
-        mktemp(store.directory) do temporary, output
-            chmod(temporary, 0o600)
-            write(output, serialized)
-            close(output)
-            Base.Filesystem.rename(temporary, path)
+    return lock(store.lock) do
+        if session_archived(store, name)
+            (ok=false, reason="Session is archived: $name")
+        else
+            mkpath(store.directory; mode=0o700)
+            mktemp(store.directory) do temporary, output
+                chmod(temporary, 0o600)
+                write(output, serialized)
+                close(output)
+                Base.Filesystem.rename(temporary, path)
+            end
+            store.revision += UInt64(1)
+            (ok=true, reason="")
         end
-        store.revision += UInt64(1)
     end
-    return (ok=true, reason="")
 end
 
 function saved_session_record(store::SessionStore, name::Union{Symbol,AbstractString})
@@ -105,6 +110,88 @@ function validated_session_lineage(record::SessionRecord)
     session_lineage(record)
 end
 
+"""Locate an archive marker outside the saved transcript, with validated names."""
+function session_archive_file(store::SessionStore, name::Union{Symbol,AbstractString})
+    label = String(name)
+    validname(label) ? joinpath(store.directory, ".session-archives", label * ".json") : nothing
+end
+
+"""An archive marker applies only to the matching durable session identity."""
+function session_archived(store::SessionStore, name::Union{Symbol,AbstractString})
+    marker = session_archive_file(store, name)
+    if isnothing(marker) || !isfile(marker)
+        false
+    elseif islink(marker) || islink(dirname(marker))
+        error("Refusing symbolic-link session archive metadata: $name")
+    else
+        data = JSON.parsefile(marker)
+        if get(data, "format", nothing) != "JuliaForever2.session-archive" ||
+                get(data, "version", nothing) != 1 ||
+                get(data, "name", nothing) != String(name)
+            error("Invalid session archive metadata: $name")
+        end
+        saved = session_file(store, name)
+        if !is_saved_profile_file(saved)
+            false
+        else
+            record = SessionRecord(JSON.parsefile(saved), store, String(name))
+            get(data, "id", nothing) == string(session_lineage(record).id)
+        end
+    end
+end
+
+"""Archive a saved session without moving its history, workspace or lineage."""
+function archive_session!(store::SessionStore, name::Union{Symbol,AbstractString})
+    marker = session_archive_file(store, name)
+    if isnothing(marker)
+        (ok=false, reason="Invalid session name")
+    else
+        lock(store.lock) do
+            saved = session_file(store, name)
+            if !is_saved_profile_file(saved)
+                (ok=false, reason="Session was not saved: $name")
+            elseif session_archived(store, name)
+                (ok=true, reason="")
+            else
+                record = SessionRecord(JSON.parsefile(saved), store, String(name))
+                directory = dirname(marker)
+                islink(directory) && error("Refusing symbolic-link session archive directory")
+                mkpath(directory; mode=0o700)
+                data = Dict("format" => "JuliaForever2.session-archive", "version" => 1,
+                    "name" => String(name), "id" => string(session_lineage(record).id))
+                mktemp(directory) do temporary, output
+                    chmod(temporary, 0o600)
+                    write(output, JSON.json(data) * "\n")
+                    close(output)
+                    Base.Filesystem.rename(temporary, marker)
+                end
+                store.revision += UInt64(1)
+                (ok=true, reason="")
+            end
+        end
+    end
+end
+
+"""Unarchive without rewriting the saved transcript; repeated requests are safe."""
+function unarchive_session!(store::SessionStore, name::Union{Symbol,AbstractString})
+    marker = session_archive_file(store, name)
+    if isnothing(marker)
+        (ok=false, reason="Invalid session name")
+    else
+        lock(store.lock) do
+            if islink(dirname(marker)) || islink(marker)
+                (ok=false, reason="Unsafe session archive marker")
+            elseif isfile(marker)
+                rm(marker)
+                store.revision += UInt64(1)
+                (ok=true, reason="")
+            else
+                (ok=true, reason="")
+            end
+        end
+    end
+end
+
 """Inspect a saved session without constructing an agent, executor or Julia Message objects."""
 function session_summary(store::SessionStore, name::AbstractString)
     path = session_file(store, name)
@@ -122,10 +209,10 @@ function session_summary(store::SessionStore, name::AbstractString)
 end
 
 """Enumerate saved session summaries in stable name order without resuming sessions."""
-function session_summaries(store::SessionStore)
+function session_summaries(store::SessionStore; archived::Union{Nothing,Bool}=false)
     lock(store.lock) do
         summaries = Dict{String,Any}[]
-        for name in session_names(store)
+        for name in session_names(store; archived)
             summary = session_summary(store, name)
             isnothing(summary) || push!(summaries, summary)
         end
@@ -143,7 +230,7 @@ end
 """Return stored descendants of a session identity in deterministic session-name order."""
 function session_descendants(store::SessionStore, ancestor::UUID; include_self=false)
     relationships = Dict{UUID,Tuple{String,Union{Nothing,UUID}}}()
-    for name in session_names(store)
+    for name in session_names(store; archived=nothing)
         lineage = session_lineage(store, name)
         if !isnothing(lineage)
             relationships[lineage.id] = (name, lineage.parent_id)
@@ -208,7 +295,7 @@ end
 
 """Resume a saved session using a caller-owned Julia kernel or independent agent definition."""
 function load_session(store::SessionStore, name::Union{Symbol,AbstractString}, target::Union{Kernel,AgentDefinition}; kwargs...)
-    record = saved_session_record(store, name)
+    record = session_archived(store, name) ? nothing : saved_session_record(store, name)
     isnothing(record) ? nothing : Session(target, record; kwargs...)
 end
 

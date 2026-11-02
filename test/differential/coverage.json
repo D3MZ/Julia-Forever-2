@@ -2892,7 +2892,15 @@
       "implementation": "A replaceable Julia SessionStore exposes session_summary and session_summaries as multiple-dispatch query interfaces. Native session/list/saved and session/describe/saved RPC methods read durable session identity, ancestry, working directory and message count in deterministic name order without constructing an agent, executor or Julia Message objects.",
       "upstream_reference": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447:packages/api/session-controller/src/list.ts (ApiSessionList.list and summarizeCold)",
       "evidence": "Pinned upstream source inspection only; Julia was not available locally for execution and no native or cross-runtime behavioral trace has been recorded for this feature.",
-      "limits": "Reads the entire Julia session JSON file to extract metadata; it does not match upstream indexed cold-list performance, activity sorting, archive state, per-session access policy, live/persisted unified view, title projections, cancellation or DSH wire shape. No parity claim."
+      "limits": "Reads the entire Julia session JSON file to extract metadata; it does not match upstream indexed cold-list performance, activity sorting, complete upstream archive lifecycle, per-session access policy, live/persisted unified view, title projections, cancellation or DSH wire shape. No parity claim."
+    },
+    {
+      "family": "sessions.saved-archive",
+      "status": "native-implementation-unverified",
+      "implementation": "Native Julia SessionStore atomically persists archive status separately from each session's messages and lineage, filters archived saved listings and persisted search, exposes archived-only catalog and session/archive plus session/unarchive RPC operations, and guards resume, open, turn, fork and save. The storage and RPC interfaces remain overridable through Julia multiple dispatch and plugin-owned services.",
+      "upstream_reference": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447:packages/workspace/workspace/src/index.ts (archiveSession, unarchiveSession); docs/subsystems/web-client.md (ArchivedFilter)",
+      "evidence": "Pinned upstream source inspected. No Julia execution trace, DSH scenario comparison, or completed scheduled quality evidence for this change; not verified parity.",
+      "limits": "Only durable saved-session archives are implemented; live sessions must close first. No upstream stopActivity flow, pin/unpin, Workspace grouping, feed ordering, browser archived-row UI, multi-process coordination, or complete DSH policy/protocol parity."
     }
   ]
 }
