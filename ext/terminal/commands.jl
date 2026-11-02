@@ -61,7 +61,7 @@ function skills_command!(app::App, arguments::AbstractString)
             push!(lines, "Discovery was incomplete; additional skills may be unavailable.")
         end
         append_command_document!(app, "Julia Skills", join(lines, "\n"))
-    elseif occursin(r"\\s", name)
+    elseif occursin(r"\s", name)
         app.status = "Use /skills <name> to inspect one skill."
     elseif !any(entry -> String(entry.name) == name, observation.skills)
         app.status = observation.complete ?
