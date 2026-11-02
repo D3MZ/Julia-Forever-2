@@ -1,3 +1,16 @@
+Base.include_dependency(joinpath(@__DIR__,"theme_assets","dark.json"))
+Base.include_dependency(joinpath(@__DIR__,"theme_assets","tokens.json"))
+
+"""Warm the actual JSON shapes and palette validator using only immutable bundled theme data."""
+function terminal_compile_palette()
+    path=joinpath(@__DIR__,"theme_assets","dark.json")
+    text=read(path,String)
+    # Startup release acknowledgement reads String JSON with this explicit dictionary shape.
+    JSON.parse(text;dicttype=Dict{String,Any})
+    # Builtin theme loading instead retains JSON's default object representation.
+    theme_read_document(JSON.parse(text);source=path,mode=:truecolor,bold=false).theme::NativeTheme
+end
+
 """Build disposable native UI state without configuration, authentication, subprocess or filesystem writes."""
 function terminal_compile_fixture()
     kernel=JuliaForever2.Kernel()
@@ -28,20 +41,16 @@ function terminal_compile_workload()
     timeline=app.archive.timeline::JuliaForever2.SessionTimeline
     tree=tree_menu(JuliaForever2.timeline_tree(timeline),JuliaForever2.timeline_leaf(timeline);
         on_select=Returns(nothing),on_cancel=Returns(nothing),schedule=Returns(nothing),home="/precompile")
-    theme=NativeTheme(name="precompile",colors=Dict{String,Tachikoma.AbstractColor}())
-    catalog=ThemeCatalog(registered=Dict("precompile"=>theme),directory="")
-    theme_state=ThemeRuntime(catalog=catalog,active=theme,committed="precompile",requested="precompile",owner_name="precompile")
-    themes=theme_menu(theme_state;available=["precompile"],on_event=Returns(nothing),persist=Returns(nothing))
+    theme=terminal_compile_palette()
+    catalog=ThemeCatalog(registered=Dict(theme.name=>theme),directory="",bold=false)
+    theme_state=ThemeRuntime(catalog=catalog,active=theme,committed=theme.name,requested=theme.name,owner_name=theme.name)
+    themes=theme_menu(theme_state;available=[theme.name],on_event=Returns(nothing),persist=Returns(nothing))
     rendered=0
     for width in (80,40)
         buffer=Tachikoma.Buffer(Rect(1,1,width,30))
         frame=Frame(buffer,buffer.area,Tachikoma.GraphicsRegion[],Tachikoma.PixelSnapshot[])
         app.page=:chat
         default_view!(app,frame)
-        Tachikoma.set_text!(app.input,"/")
-        app.menu=true
-        default_view!(app,frame)
-        app.menu=false
         app.page=:pi_menu
         app.menus.path=["settings"]
         default_view!(app,frame)
