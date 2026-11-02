@@ -130,6 +130,48 @@ function api_saved_session_list(api::SessionAPI, params::AbstractDict)
         RpcError(-32602, "Archived filter must be Boolean")
 end
 
+"""List live and saved Julia sessions as one identity-aware, cold-safe projection.
+
+Live state wins when the same durable UUID is open and saved. A new live
+session reusing a saved name has a different UUID and remains a separate row.
+An optional store is queried through its replaceable session_summaries method.
+"""
+function api_session_inventory(api::SessionAPI, params::AbstractDict)
+    archived = get(params, "archived", false)
+    archived isa Bool || return RpcError(-32602, "Archived filter must be Boolean")
+    snapshot = lock(api.lock) do
+        api.closed ? RpcError(-32000, "Session API is closed") :
+            (collect(pairs(api.sessions)), api.store)
+    end
+    snapshot isa RpcError && return snapshot
+    live, store = snapshot
+
+    # A session API without persistence still lists its live sessions.
+    saved = isnothing(store) ? Dict{String,Any}[] : saved_summaries(store, archived)
+    saved isa RpcError && return saved
+    records = Dict{String,Dict{String,Any}}()
+    for row in saved
+        summary = Dict{String,Any}(String(key) => value for (key, value) in pairs(row))
+        identity = string(summary["id"])
+        summary["live"] = false
+        summary["persisted"] = true
+        summary["archived"] = archived
+        records[identity] = summary
+    end
+
+    if !archived
+        for (name, session) in live
+            summary = Dict{String,Any}(api_session_summary(name, session))
+            identity = string(summary["id"])
+            summary["persisted"] = haskey(records, identity)
+            summary["live"] = true
+            summary["archived"] = false
+            records[identity] = summary
+        end
+    end
+    return sort!(collect(values(records)); by=row -> (String(row["session"]), string(row["id"])))
+end
+
 saved_summary(error::RpcError, name) = error
 saved_summary(error::RpcError, ::AbstractString) = error
 saved_summary(store, name) = RpcError(-32602, "Expected a session identifier")
@@ -458,6 +500,7 @@ const SESSION_OPERATIONS = Dict(
     "session/resume" => (api, params) -> api_open_session!(api, params; resume=true),
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
     "session/list/saved" => api_saved_session_list,
+    "session/list/all" => api_session_inventory,
     "session/archive" => (api, params) -> api_set_saved_archive!(api, params, true),
     "session/unarchive" => (api, params) -> api_set_saved_archive!(api, params, false),
     "session/pin" => (api, params) -> api_set_saved_pin!(api, params, true),
