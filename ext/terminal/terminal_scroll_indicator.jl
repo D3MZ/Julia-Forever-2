@@ -18,19 +18,8 @@ function terminal_indicator_shortcut(bindings::AbstractVector{<:AbstractString};
         for binding in bindings],'/')
 end
 
-"""Clip a structured label at complete grapheme boundaries without adding an ellipsis."""
-function terminal_indicator_clip(text::AbstractString,width::Integer)
-    result=String[];used=0;fitting=true
-    for glyph in menu_search_graphemes(text)
-        size=menu_search_width(glyph)
-        if fitting && used+size<=max(0,width)
-            push!(result,glyph);used+=size
-        else
-            fitting=false
-        end
-    end
-    join(result)
-end
+# Native Tachikoma.truncate_to_width uses Base.textwidth; Pi overlays retain
+# the menu search editor's grapheme width rules and omit ellipses.
 
 """Place the source label on the last clipped document row, centered independently of scrollbar visibility."""
 function terminal_scroll_indicator(control::TerminalScrollControl,buffer::Tachikoma.Buffer;
@@ -41,13 +30,13 @@ function terminal_scroll_indicator(control::TerminalScrollControl,buffer::Tachik
     if !control.closed && view.fullscreen && enabled && follow_end && !control.scroll.following &&
             clip.width>0 && clip.height>0 && Tachikoma.in_bounds(buffer,clip.x,row) && !(row in image_rows)
         shortcut=terminal_indicator_shortcut(bindings;macos)
-        label=terminal_indicator_clip(" ↓ Jump to latest message"*(isempty(shortcut) ? "" : " · "*shortcut)*" ",clip.width)
+        label=menu_search_slice(" ↓ Jump to latest message"*(isempty(shortcut) ? "" : " · "*shortcut)*" ",0,clip.width)
         column=clip.x+fld(clip.width-menu_search_width(label),2)
         geometry=terminal_scroll_geometry(control.scroll,view.rect.width;now)
         track_column=view.rect.x+view.rect.width-1
         visible_track=!isnothing(geometry) && clip.x<=track_column<clip.x+clip.width
         right=visible_track ? track_column : clip.x+clip.width
-        text=terminal_indicator_clip(label,max(0,right-column))
+        text=menu_search_slice(label,0,max(0,right-column))
         width=menu_search_width(text)
         if width>0
             foreground=theme_token_style(theme,"text");background=theme_token_style(theme,"selectedBg")
