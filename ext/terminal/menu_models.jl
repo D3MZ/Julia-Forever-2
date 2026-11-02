@@ -129,9 +129,9 @@ function selector_token_score(text::AbstractString,query::AbstractString;swap=tr
     score
 end
 
-function selector_filter(items,query::AbstractString,label)
+function selector_filter(items,query::AbstractString,label;swap::Bool=true)
     tokens=split(strip(query),r"[\s/]+";keepempty=false)
-    scored=[(item,sum(token->selector_token_score(label(item),token),tokens;init=0.0)) for item in items]
+    scored=[(item,sum(token->selector_token_score(label(item),token;swap),tokens;init=0.0)) for item in items]
     sort!(filter!(item->isfinite(last(item)),scored);by=last,alg=Base.Sort.MergeSort)
     [first(item) for item in scored]
 end
