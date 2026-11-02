@@ -26,7 +26,8 @@ const BROWSER_SESSION_METHODS = Set(("session/list", "session/list/all", "sessio
     "session/pin", "session/unpin"))
 
 const LOCAL_WORKSPACE_METHODS = Set(("workspace/list", "workspace/create", "workspace/rename",
-    "workspace/delete", "workspace/move", "workspace/session/move", "workspace/feed", "session/list/workspaces"))
+    "workspace/delete", "workspace/move", "workspace/session/move", "workspace/feed",
+    "workspace/state", "session/list/workspaces"))
 
 web_local_workspaces(controller::WebController) = !isnothing(controller.api.workspaces) &&
     !isnothing(controller.access) && isempty(controller.access.origin) && !controller.access.browser_only
