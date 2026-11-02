@@ -22,7 +22,19 @@ jobs:
           version: '1.13.3'
       - uses: julia-actions/cache@v2
       - name: Install identical Julia benchmark dependencies
-        run: julia --project=benchmarks -e 'using Pkg; Pkg.instantiate()'
+        shell: bash
+        run: |
+          # The baseline is included as an isolated module in the benchmark process.
+          # Make every direct package dependency of the included baseline available.
+          julia --project=benchmarks -e '
+            using Pkg, TOML, UUIDs
+            Pkg.instantiate()
+            root = TOML.parsefile("Project.toml")["deps"]
+            bench = TOML.parsefile("benchmarks/Project.toml")["deps"]
+            missing = [Pkg.PackageSpec(name=name, uuid=UUID(id))
+                for (name,id) in root if !haskey(bench,name)]
+            Pkg.add(missing)
+          '
       - name: Benchmark exact pinned baseline versus candidate
         shell: bash
         run: |
