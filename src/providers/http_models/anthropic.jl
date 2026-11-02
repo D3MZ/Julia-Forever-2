@@ -25,7 +25,25 @@ function model_payload(::AnthropicMessagesProtocol, model::ModelSpec, request::M
     return payload
 end
 
+"""Retain observed Anthropic counters across deltas without filling absent fields with initialized zero."""
+function anthropic_metered_usage!(state::ModelStreamState,raw::AbstractDict;initial=false)
+    initial && (state.metering=ModelUsageMeter())
+    meter=state.metering
+    for (source,field) in (("input_tokens",:input),("output_tokens",:output),
+            ("cache_read_input_tokens",:cache_read),("cache_creation_input_tokens",:cache_write))
+        if haskey(raw,source)
+            setfield!(meter,field,usage_tokens(raw[source]))
+        end
+    end
+    cache=get(raw,"cache_creation",nothing)
+    if cache isa AbstractDict && haskey(cache,"ephemeral_1h_input_tokens")
+        meter.cache_write_1h=usage_tokens(cache["ephemeral_1h_input_tokens"])
+    end
+    nothing
+end
+
 function anthropic_model_usage!(state::ModelStreamState, raw::AbstractDict; initial=false)
+    anthropic_metered_usage!(state,raw;initial)
     usage = state.message["usage"]
     for (source, target) in (("input_tokens", "input"), ("output_tokens", "output"),
             ("cache_read_input_tokens", "cacheRead"), ("cache_creation_input_tokens", "cacheWrite"))

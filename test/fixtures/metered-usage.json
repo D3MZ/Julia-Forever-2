@@ -1,0 +1,734 @@
+{
+  "cases": [
+    {
+      "id": "openai-no-usage",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-empty",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {}
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-null",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        null
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": null}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-prompt-only",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens": 25
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens\": 25}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": 25,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-output-zero",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "completion_tokens": 0
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"completion_tokens\": 0}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": 0,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-read-only",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens_details\": {\"cached_tokens\": 0}}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-complete-zero",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens": 0,
+          "completion_tokens": 0,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "cache_write_tokens": 0
+          }
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens\": 0, \"completion_tokens\": 0, \"prompt_tokens_details\": {\"cached_tokens\": 0, \"cache_write_tokens\": 0}}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost": 0
+      }
+    },
+    {
+      "id": "openai-complete",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens": 100,
+          "completion_tokens": 20,
+          "prompt_tokens_details": {
+            "cached_tokens": 30,
+            "cache_write_tokens": 10
+          }
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 30, \"cache_write_tokens\": 10}}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": 60,
+        "output_tokens": 20,
+        "cache_read_tokens": 30,
+        "cache_write_tokens": 10,
+        "cost": 0.0001225
+      }
+    },
+    {
+      "id": "openai-new-partial-snapshot",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens": 100,
+          "completion_tokens": 20,
+          "prompt_tokens_details": {
+            "cached_tokens": 30,
+            "cache_write_tokens": 10
+          }
+        },
+        {
+          "completion_tokens": 3
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens\": 100, \"completion_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 30, \"cache_write_tokens\": 10}}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"completion_tokens\": 3}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": 3,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-deepseek-read",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens": 40,
+          "completion_tokens": 10,
+          "prompt_cache_hit_tokens": 15
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens\": 40, \"completion_tokens\": 10, \"prompt_cache_hit_tokens\": 15}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": 25,
+        "output_tokens": 10,
+        "cache_read_tokens": 15,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "anthropic-empty",
+      "protocol": "anthropic",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "anthropic-messages"
+      },
+      "reports": [
+        {}
+      ],
+      "response": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"role\": \"assistant\", \"content\": [], \"stop_reason\": null, \"usage\": {}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Fixture response\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "anthropic-partial",
+      "protocol": "anthropic",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "anthropic-messages"
+      },
+      "reports": [
+        {
+          "input_tokens": 25
+        },
+        {
+          "output_tokens": 8
+        }
+      ],
+      "response": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"role\": \"assistant\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 25}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Fixture response\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": null}, \"usage\": {\"output_tokens\": 8}}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+      "expectedReport": {
+        "input_tokens": 25,
+        "output_tokens": 8,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "anthropic-complete",
+      "protocol": "anthropic",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "anthropic-messages"
+      },
+      "reports": [
+        {
+          "input_tokens": 10,
+          "output_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        },
+        {
+          "output_tokens": 5
+        }
+      ],
+      "response": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"role\": \"assistant\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 0, \"cache_read_input_tokens\": 0, \"cache_creation_input_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Fixture response\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": null}, \"usage\": {\"output_tokens\": 5}}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+      "expectedReport": {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost": 2e-05
+      }
+    },
+    {
+      "id": "anthropic-zero",
+      "protocol": "anthropic",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "anthropic-messages"
+      },
+      "reports": [
+        {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        }
+      ],
+      "response": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"role\": \"assistant\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 0, \"output_tokens\": 0, \"cache_read_input_tokens\": 0, \"cache_creation_input_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Fixture response\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+      "expectedReport": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost": 0
+      }
+    },
+    {
+      "id": "anthropic-zero-overwrites",
+      "protocol": "anthropic",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "anthropic-messages"
+      },
+      "reports": [
+        {
+          "input_tokens": 10,
+          "output_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "cache_creation_input_tokens": 0
+        },
+        {
+          "output_tokens": 5
+        },
+        {
+          "output_tokens": 0
+        }
+      ],
+      "response": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"role\": \"assistant\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 10, \"output_tokens\": 0, \"cache_read_input_tokens\": 0, \"cache_creation_input_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Fixture response\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": null}, \"usage\": {\"output_tokens\": 5}}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": null}, \"usage\": {\"output_tokens\": 0}}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+      "expectedReport": {
+        "input_tokens": 10,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost": 1e-05
+      }
+    },
+    {
+      "id": "openai-null-fields",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens": null,
+          "completion_tokens": null,
+          "prompt_tokens_details": null,
+          "completion_tokens_details": null
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens\": null, \"completion_tokens\": null, \"prompt_tokens_details\": null, \"completion_tokens_details\": null}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "openai-null-alias-fallback",
+      "protocol": "openai",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "openai-completions"
+      },
+      "reports": [
+        {
+          "prompt_tokens": 10,
+          "completion_tokens": 0,
+          "prompt_tokens_details": {
+            "cached_tokens": null,
+            "cache_write_tokens": 0
+          },
+          "prompt_cache_hit_tokens": null,
+          "cached_tokens": 3
+        }
+      ],
+      "response": "data: {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"content\": \"Fixture response\"}, \"finish_reason\": null}]}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [], \"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 0, \"prompt_tokens_details\": {\"cached_tokens\": null, \"cache_write_tokens\": 0}, \"prompt_cache_hit_tokens\": null, \"cached_tokens\": 3}}\n\ndata: {\"id\": \"fixture-response\", \"choices\": [{\"index\": 0, \"delta\": {}, \"finish_reason\": \"stop\"}]}\n\ndata: [DONE]\n\n",
+      "expectedReport": {
+        "input_tokens": 7,
+        "output_tokens": 0,
+        "cache_read_tokens": 3,
+        "cache_write_tokens": 0,
+        "cost": 7.75e-06
+      }
+    },
+    {
+      "id": "anthropic-null-fields",
+      "protocol": "anthropic",
+      "model": {
+        "provider": "fixture",
+        "id": "fixture-model",
+        "name": "Fixture",
+        "reasoning": false,
+        "input": [
+          "text"
+        ],
+        "contextWindow": 200000,
+        "maxTokens": 4096,
+        "cost": {
+          "input": 1,
+          "output": 2,
+          "cacheRead": 0.25,
+          "cacheWrite": 1.5
+        },
+        "compat": {
+          "supportsStore": false
+        },
+        "api": "anthropic-messages"
+      },
+      "reports": [
+        {
+          "input_tokens": null,
+          "output_tokens": null,
+          "cache_read_input_tokens": null,
+          "cache_creation_input_tokens": null
+        }
+      ],
+      "response": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"fixture-response\", \"model\": \"fixture-model\", \"role\": \"assistant\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": null, \"output_tokens\": null, \"cache_read_input_tokens\": null, \"cache_creation_input_tokens\": null}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"Fixture response\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+      "expectedReport": {
+        "input_tokens": null,
+        "output_tokens": null,
+        "cache_read_tokens": null,
+        "cache_write_tokens": null,
+        "cost": null
+      }
+    }
+  ]
+}
