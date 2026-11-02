@@ -237,7 +237,8 @@ function move_workspace!(registry::WorkspaceRegistry, id::AbstractString, before
         else
             old = [row["id"] for row in items]
             moved = splice!(items, index)
-            target = isnothing(before) ? length(items) + 1 : workspace_find(items, String(before))
+            target = isnothing(before) || before == id ? min(index, length(items) + 1) :
+                workspace_find(items, String(before))
             insert!(items, target, moved)
             ids = [row["id"] for row in items]
             workspace_success(Dict("workspaceIds" => ids),
@@ -286,7 +287,18 @@ end
 """Merge explicit workspace registration order with session directories and manual UUID order."""
 function registered_workspace_groups(registry::WorkspaceRegistry, summaries::AbstractVector)
     unregistered = session_workspace_groups(summaries)
-    groups = Dict(String(row["workingDirectory"]) => row for row in unregistered)
+    groups = Dict{String,Dict{String,Any}}()
+    for group in unregistered
+        path = String(group["workingDirectory"])
+        canonical = isdir(path) ? realpath(path) : path
+        group["workingDirectory"] = canonical
+        if haskey(groups, canonical)
+            append!(groups[canonical]["sessions"], group["sessions"])
+            groups[canonical]["sessionCount"] = length(groups[canonical]["sessions"])
+        else
+            groups[canonical] = group
+        end
+    end
     ordered = Dict{String,Any}[]
     for workspace in workspace_snapshot(registry)["workspaces"]
         path = String(workspace["path"])
@@ -309,4 +321,12 @@ function registered_workspace_groups(registry::WorkspaceRegistry, summaries::Abs
         push!(ordered, group)
     end
     ordered
+end
+
+"""Publish a registry implementation as an ordinary replaceable Julia plugin service."""
+function workspace_registry_plugin(directory; name=:workspace_registry,
+        service_name=:workspace_registry, factory=WorkspaceRegistry)
+    contract = Symbol(service_name)
+    setup = context -> provide!(context, contract, Base.invokelatest(factory, directory))
+    PluginSpec(name, setup; provides=[contract])
 end
