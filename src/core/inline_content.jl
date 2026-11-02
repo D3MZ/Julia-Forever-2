@@ -103,21 +103,14 @@ inline_original_snapshot(::InlineContentMetadata) = error("Nested inline content
 inline_original_snapshot(original::ExecutionResult) = ExecutionResult(original.ok, original.text, deepcopy(original.value))
 inline_original_snapshot(original) = deepcopy(original)
 
+inline_json_storage_value_valid(value, depth, nodes) = false
+inline_json_storage_value_valid(value::String, depth, nodes) = ncodeunits(value) <= INLINE_CONTENT_MAX_BYTES && isvalid(value)
+inline_json_storage_value_valid(value::Union{Nothing,Bool,Int8,Int16,Int32,Int64,Int128,UInt8,UInt16,UInt32,UInt64,UInt128,BigInt,Float16,Float32,Float64}, depth, nodes) = true
+inline_json_storage_value_valid(value::AbstractVector, depth, nodes) = length(value) <= MODEL_IMAGE_MAX_NODES && all(item -> inline_json_storage_valid(item, depth + 1, nodes), value)
+inline_json_storage_value_valid(value::AbstractDict, depth, nodes) = length(value) <= MODEL_IMAGE_MAX_NODES && all(pair -> pair.first isa String && inline_json_storage_valid(pair.first, depth + 1, nodes) && inline_json_storage_valid(pair.second, depth + 1, nodes), value)
 function inline_json_storage_valid(value, depth::Int, nodes::Base.RefValue{Int})
     nodes[] += 1
-    depth <= MODEL_IMAGE_MAX_DEPTH && nodes[] <= MODEL_IMAGE_MAX_NODES || return false
-    if value isa String
-        ncodeunits(value) <= INLINE_CONTENT_MAX_BYTES && isvalid(value)
-    elseif value isa Union{Nothing,Bool,Int8,Int16,Int32,Int64,Int128,UInt8,UInt16,UInt32,UInt64,UInt128,BigInt,Float16,Float32,Float64}
-        true
-    elseif value isa AbstractVector
-        length(value) <= MODEL_IMAGE_MAX_NODES && all(item -> inline_json_storage_valid(item, depth + 1, nodes), value)
-    elseif value isa AbstractDict
-        length(value) <= MODEL_IMAGE_MAX_NODES && all(pair -> pair.first isa String &&
-            inline_json_storage_valid(pair.first, depth + 1, nodes) && inline_json_storage_valid(pair.second, depth + 1, nodes), value)
-    else
-        false
-    end
+    depth <= MODEL_IMAGE_MAX_DEPTH && nodes[] <= MODEL_IMAGE_MAX_NODES && inline_json_storage_value_valid(value, depth, nodes)
 end
 function inline_json_budget!(budget, value, depth::Int)
     if isempty(budget.reason)
