@@ -97,17 +97,12 @@ function draw_conversation_line!(buffer, x, y, width, spans::Vector{Tachikoma.Sp
 end
 
 function default_view!(app::App, frame::Frame)
-    runtime = app.menus.theme_runtime
-    if !isnothing(runtime) && ACTIVE_NATIVE_THEME[] !== runtime
-        activate_theme_runtime!(runtime)
-    end
-    app.area = frame.area
     if frame.area.width >= 5 && frame.area.height >= 5
         page_view!(app, Val(app.page), frame)
     else
         terminal_output_cursor!(app,nothing)
     end
-    return nothing
+    nothing
 end
 
 function page_view!(app::App, page::Val, frame::Frame)
