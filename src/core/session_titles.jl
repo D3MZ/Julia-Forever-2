@@ -70,6 +70,46 @@ function skip_title_escape(characters, index)
     end
 end
 
+"""Advance through a CSI sequence without materializing the title as characters."""
+function skip_title_csi(input::String, index::Int)
+    limit = lastindex(input)
+    while index <= limit && 0x20 <= Int(input[index]) <= 0x3f
+        index = nextind(input, index)
+    end
+    index <= limit && 0x40 <= Int(input[index]) <= 0x7e ?
+        nextind(input, index) : index
+end
+
+function skip_title_osc(input::String, index::Int)
+    limit = lastindex(input)
+    while index <= limit
+        character = input[index]
+        following = nextind(input, index)
+        if character == '\a'
+            return following
+        elseif character == '\e' && following <= limit && input[following] == '\\'
+            return nextind(input, following)
+        end
+        index = following
+    end
+    index
+end
+
+function skip_title_escape(input::String, index::Int)
+    following = nextind(input, index)
+    following > lastindex(input) && return following
+    character = input[following]
+    if character == '['
+        skip_title_csi(input, nextind(input, following))
+    elseif character == ']'
+        skip_title_osc(input, nextind(input, following))
+    elseif 0x40 <= Int(character) <= 0x5f
+        nextind(input, following)
+    else
+        following
+    end
+end
+
 """Do not allow nonprinting, invisible or directional controls in browser titles."""
 function title_hidden(character::Char)
     code = Int(character)
@@ -135,8 +175,51 @@ normalize_session_title(input::AbstractString; max_bytes::Integer=120) =
 function fallback_session_title(input::AbstractString; max_words::Integer=8,
         max_bytes::Integer=96)
     words = title_positive("max_words", max_words)
-    text = clean_session_title(input)
-    title_prefix(join(Iterators.take(split(text, ' '; keepempty=false), words), " "), max_bytes)
+    remaining = title_positive("max_bytes", max_bytes)
+    source = String(input)
+    output = IOBuffer()
+    index = firstindex(source)
+    in_word = false
+    pending_space = false
+    seen_words = 0
+    while index <= lastindex(source)
+        character = source[index]
+        code = Int(character)
+        if code == 0x1b
+            index = skip_title_escape(source, index)
+            continue
+        elseif code == 0x9b
+            index = skip_title_csi(source, nextind(source, index))
+            continue
+        elseif code == 0x9d
+            index = skip_title_osc(source, nextind(source, index))
+            continue
+        end
+        index = nextind(source, index)
+        title_hidden(character) && continue
+        if isspace(character)
+            seen_words == words && in_word && break
+            pending_space = position(output) > 0
+            in_word = false
+            continue
+        end
+        if !in_word
+            seen_words == words && break
+            if pending_space
+                remaining == 0 && break
+                print(output, ' ')
+                remaining -= 1
+            end
+            in_word = true
+            pending_space = false
+            seen_words += 1
+        end
+        bytes = ncodeunits(string(character))
+        bytes > remaining && break
+        print(output, character)
+        remaining -= bytes
+    end
+    String(rstrip(String(take!(output))))
 end
 
 title_record_path(::Nothing, identity::UUID) = nothing
