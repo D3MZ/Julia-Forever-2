@@ -93,20 +93,9 @@ function terminal_search_packet(packet::AbstractString;kitty::Bool=false)
     (;action,released)
 end
 
-"""Reuse native Kitty decoding for ordinary single-line edits without accepting pasted controls as shortcuts."""
+"""Use the shared single-line editor, including its paste boundary and advanced editing state."""
 function terminal_search_edit!(input::MenuSearchInput,packet::String)
-    if input.pasting || occursin("\e[200~",packet)
-        menu_search_input!(input,packet)
-    else
-        decoded=chat_key_packet(packet)
-        if !isnothing(decoded.printable)
-            menu_search_insert!(input,decoded.printable)
-        elseif decoded.action in (:left,:right,:home,:end,:backspace,:delete,:delete_start,:delete_end)
-            menu_search_edit!(input,decoded.action)
-        else
-            menu_search_input!(input,packet)
-        end
-    end
+    menu_search_input!(input,packet)
     nothing
 end
 

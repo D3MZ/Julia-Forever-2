@@ -322,7 +322,7 @@ function scoped_models_input!(menu::ScopedModelMenu,packet::AbstractString)
         if isempty(menu.search.value)
             result=ModelMenuAction(;kind=:cancel)
         else
-            menu_search_clear!(menu.search)
+            menu_search_set!(menu.search, "")
             scoped_models_filter!(menu)
         end
     elseif packet=="\e"

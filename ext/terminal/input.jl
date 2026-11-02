@@ -202,20 +202,18 @@ function edit_prompt_key!(input::TextInput, event::KeyEvent, raw::AbstractVector
     end
 end
 
-"""Retain legacy word-edit bindings while native input owns grapheme navigation."""
-function edit_menu_search!(input::MenuSearchInput, event::KeyEvent, raw::AbstractVector{UInt8})
-    operation = terminal_edit_action(event, raw)
-    if !isnothing(operation) || (event.key == :ctrl && event.char == 'w')
-        legacy = TextInput(; label="")
-        Tachikoma.set_text!(legacy, input.value)
-        legacy.cursor = length(menu_search_prefix(input))
-        edit_prompt_key!(legacy, event, raw)
-        input.value = Tachikoma.text(legacy)
-        input.cursor = length(menu_search_graphemes(String(legacy.buffer[1:legacy.cursor])))
-        :handled
-    else
-        menu_search_input!(input, event, raw)
+"""Keep one owned search editor while retaining additional native modified-key bindings."""
+function edit_menu_search!(input::MenuSearchInput,event::KeyEvent,raw::AbstractVector{UInt8})
+    action=menu_search_input!(input,event,raw)
+    if action==:ignored && event.action!=Tachikoma.key_release
+        operation=terminal_edit_action(event,raw)
+        native=operation==:previous_word ? :word_left : operation==:next_word ? :word_right :
+            operation==:delete_previous_word ? :delete_word_backward : operation==:delete_next_word ? :delete_word_forward :
+            operation==:delete_to_start ? :delete_start : operation==:delete_to_end ? :delete_end :
+            operation==:line_start ? :home : operation==:line_end ? :end : :none
+        native==:none || (action=menu_search_edit!(input,native))
     end
+    action
 end
 
 """Recognize bracketed-paste packets before menu/global shortcut handling."""
