@@ -9,10 +9,11 @@ function anthropic_wire_message(message::Message)
         "content" => role == "assistant" ? [Dict("type" => "text", "text" => content)] : content)
 end
 anthropic_wire_message(message::AbstractDict) = deepcopy(message)
+anthropic_sendable(message) = true
+anthropic_sendable(message::Message) = !isempty(strip(wire_content(message)))
 
 function model_payload(::AnthropicMessagesProtocol, model::ModelSpec, request::ModelRequest, options)
-    messages = [anthropic_wire_message(message) for message in request.messages
-        if !(message isa Message) || !isempty(strip(wire_content(message)))]
+    messages = [anthropic_wire_message(message) for message in request.messages if anthropic_sendable(message)]
     payload = Dict{String,Any}("model" => model.id, "messages" => messages,
         "max_tokens" => get(options, "maxTokens", get(model_metadata(model), "maxTokens", 4096)), "stream" => true)
     if !isempty(request.instructions)
