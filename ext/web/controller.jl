@@ -1,0 +1,206 @@
+Base.@kwdef mutable struct WebTurn
+    id::String = web_secret()
+    handle::Union{Nothing,JuliaForever2.TaskHandle} = nothing
+    text::String = ""
+    kind::Symbol = :answer
+    revision::Int = 0
+    request::String = ""
+    prompt_digest::Vector{UInt8} = UInt8[]
+end
+
+Base.@kwdef mutable struct WebController{A}
+    api::A
+    workspace::String = pwd()
+    access::Union{Nothing,WebAccess} = nothing
+    lock::ReentrantLock = ReentrantLock()
+    turns::Dict{String,WebTurn} = Dict{String,WebTurn}()
+    requests::Dict{Tuple{String,String},WebTurn} = Dict{Tuple{String,String},WebTurn}()
+end
+WebController(api; workspace=pwd(), access=nothing) = WebController(; api, workspace=realpath(workspace), access)
+
+const BROWSER_SESSION_METHODS = Set(("session/list", "session/list/all", "session/list/saved",
+    "session/messages", "session/describe", "session/title/get", "session/title/rename", "session/save",
+    "session/markdown", "session/search", "session/archive", "session/unarchive", "session/list/pinned",
+    "session/pin", "session/unpin"))
+
+function browser_route(controller::WebController, request::HTTP.Request, path)
+    if request.method == "POST" && path == "/api/rpc"
+        if length(request.body) > 1_048_576
+            response(413, "{\"error\":\"Payload too large\"}")
+        else
+            browser_dispatch(controller, JuliaForever2.parse_json(String(request.body)))
+        end
+    elseif request.method == "GET" && path in ("/", "/app.js", "/app.css")
+        route(controller.api, request, path)
+    else
+        response(404, "{\"error\":\"Not found\"}")
+    end
+end
+
+browser_dispatch(controller, frame) = response(400, "{\"error\":\"Invalid JSON-RPC request\"}")
+function browser_dispatch(controller::WebController, frame::AbstractDict)
+    method = get(frame, "method", nothing)
+    params = get(frame, "params", Dict{String,Any}())
+    if get(frame, "jsonrpc", nothing) != "2.0" || !(method isa AbstractString) || !(params isa AbstractDict)
+        browser_dispatch(controller, nothing)
+    else
+        result = browser_command!(controller, method, params)
+        response(200, JSON.json(envelope(get(frame, "id", nothing), result)))
+    end
+end
+
+function browser_command!(controller::WebController, method::AbstractString, params::AbstractDict)
+    if method in BROWSER_SESSION_METHODS
+        JuliaForever2.session_api_request!(controller.api, method, params)
+    elseif method in ("session/open", "session/resume")
+        # Browser callers cannot select a host directory or inject additional factory settings.
+        selected = Dict{String,Any}("workingDirectory" => controller.workspace)
+        if haskey(params, "session")
+            selected["session"] = params["session"]
+        end
+        browser_open!(controller, method, selected)
+    elseif method == "session/close"
+        saved = JuliaForever2.session_api_request!(controller.api, "session/save", params)
+        saved isa JuliaForever2.RpcError ? saved : JuliaForever2.session_api_request!(controller.api, method, params)
+    elseif method == "web/turn"
+        admit_web_turn!(controller, params)
+    elseif method == "web/status"
+        web_turn_status(controller, params)
+    elseif method == "web/cancel"
+        cancel_web_turn!(controller, params)
+    elseif method == "web/info"
+        Dict("persistent" => !isnothing(controller.api.store), "titles" => !isnothing(controller.api.titles),
+            "transport" => "Julia-native", "streaming" => "operation-scoped polling",
+            "chatOnly" => controller.api.factory isa WebChatFactory)
+    else
+        JuliaForever2.RpcError(-32601, "Method is not available to the browser")
+    end
+end
+
+function capture_web_progress!(controller::WebController, name::String, turn::WebTurn, event)
+    if event isa JuliaForever2.HarnessEvent && event.kind == :response_progress
+        progress = event.data.progress
+        lock(controller.lock) do
+            if get(controller.turns, name, nothing) === turn && !isnothing(turn.handle) &&
+                    event.data.operation_id == JuliaForever2.operation_id(turn.handle.context)
+                turn.text = first(progress.text, 200_000)
+                turn.kind = progress.kind
+                turn.revision += 1
+            end
+        end
+    end
+    nothing
+end
+
+function start_web_turn!(controller::WebController, params::AbstractDict)
+    name = get(params, "session", nothing)
+    prompt = get(params, "prompt", nothing)
+    request = get(params, "request", web_secret())
+    if !(request isa AbstractString && 16 <= ncodeunits(request) <= 128)
+        JuliaForever2.RpcError(-32602, "Invalid submission identity")
+    elseif !(name isa AbstractString && prompt isa AbstractString && !isempty(strip(prompt)) && ncodeunits(prompt) <= 262_144)
+        JuliaForever2.RpcError(-32602, "A session and message up to 256 KiB are required")
+    else
+        lock(controller.lock) do
+            lock(controller.api.lock) do
+                session = get(controller.api.sessions, String(name), nothing)
+                previous = get(controller.api.handles, String(name), nothing)
+                replay = get(controller.requests, (String(name), String(request)), nothing)
+                if !isnothing(replay)
+                    web_equal(replay.prompt_digest, web_digest(prompt)) ?
+                        Dict("accepted" => true, "turn" => replay.id) : JuliaForever2.RpcError(-32602, "Submission identity does not match its message")
+                elseif controller.api.closed || isnothing(session)
+                    JuliaForever2.RpcError(-32004, "Session is not available")
+                elseif !isnothing(previous) && !istaskdone(previous)
+                    JuliaForever2.RpcError(-32000, "This conversation already has an active reply")
+                elseif length(controller.requests) >= 1024
+                    JuliaForever2.RpcError(-32000, "This temporary workspace has reached its submission limit")
+                else
+                    turn = WebTurn(; request=String(request), prompt_digest=web_digest(prompt))
+                    controller.requests[(String(name), String(request))] = turn
+                    controller.turns[String(name)] = turn
+                    context = JuliaForever2.ExecutionContext(; timeout=web_turn_timeout(controller.access),
+                        event_sink=event -> capture_web_progress!(controller, String(name), turn, event))
+                    turn.handle = JuliaForever2.submit_turn!(session, prompt; context)
+                    controller.api.handles[String(name)] = turn.handle
+                    Dict("accepted" => true, "turn" => turn.id)
+                end
+            end
+        end
+    end
+end
+
+function web_turn_status(controller::WebController, params::AbstractDict)
+    name = get(params, "session", nothing)
+    lock(controller.lock) do
+        turn = get(controller.turns, name, nothing)
+        web_turn_status(turn)
+    end
+end
+web_turn_status(::Nothing) = Dict("status" => "idle")
+function web_turn_status(turn::WebTurn)
+    result = Dict{String,Any}("turn" => turn.id, "request" => turn.request, "text" => turn.text,
+        "kind" => String(turn.kind), "revision" => turn.revision)
+    if !isnothing(turn.handle) && istaskdone(turn.handle)
+        final = fetch(turn.handle)
+        result["status"] = "completed"
+        result["ok"] = final.ok
+        result["result"] = final.text
+        result["cancelled"] = JuliaForever2.cancelled(turn.handle.context)
+    else
+        result["status"] = "running"
+    end
+    result
+end
+
+"""Bind Stop to the exact submitted operation; a delayed request cannot cancel its successor."""
+function cancel_web_turn!(controller::WebController, params::AbstractDict)
+    lock(controller.lock) do
+        turn = get(controller.turns, get(params, "session", nothing), nothing)
+        if isnothing(turn) || get(params, "turn", nothing) != turn.id
+            JuliaForever2.RpcError(-32009, "That reply is no longer current")
+        else
+            JuliaForever2.cancel_api_turn!(turn.handle)
+        end
+    end
+end
+
+function cancel_web_turns!(controller::WebController)
+    lock(controller.lock) do
+        for turn in values(controller.turns)
+            JuliaForever2.cancel_api_turn!(turn.handle)
+        end
+    end
+    nothing
+end
+
+"""Keep resumed browser sessions within the same server-owned workspace."""
+function browser_open!(controller::WebController, method, params)
+    store = controller.api.store
+    name = get(params, "session", nothing)
+    record = method == "session/resume" && !isnothing(store) && name isa AbstractString ?
+        JuliaForever2.saved_session_record(store, name) : nothing
+    if name isa AbstractString && ncodeunits(name) > 160
+        JuliaForever2.RpcError(-32602, "Conversation identifier is too long")
+    elseif lock(() -> length(controller.api.sessions) >= 64, controller.api.lock)
+        JuliaForever2.RpcError(-32000, "Close a conversation before opening another (64 active maximum)")
+    elseif !isnothing(record) && abspath(record.directory) != controller.workspace
+        JuliaForever2.RpcError(-32602, "Saved conversation is outside this browser workspace")
+    else
+        JuliaForever2.session_api_request!(controller.api, method, params)
+    end
+end
+
+web_turn_timeout(::Nothing) = 900.0
+web_turn_timeout(access::WebAccess) = max(0.0, min(900.0, access.expires_at - time(),
+    (Float64(access.deadline) - Float64(time_ns())) / 1e9))
+
+"""Recheck authorization atomically with task admission so revoke cannot miss a queued turn."""
+admit_web_turn!(controller::WebController, params) = admit_web_turn!(controller, params, controller.access)
+admit_web_turn!(controller::WebController, params, ::Nothing) = start_web_turn!(controller, params)
+function admit_web_turn!(controller::WebController, params, access::WebAccess)
+    lock(access.lock) do
+        web_access_alive(access) ? start_web_turn!(controller, params) :
+            JuliaForever2.RpcError(-32001, "Private browser access has expired or was revoked")
+    end
+end

@@ -1,50 +1,13 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="referrer" content="no-referrer">
-  <title>JuliaForever2 Sessions</title>
-  <link rel="stylesheet" href="/app.css">
-  <script src="/app.js" defer></script>
-</head>
-<body>
-  <main>
-    <header>
-      <h1>JuliaForever2</h1>
-      <p>Local Julia session console</p>
-    </header>
-    <section aria-label="Session management" class="panel">
-      <div class="grid">
-        <label for="session-name">Session name (optional when opening)</label>
-        <input id="session-name" type="text" autocomplete="off" spellcheck="false">
-        <label for="workspace">Working directory (optional)</label>
-        <input id="workspace" type="text" autocomplete="off" spellcheck="false">
-      </div>
-      <div class="actions">
-        <button id="open" type="button">New session</button>
-        <button id="resume" type="button">Resume saved session</button>
-        <button id="refresh" type="button">Refresh</button>
-      </div>
-      <div class="grid">
-        <label for="sessions">Open sessions</label>
-        <select id="sessions" aria-label="Open sessions"></select>
-      </div>
-      <div class="actions">
-        <button id="save" type="button" disabled>Save session</button>
-        <button id="close" type="button" disabled>Close session</button>
-      </div>
-    </section>
-    <section class="panel" aria-label="Conversation">
-      <h2>Messages</h2>
-      <ol id="history" aria-live="polite"></ol>
-      <form id="composer">
-        <label for="prompt">Message</label>
-        <textarea id="prompt" rows="4" placeholder="Enter a message" disabled></textarea>
-        <button id="send" type="submit" disabled>Send</button>
-      </form>
-    </section>
-    <p id="status" role="status" aria-live="polite">Loading sessions…</p>
-  </main>
-</body>
-</html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light dark"><title>Julia Forever</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head><body>
+<button class="scrim" id="scrim" aria-label="Close navigation" hidden></button>
+<aside id="sidebar" aria-label="Navigation"><div class="sidebar-head"><button id="brand" class="brand">Julia Forever <span>⌄</span></button><button id="collapse" class="icon" aria-label="Close sidebar">◧</button></div><nav><button id="new-chat"><span class="glyph">↗</span>New chat</button><button id="search-button"><span class="glyph">⌕</span>Search chats</button><button id="settings-button"><span class="glyph">⚙</span>Settings</button></nav><div class="search-wrap" id="search-wrap" hidden><label class="sr-only" for="search">Search chats</label><input id="search" type="search" placeholder="Search your chats" autocomplete="off"></div><h2 class="section-label">Your chats</h2><div id="sessions" class="sessions" aria-label="Conversations"></div><div class="sidebar-foot"><div class="avatar">J</div><div><strong>Private workspace</strong><small id="access-expiry">Browser session</small></div><button id="account-menu" class="icon" aria-label="Access settings">⋯</button></div></aside>
+<main id="main"><header class="topbar"><button id="menu" class="round" aria-label="Open sidebar">☰</button><button id="header-brand" class="brand">Julia Forever <span>⌄</span></button><div class="header-actions"><span class="private-pill">Private</span><button id="chat-menu-button" class="icon" aria-label="Conversation options">⋯</button></div></header>
+<section id="chat" class="chat empty" aria-label="Chat"><div id="welcome"><h1><span class="desktop-greeting">Where should we begin?</span><span class="mobile-greeting">What are you working on?</span></h1></div><div id="messages" class="messages" aria-label="Messages" aria-live="polite"></div><div id="working" class="working" hidden><span class="pulse"></span><span id="work-label">Thinking…</span></div><div class="composer-region"><form id="composer"><label class="sr-only" for="prompt">Message Julia Forever</label><textarea id="prompt" placeholder="Ask Julia Forever" rows="1"></textarea><div class="composer-bar"><button id="tools" class="icon" type="button" aria-label="Chat actions" aria-expanded="false">+</button><span id="composer-caption">Julia-native session</span><button id="send" class="send" type="submit" aria-label="Send message" disabled>↑</button><button id="stop" class="send stop" type="button" aria-label="Stop reply" hidden>■</button></div></form><button id="help" class="suggestion">What can you do?</button><p id="status" role="status" aria-live="polite"></p><footer>Julia Forever · Private to this browser. AI can make mistakes.</footer></div></section>
+<section id="settings" class="settings" hidden><header><button id="settings-back" class="round" aria-label="Back to chat">←</button><h1>Settings</h1></header><div class="settings-content"><h2>General</h2><div class="settings-card"><label for="appearance"><span>Appearance</span><select id="appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label for="enter-send"><span>Enter to send<small>Shift + Enter adds a new line</small></span><input id="enter-send" type="checkbox" checked></label></div><h2>Data controls</h2><div class="settings-card"><button id="export-settings"><span>Export current conversation<small>Download a Markdown copy</small></span><span>↓</span></button><button id="close-session"><span>Save and close conversation<small>Resume it from your chat history</small></span><span>→</span></button></div><h2>Private access</h2><div class="settings-card"><div class="setting-info"><strong>One browser, temporary access</strong><p id="security-detail">The invitation works once. Clearing cookies does not reset it.</p></div><button id="logout" class="danger"><span>End access in this browser<small>This revokes the session; a new invitation is required.</small></span><span>↗</span></button></div></div></section>
+</main>
+<div id="tools-menu" class="popover" hidden><button id="save"><span>↓</span>Save conversation</button><button id="export"><span>⇩</span>Export Markdown</button><button id="rename"><span>✎</span>Rename conversation</button></div>
+<div id="chat-menu" class="popover" hidden><button id="new-menu">New chat</button><button id="rename-menu">Rename conversation</button><button id="settings-menu">Settings</button></div>
+<dialog id="about"><button class="dialog-close icon" aria-label="Close information">×</button><div class="about-banner"><span>JF2</span></div><h2>A workspace for your ideas</h2><p>Chat with your configured Julia agent, stop a reply, and return to saved conversations. Use the + menu to save, rename, or export.</p><p>Provider availability depends on the server’s configuration. This interface does not grant access to host files, tools, or credentials.</p><button class="primary dialog-done">Back to chat</button></dialog>
+<dialog id="rename-dialog"><form id="rename-form"><h2>Rename conversation</h2><label for="title-input">Title</label><input id="title-input" maxlength="160" required autocomplete="off"><div class="dialog-actions"><button id="rename-cancel" type="button">Cancel</button><button class="primary" type="submit">Save</button></div></form></dialog>
+<dialog id="end-dialog"><h2>End private access?</h2><p>You will need a new invitation to return. Saved conversations remain on the server.</p><div class="dialog-actions"><button id="end-cancel">Cancel</button><button id="end-confirm" class="primary">End access</button></div></dialog>
+</body></html>
