@@ -35,16 +35,35 @@ function model_payload(protocol::OpenAIChatProtocol, model::ModelSpec, request::
     return payload
 end
 
+"""Resolve documented cache-read aliases without interpreting an absent or null field as reported zero."""
+function openai_reported_cache(raw::AbstractDict)
+    cached=usage_detail(get(raw,"prompt_tokens_details",nothing),"cached_tokens")
+    cached=isnothing(cached) ? get(raw,"prompt_cache_hit_tokens",nothing) : cached
+    isnothing(cached) ? get(raw,"cached_tokens",nothing) : cached
+end
+
+"""Treat each OpenAI usage object as a snapshot while retaining absent counters as unknown."""
+function openai_metered_usage!(state::ModelStreamState,raw::AbstractDict)
+    details=get(raw,"prompt_tokens_details",nothing)
+    read=usage_tokens(openai_reported_cache(raw))
+    written=usage_tokens(usage_detail(details,"cache_write_tokens"))
+    prompt=usage_tokens(get(raw,"prompt_tokens",nothing))
+    state.metering=ModelUsageMeter(;input=isnothing(prompt) ? nothing : uncached_usage_tokens(prompt,read,written),
+        output=usage_tokens(get(raw,"completion_tokens",nothing)),cache_read=read,cache_write=written)
+    nothing
+end
+
 function openai_model_usage!(state::ModelStreamState, raw::AbstractDict)
+    openai_metered_usage!(state,raw)
     details = get(raw, "prompt_tokens_details", Dict{String,Any}())
-    cached = get(details, "cached_tokens", get(raw, "prompt_cache_hit_tokens", get(raw, "cached_tokens", 0)))
-    written = get(details, "cache_write_tokens", 0)
+    cached = something(openai_reported_cache(raw),0)
+    written = something(usage_detail(details,"cache_write_tokens"),0)
     usage = state.message["usage"]
-    usage["input"] = max(0, get(raw, "prompt_tokens", 0) - cached - written)
-    usage["output"] = get(raw, "completion_tokens", 0)
+    usage["input"] = max(0, something(get(raw,"prompt_tokens",nothing),0) - cached - written)
+    usage["output"] = something(get(raw,"completion_tokens",nothing),0)
     usage["cacheRead"] = cached
     usage["cacheWrite"] = written
-    usage["reasoning"] = get(get(raw, "completion_tokens_details", Dict{String,Any}()), "reasoning_tokens", 0)
+    usage["reasoning"] = something(usage_detail(get(raw,"completion_tokens_details",nothing),"reasoning_tokens"),0)
     usage["totalTokens"] = usage["input"] + usage["output"] + cached + written
     model_cost!(state)
     return nothing

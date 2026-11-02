@@ -1,3 +1,5 @@
+public response_usage_provenance, message_usage_accounting
+
 struct HTTPModelBackend{P,C,T,O}
     protocol::P
     endpoint::String
@@ -17,7 +19,11 @@ struct StreamedCompletion{R,U,M}
     reply::R
     usage::U
     message::M
+    provenance::Union{Nothing,Dict{String,Any}}
 end
+StreamedCompletion(reply,usage,message) = StreamedCompletion(reply,usage,message,nothing)
+response_usage_provenance(result) = nothing
+response_usage_provenance(result::StreamedCompletion) = deepcopy(result.provenance)
 response_reply(result::StreamedCompletion) = result.reply
 response_usage(result::StreamedCompletion) = result.usage
 
@@ -37,6 +43,81 @@ function empty_model_message(model::ModelSpec)
         "stopReason" => "pending", "timestamp" => round(Int, time() * 1000))
 end
 
+"""Actual validated metering observations, independent of source-compatible initialized wire counters."""
+Base.@kwdef mutable struct ModelUsageMeter
+    input::Union{Nothing,Int} = nothing
+    output::Union{Nothing,Int} = nothing
+    cache_read::Union{Nothing,Int} = nothing
+    cache_write::Union{Nothing,Int} = nothing
+    cache_write_1h::Union{Nothing,Int} = nothing
+end
+
+"""Only calculate catalog estimates when metered components and applicable prices are known."""
+function model_metered_cost(meter::ModelUsageMeter,metadata)
+    rates=get(metadata,"cost",nothing)
+    values=(meter.input,meter.output,meter.cache_read,meter.cache_write)
+    prices=map(name->usage_cost(usage_detail(rates,name)),("input","output","cacheRead","cacheWrite"))
+    hourly=usage_cost(usage_detail(rates,"cacheWrite1h"))
+    hourly_present=rates isa AbstractDict && haskey(rates,"cacheWrite1h")
+    cost=nothing
+    if all(!isnothing,values) && all(!isnothing,prices) && (!hourly_present || !isnothing(hourly))
+        counts=map(value->something(value,0),values)
+        known_prices=map(value->something(value,0.0),prices)
+        hourly_rate=hourly_present ? something(hourly,0.0) : known_prices[4]
+        observed_hourly=meter.cache_write_1h
+        split_known=counts[4]==0 || hourly_rate==known_prices[4] || !isnothing(observed_hourly)
+        if split_known
+            one_hour=min(something(observed_hourly,0),counts[4])
+            ordinary=counts[4]-one_hour
+            cost=usage_cost(known_prices[1]/1_000_000*counts[1]+known_prices[2]/1_000_000*counts[2]+
+                known_prices[3]/1_000_000*counts[3]+known_prices[4]/1_000_000*ordinary+hourly_rate/1_000_000*one_hour)
+        end
+    end
+    cost
+end
+
+"""Expose only observed token fields; computed cost is explicitly a catalog estimate, not a bill."""
+function model_usage_provenance(report::UsageReport)
+    values=Dict{String,Any}()
+    fields=String[]
+    for (name,value) in (("input",report.input_tokens),("output",report.output_tokens),
+            ("cacheRead",report.cache_read_tokens),("cacheWrite",report.cache_write_tokens))
+        if !isnothing(value)
+            values[name]=value
+            push!(fields,name)
+        end
+    end
+    isnothing(report.cost) || (values["cost"]=report.cost)
+    Dict{String,Any}("format"=>"JuliaForever2.usage-provenance.v1","observedFields"=>fields,
+        "usage"=>values,"costSource"=>isnothing(report.cost) ? "unknown" : "catalog-estimate")
+end
+
+"""Read native presence metadata without rewriting imports or calling legacy declared cost a verified charge."""
+function message_usage_accounting(message)
+    raw=usage_detail(message,"usage")
+    marker=usage_detail(usage_detail(message,"jf2"),"usageProvenance")
+    native=marker isa AbstractDict && isequal(get(marker,"format",nothing),"JuliaForever2.usage-provenance.v1")
+    report=UsageReport(raw)
+    provenance=raw isa AbstractDict ? :legacy : :absent
+    cost_source=isnothing(report.cost) ? :unknown : :legacy_declared
+    if native
+        data=usage_detail(marker,"usage")
+        fields=get(marker,"observedFields",nothing)
+        observed=fields isa AbstractVector ? fields : Any[]
+        input=any(isequal("input"),observed) ? usage_tokens(usage_detail(data,"input")) : nothing
+        output=any(isequal("output"),observed) ? usage_tokens(usage_detail(data,"output")) : nothing
+        read=any(isequal("cacheRead"),observed) ? usage_tokens(usage_detail(data,"cacheRead")) : nothing
+        written=any(isequal("cacheWrite"),observed) ? usage_tokens(usage_detail(data,"cacheWrite")) : nothing
+        complete=all(!isnothing,(input,output,read,written))
+        estimated=isequal(get(marker,"costSource",nothing),"catalog-estimate")
+        cost=complete && estimated ? usage_cost(usage_detail(data,"cost")) : nothing
+        report=UsageReport(input,output,cost,read,written)
+        provenance=:native
+        cost_source=isnothing(cost) ? :unknown : :catalog_estimate
+    end
+    (;report,provenance,cost_source)
+end
+
 mutable struct ModelStreamState{M,C}
     model::M
     context::C
@@ -51,8 +132,18 @@ mutable struct ModelStreamState{M,C}
     finished::Bool
     error::String
     started_at::UInt64
+    metering::ModelUsageMeter
 end
-ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,IOBuffer}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns())
+ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,IOBuffer}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns(), ModelUsageMeter())
+
+"""Preserve the prior positional stream-state constructor without inventing metering observations."""
+ModelStreamState(model,context,message,blocks,arguments,text_buffers,closed_blocks,received_start,received_stop,started,finished,error,started_at) =
+    ModelStreamState(model,context,message,blocks,arguments,text_buffers,closed_blocks,received_start,received_stop,started,finished,error,started_at,ModelUsageMeter())
+
+function model_reported_usage(state::ModelStreamState)
+    meter=state.metering
+    UsageReport(meter.input,meter.output,model_metered_cost(meter,model_metadata(state.model)),meter.cache_read,meter.cache_write)
+end
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -244,10 +335,7 @@ end
 
 function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     message = state.message
-    usage = message["usage"]
-    report = UsageReport(usage["input"], usage["output"],
-        haskey(model_metadata(state.model), "cost") ? Float64(usage["cost"]["total"]) : nothing,
-        usage["cacheRead"], usage["cacheWrite"])
+    report = model_reported_usage(state)
     text = join(block["text"] for block in message["content"] if block["type"] == "text")
     reply = if message["stopReason"] in ("error", "aborted")
         Reply(:error, get(message, "errorMessage", "Model request failed."))
@@ -258,7 +346,7 @@ function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     else
         decode_reply(request.protocol, text)
     end
-    return StreamedCompletion(reply, report, message)
+    return StreamedCompletion(reply, report, message, model_usage_provenance(report))
 end
 
 function respond_model(backend::HTTPModelBackend, model::ModelSpec, request::ModelRequest, context::ExecutionContext)
