@@ -19,7 +19,7 @@ end
 function parse_session_pin_entries(path::AbstractString)
     data = JSON.parsefile(path)
     if !(data isa AbstractDict) || get(data, "format", nothing) != "JuliaForever2.session-pins" ||
-            get(data, "version", nothing) != 1 ||
+            !metadata_version(get(data, "version", nothing), (1,)) ||
             !(get(data, "sessions", nothing) isa AbstractVector)
         error("Invalid session pin metadata")
     end
