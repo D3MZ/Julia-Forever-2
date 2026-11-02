@@ -78,6 +78,10 @@ jobs:
           echo "JULIAFOREVER_CONFIG_DIR=$RUNNER_TEMP/jf2-visual-config" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_TEMP/jf2-visual-config"
           vhs vhs/jf2.tape 2>&1 | tee evidence/vhs.log
+          for image in chat.png settings.png slash-menu.png; do
+            test -s "artifacts/vhs/$image" || { echo "Missing VHS screenshot: $image"; exit 1; }
+          done
+          test -s artifacts/vhs/jf2-terminal.gif
       - uses: actions/upload-artifact@v4
         if: always()
         with:
