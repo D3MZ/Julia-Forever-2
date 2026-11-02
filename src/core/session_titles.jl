@@ -17,14 +17,18 @@ SessionTitles(; max_bytes::Integer=120) =
 
 """Consume an OSC terminal control, stopping at BEL, ESC-backslash or the input end."""
 function title_osc_end(characters, position)
-    while position <= length(characters)
+    finished = false
+    while position <= length(characters) && !finished
         if characters[position] == '\a'
-            return position + 1
+            position += 1
+            finished = true
         elseif characters[position] == '\e' && position < length(characters) &&
                 characters[position + 1] == '\\'
-            return position + 2
+            position += 2
+            finished = true
+        else
+            position += 1
         end
-        position += 1
     end
     position
 end
@@ -108,11 +112,17 @@ function truncate_session_title(value::AbstractString, max_bytes::Integer)
     budget = positive_title_limit(max_bytes, "max_bytes")
     output = IOBuffer()
     used = 0
-    for character in value
+    state = iterate(value)
+    while !isnothing(state)
+        character, following = state
         width = ncodeunits(string(character))
-        used + width > budget && break
-        print(output, character)
-        used += width
+        if used + width > budget
+            state = nothing
+        else
+            print(output, character)
+            used += width
+            state = iterate(value, following)
+        end
     end
     String(take!(output))
 end
@@ -162,13 +172,18 @@ session_title_fallback(titles::SessionTitles, session::Session) =
 """Read only the first useful human message under its lock; avoid full history snapshots."""
 function session_title_fallback(session::Session; max_bytes::Integer=120)
     lock(session.conversation.lock) do
-        for message in session.conversation.messages
+        messages = session.conversation.messages
+        suggestion = nothing
+        index = 1
+        while index <= length(messages) && isnothing(suggestion)
+            message = messages[index]
             if message.role == :user
-                suggestion = fallback_session_title(message.content; max_bytes)
-                isempty(suggestion) || return suggestion
+                candidate = fallback_session_title(message.content; max_bytes)
+                isempty(candidate) || (suggestion = candidate)
             end
+            index += 1
         end
-        nothing
+        suggestion
     end
 end
 
