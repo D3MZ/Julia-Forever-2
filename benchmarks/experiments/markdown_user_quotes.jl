@@ -12,14 +12,14 @@ const Candidate = JuliaForever2
 
 function user_text(index, lines)
     repeat("Session $(index): explain a Julia transform 🐱 café 日本語.\r\n" *
-        "Keep this second line with a literal backtick \` and punctuation.\n" *
+        "Keep this second line with a literal backtick ` and punctuation.\n" *
         "\tIndented text; preserve all whitespace.\r" *
         "Fourth line: Σ = ∑ and no dropped content.\n", lines) * "\n\n"
 end
 
 function assistant_text(index, lines)
     repeat("Answer $(index): preserve the generated transcript.\n" *
-        "The next line is \`Julia\` code and remains unchanged.\n", lines)
+        "The next line is `Julia` code and remains unchanged.\n", lines)
 end
 
 function make_messages(package, count, user_lines)
