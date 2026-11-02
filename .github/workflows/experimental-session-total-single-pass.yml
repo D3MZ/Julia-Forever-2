@@ -53,7 +53,7 @@ jobs:
             @test_throws ErrorException Candidate.session_reported_total([Inf],Float64)
             @test_throws InexactError Candidate.session_reported_total([1.25],Int)
             @test_throws Exception Candidate.session_reported_total(Any[nothing,missing],Int)
-            @test Candidate.session_total_add(1,2) == 3 && Candidate.session_total_add(1.0,2.0) == 3.0
+            @test Candidate.session_total_add(1,2,Int) == 3 && Candidate.session_total_add(1.0,2.0,Float64) == 3.0
             @test Candidate.session_reported_total(Any[nothing,nothing],Float64).reported == 0
             println("SOURCE_NUMERIC_PROBES_PASSED")
           '
