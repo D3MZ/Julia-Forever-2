@@ -76,6 +76,105 @@ end
 mktempdir() do terminal_configuration
 withenv("JULIAFOREVER_CONFIG_DIR" => terminal_configuration, "OPENROUTER_API_KEY" => "") do
 
+@testset "Portable terminal modifier sequences" begin
+    cases = (
+        ("\eb", :unknown, "alpha beta", 10, "alpha beta", 6),
+        ("\e[1;3D", :left, "alpha beta", 10, "alpha beta", 6),
+        ("\e[1;5D", :left, "alpha beta", 10, "alpha beta", 6),
+        ("\e[57350;3u", :left, "alpha beta", 10, "alpha beta", 6),
+        ("\ef", :unknown, "alpha beta", 0, "alpha beta", 5),
+        ("\e[1;3C", :right, "alpha beta", 0, "alpha beta", 5),
+        ("\e[57351;3u", :right, "alpha beta", 0, "alpha beta", 5),
+        ("\e\x7f", :unknown, "alpha beta", 10, "alpha ", 6),
+        ("\e[127;3u", :backspace, "alpha beta", 10, "alpha ", 6),
+        ("\e[57347;3u", :backspace, "alpha beta", 10, "alpha ", 6),
+        ("\e[127;9u", :backspace, "alpha beta", 5, " beta", 0),
+        ("\e[57347;9u", :backspace, "alpha beta", 5, " beta", 0),
+        ("\ed", :unknown, "alpha beta", 6, "alpha ", 6),
+        ("\e[3;3~", :delete, "alpha beta", 6, "alpha ", 6),
+        ("\e[57349;3u", :delete, "alpha beta", 6, "alpha ", 6),
+        ("\e[3;9~", :delete, "alpha beta", 6, "alpha ", 6),
+        ("\e[57349;9u", :delete, "alpha beta", 6, "alpha ", 6),
+        ("\e[1;9D", :left, "alpha beta", 8, "alpha beta", 0),
+        ("\e[57350;9u", :left, "alpha beta", 8, "alpha beta", 0),
+        ("\e[1;9C", :right, "alpha beta", 3, "alpha beta", 10),
+        ("\e[57351;9u", :right, "alpha beta", 3, "alpha beta", 10),
+    )
+    for (sequence, key, before, start, after, cursor) in cases
+        input = TextInput()
+        Tachikoma.set_text!(input, before)
+        input.cursor = start
+        @test Terminal.edit_prompt_key!(input, KeyEvent(key), collect(codeunits(sequence)))
+        @test Tachikoma.text(input) == after
+        @test input.cursor == cursor
+    end
+
+    input = TextInput()
+    Tachikoma.set_text!(input, "abcdef")
+    @test Terminal.edit_prompt_key!(input, KeyEvent(:backspace), collect(codeunits("\e[127;2u")))
+    @test Tachikoma.text(input) == "abcde"
+    @test Terminal.edit_prompt_key!(input, KeyEvent(:unknown), collect(codeunits("\e[127;9u"))) == false
+    @test Tachikoma.text(input) == "abcde"
+    @test Terminal.edit_prompt_key!(input, KeyEvent(:unknown), collect(codeunits("\e[garbageu"))) == false
+    @test Tachikoma.text(input) == "abcde"
+    @test Terminal.edit_prompt_key!(input, KeyEvent(:backspace, Tachikoma.key_release), collect(codeunits("\e[127;9:3u"))) == false
+    @test Tachikoma.text(input) == "abcde"
+
+    input.focused = false
+    @test Terminal.edit_prompt_key!(input, KeyEvent(:ctrl, 'u')) == false
+    @test Terminal.edit_prompt_key!(input, KeyEvent(:backspace), collect(codeunits("\e[127;9u"))) == false
+    @test Tachikoma.text(input) == "abcde"
+end
+
+@testset "Cursor shortcuts preserve menu selection" begin
+    app = App(default_kernel())
+    update!(app, KeyEvent('/'))
+    update!(app, KeyEvent(:down))
+    @test app.selected == 2
+    update!(app, KeyEvent(:ctrl, 'a'))
+    @test app.selected == 2
+    update!(app, KeyEvent(:left))
+    @test app.selected == 2
+    update!(app, KeyEvent('s'))
+    @test app.selected == 1
+end
+
+@testset "TUI uses captured modifiers once per key" begin
+    app = App(default_kernel())
+    Tachikoma.set_text!(app.input, "alpha beta")
+    Tachikoma.enable_raw_capture!()
+    bytes = Tachikoma.last_event_raw()
+    empty!(bytes)
+    append!(bytes, codeunits("\e[127;3u"))
+    update!(app, KeyEvent(:backspace))
+    @test Tachikoma.text(app.input) == "alpha "
+    @test isempty(bytes)
+
+    Tachikoma.set_text!(app.input, "alpha beta")
+    update!(app, KeyEvent(:backspace))
+    @test Tachikoma.text(app.input) == "alpha bet"
+    Tachikoma.disable_raw_capture!()
+end
+
+@testset "Page-specific keys remain independent of prompt editing" begin
+    mktempdir() do settings_directory
+        app = App(default_kernel(); settings_dir=settings_directory)
+        app.page = :settings
+        update!(app, KeyEvent(:down))
+        @test app.selected == 2
+        update!(app, KeyEvent(:enter))
+        @test app.page == :chat
+        @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.OpenAIProvider
+
+        app.page = :auth
+        update!(app, KeyEvent(:escape))
+        @test app.page == :auth
+        app.page = :components
+        update!(app, KeyEvent(:escape))
+        @test app.page == :chat
+    end
+end
+
 @testset "Cross-terminal prompt editing shortcuts" begin
     app = App(default_kernel())
     Tachikoma.set_text!(app.input, "alpha beta gamma")

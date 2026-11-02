@@ -49,7 +49,10 @@ end
 
 function JuliaForever2.main(; settings_dir::AbstractString=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
     app = terminal_app(; settings_dir, registry)
+    capture_was_enabled = Tachikoma.raw_capture_enabled()
+    capture_was_enabled || Tachikoma.enable_raw_capture!()
     Tachikoma.app(app; default_bindings=false)
+    capture_was_enabled || Tachikoma.disable_raw_capture!()
     finish_shutdown!(app)
     close(app.session.kernel)
     return 0
