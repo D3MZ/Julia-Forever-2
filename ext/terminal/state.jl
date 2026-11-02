@@ -32,6 +32,7 @@ end
 RegisteredPrompt(name::String,description::String) = RegisteredPrompt(name,description,nothing,nothing,nothing)
 
 Base.@kwdef mutable struct MenusState
+    viewport::Union{Nothing,TerminalViewport}=nothing
     bug_report::Union{Nothing,BugReportControl} = nothing
     auth_menu_control::Union{Nothing,AuthMenuControl}=nothing
     startup::Union{Nothing,StartupControls}=nothing

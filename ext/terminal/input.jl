@@ -259,6 +259,8 @@ function default_input!(app::App, event::KeyEvent)
         app.menus.cursor = 1
     elseif app.page==:chat && chat_host_pasting(app,menu_packet(event,raw))
         page_input!(app,Val(:chat),event,raw)
+    elseif terminal_viewport_key!(app,event,raw)
+        nothing
     elseif app.page==:auth
         page_input!(app,Val(:auth),event,raw)
     elseif event.key == :ctrl_c && app.page==:bug_report
@@ -300,7 +302,7 @@ function page_input!(app::App, ::Val{:chat}, event::KeyEvent, raw::AbstractVecto
     elseif event.key == :escape && !isnothing(app.operations.shell.active) && !chat_host_completion_open(app)
         cancel_user_shell!(app)
     elseif menu_packet(event, raw) == "\x18"
-        copy_last_assistant!(app)
+        terminal_viewport_copy!(app) || copy_last_assistant!(app)
     elseif menu_packet(event, raw) == "\x0f"
         state = app.transcript.display
         session_display_transition!(state, state.expand_all ? :collapse_all : :expand_all)
@@ -326,30 +328,21 @@ end
 
 
 function default_input!(app::App, event::MouseEvent)
-    handled=if app.page in (:chat,:pi_menu) || (event.button==Tachikoma.mouse_left && event.action==Tachikoma.mouse_press)
-        page_mouse!(app,Val(app.page),event)
-    else
-        nothing
-    end
-    if handled!==true && event.button in (Tachikoma.mouse_scroll_up,Tachikoma.mouse_scroll_down) &&
-            (app.page==:chat || app.page==:pi_menu && app.menus.path in (["model"],["scoped-models"]))
-        amount=terminal_integer(app,"fullscreen-wheel-scroll-lines",3,1,100)
-        app.scroll=max(0,app.scroll+(event.button==Tachikoma.mouse_scroll_up ? amount : -amount))
-    end
+    terminal_viewport_mouse!(app,event)
     nothing
 end
 
 page_mouse!(app::App, page::Val, event::MouseEvent) = nothing
 
-function page_mouse!(app::App,::Val{:chat},event::MouseEvent)
+function page_mouse!(app::App,::Val{:chat},event::MouseEvent;click::Bool=event.action==Tachikoma.mouse_release)
     geometry=startup_editor_geometry(app)
     row=startup_editor_row(app,event,geometry)
     state=chat_completion_state!(app)
     wheel=event.button in (Tachikoma.mouse_scroll_up,Tachikoma.mouse_scroll_down)
-    type=wheel ? :wheel : event.action==Tachikoma.mouse_press ? :press : event.action==Tachikoma.mouse_release ? :click : :move
+    type=wheel ? :wheel : event.action==Tachikoma.mouse_press ? :press : event.action==Tachikoma.mouse_release ? (click ? :click : :release) : :move
     button=event.button==Tachikoma.mouse_left ? :left : :none
-    delta=event.button==Tachikoma.mouse_scroll_up ? -1 : event.button==Tachikoma.mouse_scroll_down ? 1 : 0
-    result=chat_completion_mouse!(state,type,button,event.x-app.area.x,row,app.area.width;
+    delta=terminal_viewport_wheel(app,event)
+    result=row<0 ? (handled=false,) : chat_completion_mouse!(state,type,button,event.x-app.area.x,row,app.area.width;
         height=app.area.height,padding=terminal_integer(app,"editor-padding",0,0,3),wheel_delta=delta)
     chat_completion_ready!(app,nothing)
     result.handled

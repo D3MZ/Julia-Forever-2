@@ -47,6 +47,8 @@ function App(session::Session; settings_dir::AbstractString=config_dir(), regist
     register_event_handler!(app, :completion_ready, chat_completion_ready!)
     register_event_handler!(app, :user_shell_stream, user_shell_stream_received!)
     register_event_handler!(app, :user_shell_done, user_shell_done!)
+    register_event_handler!(app, :terminal_selection_expired, terminal_selection_expired!)
+    register_event_handler!(app, :terminal_scrollbar_expired, terminal_scrollbar_expired!)
     register_event_handler!(app, :turn, operation_finished!)
     register_event_handler!(app, :evaluation, operation_finished!)
     register_event_handler!(app, :compaction_done, operation_finished!)

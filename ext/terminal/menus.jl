@@ -384,12 +384,12 @@ function page_view!(app::App, ::Val{:pi_menu}, frame::Frame)
 end
 
 function page_mouse!(app::App, ::Val{:pi_menu}, event::MouseEvent)
-    if selector_active(app)
+    handled=if selector_active(app)
         session_selector_mouse!(app, event)
     elseif app.menus.path == ["tree"]
-        nothing
+        false
     elseif thinking_defaults_active(app)
-        nothing
+        false
     elseif theme_controls_active(app)
         theme_controls_mouse!(app, event)
     elseif app.menus.path in (["model"], ["scoped-models"], ["thinking"])
@@ -406,9 +406,14 @@ function page_mouse!(app::App, ::Val{:pi_menu}, event::MouseEvent)
         if local_row>=2 && first_item <= index < first_item + count
             app.menus.cursor = index
             menu_select!(app, items[index]["id"])
+            true
+        else
+            false
         end
+    else
+        false
     end
-    return nothing
+    handled===true
 end
 
 """Read skill/prompt metadata from Pi-compatible project and user directories."""

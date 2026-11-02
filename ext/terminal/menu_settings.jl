@@ -400,26 +400,32 @@ settings_top(app::App) = startup_editor_geometry(app,settings_lines(app,app.area
 
 """Move settings selection on press, activate on release, and clamp wheel movement."""
 function settings_mouse!(app::App, event::MouseEvent)
+    handled=false
     items = visible_settings(app)
     count = length(items)
-    geometry=startup_editor_geometry(app,settings_lines(app,app.area.width))
+    lines=settings_lines(app,app.area.width)
+    geometry=startup_editor_geometry(app,lines)
     local_row=startup_editor_row(app,event,geometry)
     search=settings_searchable(app)
     row=local_row-(search ? 3 : 1)
     in_list=local_row>=0 && 0<=row<min(count,10)
-    if in_list && count>0 && event.button in (Tachikoma.mouse_scroll_up,Tachikoma.mouse_scroll_down)
+    in_wheel_region=(search ? 3 : 1)<=local_row<length(lines)-1
+    if in_wheel_region && count>0 && event.button in (Tachikoma.mouse_scroll_up,Tachikoma.mouse_scroll_down)
+        handled=true
         app.menus.cursor=clamp(app.menus.cursor+(event.button==Tachikoma.mouse_scroll_up ? -1 : 1),1,count)
     elseif event.button==Tachikoma.mouse_left
         first_item=max(1,min(app.menus.cursor-5,count-9))
         index=first_item+row
         visible_last=min(first_item+9,count)
         if search && local_row==1 && event.action==Tachikoma.mouse_press
-            menu_search_click!(app.menus.search,event.x-app.area.x,0)
+            handled=menu_search_click!(app.menus.search,event.x-app.area.x,0)
         elseif in_list && first_item<=index<=visible_last
             if event.action==Tachikoma.mouse_press
+                handled=true
                 app.menus.cursor=index
                 app.menus.pressed=index
             elseif event.action==Tachikoma.mouse_release && !isnothing(app.menus.pressed)
+                handled=true
                 app.menus.cursor=app.menus.pressed
                 app.menus.pressed=nothing
                 activate_setting!(app)
@@ -428,5 +434,5 @@ function settings_mouse!(app::App, event::MouseEvent)
             app.menus.pressed=nothing
         end
     end
-    nothing
+    handled
 end

@@ -53,6 +53,24 @@ function startup_busy_border(app::App,width::Int,hidden_rows::Int)
     only(startup_buffer_rows(buffer,width,1))
 end
 
+startup_thinking_border_token(level)=:thinkingOff
+startup_thinking_border_token(level::AbstractString)=get((;off=:thinkingOff,minimal=:thinkingMinimal,low=:thinkingLow,
+    medium=:thinkingMedium,high=:thinkingHigh,xhigh=:thinkingXhigh,max=:thinkingMax),Symbol(level),:thinkingOff)
+startup_thinking_border_style(::Nothing,level)=pi_style(:text_dim)
+startup_thinking_border_style(runtime::ThemeRuntime,level)=theme_style(runtime,startup_thinking_border_token(level))
+
+"""Use actual configured thinking state for the App border without changing the generic Editor default."""
+function startup_idle_editor_border(app::App,state::ChatEditorState)
+    if startswith(lstrip(chat_text(state)),"!")
+        user_shell_border(app.menus.theme_runtime)
+    else
+        level=with_component(app.session.kernel,:provider;fallback=nothing) do provider
+            JuliaForever2.current_thinking_level(provider)
+        end
+        startup_thinking_border_style(app.menus.theme_runtime,level)
+    end
+end
+
 """Render the native multiline editor and existing command completions in the shared dock."""
 function startup_chat_editor(app::App,width::Int,height::Int)
     state=chat_editor_state!(app)
@@ -62,7 +80,7 @@ function startup_chat_editor(app::App,width::Int,height::Int)
     chat_completion_lines(completion,width,height;runtime=app.menus.theme_runtime,
         padding=terminal_integer(app,"editor-padding",0,0,3),
         hardware_cursor=menu_preference(app,"show-hardware-cursor","false")=="true",top_border=border,
-        border_style=startswith(lstrip(chat_text(state)),"!") ? user_shell_border(app.menus.theme_runtime) : nothing)
+        border_style=startup_idle_editor_border(app,state))
 
 end
 
@@ -176,10 +194,12 @@ end
 
 """Compose factual startup, archive, live preview, pending queues and footer in one native scene."""
 function startup_fullscreen_scene(app::App,width::Int,height::Int;editor=nothing)
+    viewport=terminal_viewport!(app)
+    document_width=terminal_scroll_control_width(viewport.scroll.control,width)
     controls=app.menus.startup
-    prefix=isnothing(controls) ? Vector{Tachikoma.Span}[] : startup_document_lines(controls.document,app.menus.theme_runtime,width)
-    archived=archive_transcript_lines!(app,width)
-    preview=[startup_preview_rows(app,width);frontend_preview_notice_rows(app,width)]
+    prefix=isnothing(controls) ? Vector{Tachikoma.Span}[] : startup_document_lines(controls.document,app.menus.theme_runtime,document_width)
+    archived=archive_transcript_lines!(app,document_width)
+    preview=[startup_preview_rows(app,document_width);frontend_preview_notice_rows(app,document_width)]
     selected=isnothing(editor) ? startup_selected_editor(app,Val(app.page),width,height) : editor
     parts=[StartupDockPart(;name=:pending,lines=[pending_input_lines(app,width);user_shell_lines(app,width;pending=true)]),
         StartupDockPart(;name=:status,lines=Vector{Tachikoma.Span}[]),
@@ -187,15 +207,14 @@ function startup_fullscreen_scene(app::App,width::Int,height::Int;editor=nothing
         StartupDockPart(;name=:editor,lines=selected.lines,minimum=3,cursor_row=selected.cursor_row),
         StartupDockPart(;name=:below,lines=Vector{Tachikoma.Span}[]),
         StartupDockPart(;name=:footer,lines=footer_control_lines(app,width))]
-    document=[prefix;archived;preview;user_shell_lines(app,width)]
-    scene=startup_scene(document,parts,height;scroll=app.scroll)
-    scroll=clamp(app.scroll,0,max(0,length(document)-scene.document_height))
-    first_document_row=max(1,length(document)-scroll-scene.document_height+1)
+    document=[prefix;archived;preview;user_shell_lines(app,document_width)]
+    scene=terminal_scroll_host_scene!(viewport.scroll,app,document,parts,width,height)
+    first_document_row=scene.viewport.first_row
     last_document_row=min(length(document),first_document_row+scene.document_height-1)
     archive_first=max(first_document_row,length(prefix)+1)
     archive_last=min(last_document_row,length(prefix)+length(archived))
     archive_height=max(0,archive_last-archive_first+1)
-    (;scene...,first_document_row,archive_top=archive_first-first_document_row+1,
+    (;scene...,document_width,first_document_row,archive_top=archive_first-first_document_row+1,
         archive_height,first_archive_row=max(1,archive_first-length(prefix)),startup_rows=length(prefix),
         archived_rows=length(archived),preview_rows=length(preview),editor_cursor_row=selected.cursor_row,
         editor_cursor_col=get(selected,:cursor_col,nothing))
@@ -218,7 +237,8 @@ startup_editor_row(app::App,event::MouseEvent,geometry) = startup_inside_editor(
 function startup_host_view!(app::App,frame::Frame;editor=nothing)
     area=frame.area
     natural=startup_host_scene(app,area.width,area.height;editor)
-    terminal_presentation_publish!(app,area.width,area.height;scene=terminal_presentation_mode(app)==:regular ? natural : nothing)
+    plan=app.transcript.display_plan
+    terminal_presentation_publish!(app,area.width,area.height;scene=natural)
     scene=terminal_visible_scene(app,natural,area.height)
     cursor=startup_host_cursor(app,scene)
     terminal_output_cursor!(app,terminal_presentation_mode(app)==:regular ? nothing : cursor)
@@ -229,9 +249,9 @@ function startup_host_view!(app::App,frame::Frame;editor=nothing)
         rows[index]=[Tachikoma.Span(span.content,span.style.fg isa MenuSearchInverseColor ? Tachikoma.Style() : span.style) for span in rows[index]]
     end
     startup_document_draw!(frame.buffer,area.x,area.y,area.width,rows)
-    plan=app.transcript.display_plan
+    terminal_viewport_draw!(app,frame,scene)
     if !isnothing(plan) && scene.archive_height>0
-        viewport=Rect(area.x,area.y+scene.archive_top-1,area.width,scene.archive_height)
+        viewport=Rect(area.x,area.y+scene.archive_top-1,get(scene,:document_width,area.width),scene.archive_height)
         draw_session_images!(plan,frame,viewport;first_row=scene.first_archive_row)
     end
     scene

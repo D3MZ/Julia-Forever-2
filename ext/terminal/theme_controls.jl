@@ -116,18 +116,19 @@ function theme_controls_lines(app::App, width)
 end
 function theme_controls_mouse!(app::App, event::MouseEvent)
     menu = app.menus.theme_menu
+    result=nothing
     if !isnothing(menu)
         area = app.area
         lines = theme_menu_lines(menu, area.width)
         geometry=startup_editor_geometry(app,lines)
         local_row=startup_editor_row(app,event,geometry)
-        wheel_delta = event.button == Tachikoma.mouse_scroll_up ? -1 : event.button == Tachikoma.mouse_scroll_down ? 1 : 0
+        wheel_delta = terminal_viewport_wheel(app,event)
         action = wheel_delta != 0 ? :wheel : event.action == Tachikoma.mouse_press ? :press : event.action == Tachikoma.mouse_release && !isnothing(menu.pressed) ? :click : :move
         button = event.button == Tachikoma.mouse_left ? :left : :other
-        theme_menu_mouse_dispatch!(menu, event.x - area.x, local_row; action, button, wheel_delta)
+        result=theme_menu_mouse_dispatch!(menu, event.x - area.x, local_row; action, button, wheel_delta)
         event.action==Tachikoma.mouse_release && local_row<0 && (menu.pressed=nothing)
     end
-    nothing
+    !isnothing(result) && get(result,:handled,false)
 end
 
 """Cache source-backed rendered archive rows separately from streaming previews and model context."""
