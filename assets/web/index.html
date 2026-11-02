@@ -28,6 +28,22 @@
         <button id="workspace-session-down" type="button" disabled>Session down</button>
       </div>
       <ol id="workspace-groups" aria-label="Workspace groups"></ol>
+      <section id="workspace-file-controls" class="workspace-files" aria-label="Workspace files" hidden>
+        <h3>Read-only file explorer</h3>
+        <p>Opt-in, local-only inspection of files in the selected registered workspace. Files are never added to chat.</p>
+        <div class="grid"><label for="workspace-file-path">Relative folder or file path</label>
+          <input id="workspace-file-path" type="text" autocomplete="off" spellcheck="false" placeholder="src">
+        </div>
+        <div class="actions">
+          <button id="workspace-file-up" type="button">Parent</button>
+          <button id="workspace-file-list" type="button">List folder</button>
+          <button id="workspace-file-read" type="button">Read text</button>
+          <button id="workspace-file-more" type="button" disabled>Next page</button>
+        </div>
+        <ul id="workspace-file-entries" aria-label="Directory contents"></ul>
+        <p id="workspace-file-status" role="status"></p>
+        <pre id="workspace-file-preview" aria-label="Read-only file preview"></pre>
+      </section>
     </div></details>
     <details id="saved-controls" class="settings-card advanced-controls" hidden><summary>Saved conversations</summary><div class="control-content">
 
