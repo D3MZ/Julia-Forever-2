@@ -1,0 +1,71 @@
+name: Experimental API key protocol contract probe
+on:
+  push:
+    branches:
+      - dot/api-key-protocol-dispatch-20261102
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Install package environment
+        run: julia --project=. -e 'using Pkg; Pkg.instantiate()'
+      - name: Probe protocol configurations and registration errors without network requests
+        shell: bash
+        run: |
+          julia --project=. --startup-file=no --color=no - <<'JULIA'
+          using JuliaForever2
+          const JF = JuliaForever2
+          struct UnsupportedProtocol end
+          function rejected(action, expected_message)
+              task=Task(action)
+              schedule(task)
+              wait(task;throw=false)
+              istaskfailed(task) || error("Expected registration to reject invalid input")
+              problems=Base.current_exceptions(task)
+              any(item -> occursin(expected_message,sprint(showerror,item.exception)),problems) ||
+                  error("Registration failure contract changed")
+              true
+          end
+          function descriptor(protocol, api, endpoint="https://api.example.org/v1", url="https://api.example.org/v1/models")
+              model=JF.ModelSpec(:probe,"test-model";api)
+              JF.api_key_provider_descriptor(:probe,"Probe";models=[model],endpoint,models_url=url,protocol)
+          end
+          function check(protocol, api, header, endpoint)
+              config=JF.api_key_protocol_config(protocol)
+              isequal(config,(;api,header)) || error("Incorrect correlated protocol metadata")
+              item=descriptor(protocol,api,endpoint,endpoint*"/models")
+              builder=item.create.create
+              builder.header==header || error("Incorrect provider auth header")
+              builder.protocol===protocol || error("Provider protocol identity lost")
+              item.auth.validate.header==header || error("Catalog validator auth header disagrees")
+              item.auth.validate.known_models==["test-model"] || error("Catalog names changed")
+              expected_url=JF.model_endpoint(protocol,endpoint,JF.ModelSpec(:probe,"test-model";api))
+              expected_url in builder.transport.urls || error("Model endpoint missing from allowed URL set")
+              wrong_api=api=="openai-completions" ? "anthropic-messages" : "openai-completions"
+              rejected(()->descriptor(protocol,wrong_api,endpoint,endpoint*"/models"),
+                  "API key registration requires a nonempty matching native chat catalog")
+              rejected(()->JF.api_key_provider_descriptor(:probe,"Probe";models=JF.ModelSpec[],
+                  endpoint,models_url=endpoint*"/models",protocol),
+                  "API key registration requires a nonempty matching native chat catalog")
+              println("PASS protocol ", typeof(protocol), " api=", api, " header=", header)
+              item
+          end
+          check(JF.OpenAIChatProtocol(),"openai-completions",:bearer,"https://api.example.org/v1")
+          check(JF.AnthropicMessagesProtocol(),"anthropic-messages",:anthropic,"https://api.example.org")
+          rejected(()->JF.api_key_provider_descriptor(:probe,"Probe";
+              models=[JF.ModelSpec(:probe,"test-model";api="openai-completions")],
+              endpoint="https://api.example.org/v1",models_url="https://api.example.org/v1/models",
+              protocol=UnsupportedProtocol()),"No implemented API key transport for this protocol")
+          rejected(()->JF.api_key_provider_descriptor(:probe,"Probe";
+              models=[JF.ModelSpec(:probe,"test-model";api="openai-completions")],
+              endpoint="http://example.org/v1",models_url="http://example.org/v1/models",
+              protocol=JF.OpenAIChatProtocol()),"API key endpoints must be declared HTTPS URLs")
+          println("PROTOCOL_CONTRACT_PROBES=PASS")
+          JULIA
