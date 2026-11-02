@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          julia --project=benchmarks -e 'using Pkg; Pkg.instantiate(); Pkg.add(name="YAML", version="0.4.17"); Pkg.status()' \
+          julia --project=benchmarks -e 'using Pkg, TOML, UUIDs; Pkg.instantiate(); source=TOML.parsefile("Project.toml")["deps"]; existing=TOML.parsefile("benchmarks/Project.toml")["deps"]; Pkg.add([Pkg.PackageSpec(name=name, uuid=UUID(uuid)) for (name,uuid) in source if !haskey(existing,name)]); Pkg.status()' \
             > "$RUNNER_TEMP/perf-evidence/packages.txt" 2>&1 || {
               cat "$RUNNER_TEMP/perf-evidence/packages.txt"
               exit 1
