@@ -1,31 +1,42 @@
 external_editor_input_source(input::IO)=input
 external_editor_input_source(input::ThemeTerminalInput)=external_editor_input_source(input.source)
 
+"""Accept only concrete locally owned terminal streams, including the framework's /dev/tty IOStream."""
+local_terminal_stream(::IO)=false
+local_terminal_stream(io::CheckedTerminalOutput)=local_terminal_stream(io.source)
+local_terminal_stream(io::Union{Base.TTY,IOStream})=Sys.isunix() && isopen(io) && ccall(:isatty,Cint,(Cint,),Base.cconvert(Cint,Base._fd(io)))==1
+
 """Restore the same terminal and its single-reader theme adapter after a real external-process lease."""
-function restore_external_editor_terminal!(app::App,terminal::Tachikoma.Terminal)
+function restore_external_editor_terminal!(app::App,terminal::Tachikoma.Terminal;resume_input=nothing)
+    state=app.settings.presentation
+    state.leased=true
     entered=preference_attempt() do
         Tachikoma.enter_tui!(terminal)
         Tachikoma.check_resize!(terminal)
+        initialize_terminal_theme!(app,terminal;resume_input)
+        isnothing(app.settings.theme_input) && error("Terminal input restore failed: "*app.status)
+        resumed=terminal_presentation_resume!(app;release=false)
+        resumed.ok || error(resumed.reason)
     end
-    resumed=preference_attempt(()->terminal_presentation_resume!(app))
-    attached=entered.ok && resumed.ok && resumed.value.ok ? preference_attempt(()->initialize_terminal_theme!(app,terminal)) : nothing
-    if !entered.ok
-        (ok=false,reason="Terminal re-entry failed: "*entered.reason)
-    elseif !resumed.ok || !resumed.value.ok
-        (ok=false,reason="Terminal presentation restore failed: "*(resumed.ok ? resumed.value.reason : resumed.reason))
-    elseif isnothing(attached) || !attached.ok
-        (ok=false,reason="Terminal input restore failed: "*(isnothing(attached) ? "adapter unavailable" : attached.reason))
-    elseif isnothing(app.settings.theme_input)
-        (ok=false,reason="Terminal input restore failed: "*app.status)
-    else
+    if entered.ok && !state.closed
+        state.leased=false
         (ok=true,reason="")
+    else
+        state.leased=true
+        detail=entered.ok ? "Terminal closed while restoring" : entered.reason
+        (ok=false,reason="Terminal restoration failed; lease retained: "*detail)
     end
 end
 
 """Run an explicitly selected editor while the UI owner, input adapter and renderer relinquish the same TTY."""
 function external_editor_leased!(app::App,terminal::Tachikoma.Terminal,command::String,content::String,owner::ExternalEditorProcess)
-    paused=terminal_presentation_pause!(app)
+    resume_input=app.settings.theme_input
+    observed=terminal_self_suspend_identity(app,JuliaForever2.TerminalJobs.TerminalJobAdapter())
+    prepared=observed.ok ? terminal_lease_output!(app,JuliaForever2.TerminalJobs.TerminalJobAdapter(),observed.identity) : observed
+    paused=prepared.ok ? terminal_self_suspend_acquire!(app) : prepared
     if !paused.ok
+        prepared.ok && app.settings.presentation.leased && abandon_terminal_lease!(app,terminal,paused.reason;
+            adapter=JuliaForever2.TerminalJobs.TerminalJobAdapter(),identity=observed.identity)
         external_editor_failure(paused.reason)
     else
         performed=preference_attempt() do
@@ -41,8 +52,10 @@ function external_editor_leased!(app::App,terminal::Tachikoma.Terminal,command::
         end
         process=owner.process
         foreground_ready=!(process isa JuliaForever2.TerminalJobs.TerminalJob) || process.restored
-        restored=foreground_ready ? restore_external_editor_terminal!(app,terminal) : (ok=false,reason="Terminal foreground was not restored; native job ownership retained")
+        restored=foreground_ready ? restore_external_editor_terminal!(app,terminal;resume_input) : (ok=false,reason="Terminal foreground was not restored; native job ownership retained")
         if !restored.ok
+            abandon_terminal_lease!(app,terminal,restored.reason;
+                adapter=JuliaForever2.TerminalJobs.TerminalJobAdapter(),identity=observed.identity)
             external_editor_failure(restored.reason)
         elseif !performed.ok
             external_editor_failure(performed.reason)
@@ -55,9 +68,9 @@ end
 """Replace the actual draft only after successful child exit, terminal restoration and unchanged draft ownership."""
 function external_editor_command!(app::App;command::AbstractString=external_editor_command(menu_preference(app,"external-editor","")),owner::ExternalEditorProcess=ExternalEditorProcess())
     terminal=app.settings.terminal
-    if app.operations.closing[] || app.page!=:chat
+    if app.operations.closing[] || app.page!=:chat || app.settings.presentation.leased || app.settings.presentation.closed
         (ok=false,reason="External editor is unavailable while closing or outside chat")
-    elseif isnothing(terminal) || Tachikoma._is_remote_terminal(terminal) || !(external_editor_input_source(Tachikoma._input_io()) isa Base.TTY) || !(terminal_presentation_sink(app) isa Base.TTY)
+    elseif isnothing(terminal) || Tachikoma._is_remote_terminal(terminal) || !(external_editor_input_source(Tachikoma._input_io()) isa Base.TTY) || !local_terminal_stream(terminal_presentation_sink(app))
         app.status="External editor requires an attached local terminal"
         (ok=false,reason=app.status)
     else

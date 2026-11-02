@@ -60,10 +60,10 @@ function terminal_presentation_pause!(app::App)
     end
 end
 
-function terminal_presentation_resume!(app::App)
+function terminal_presentation_resume!(app::App;release::Bool=true)
     terminal=app.settings.terminal
     result=if !isnothing(terminal) && terminal.io isa PresentationIO
-        presentation_resume!(terminal.io)
+        presentation_resume!(terminal.io;release=false)
     else
         (ok=false,reason="Terminal presentation backend is not attached")
     end
@@ -71,6 +71,7 @@ function terminal_presentation_resume!(app::App)
         terminal_viewport_tracking!(app;force=true)
         terminal.frame_count=0
         foreach(Tachikoma.reset!,terminal.buffers)
+        release && (app.settings.presentation.leased=false)
     end
     result
 end

@@ -45,12 +45,12 @@ function theme_control_event!(app::App, kind, setting, result)
 end
 
 """Attach color framing only after the framework completes terminal probes, without a second stdin reader."""
-function initialize_terminal_theme!(app::App, terminal::Tachikoma.Terminal)
+function initialize_terminal_theme!(app::App, terminal::Tachikoma.Terminal;resume_input=nothing)
     close_terminal_theme!(app)
     runtime = app.menus.theme_runtime
     if !isnothing(runtime)
         lifecycle = ThemeLifecycle(; runtime, output=terminal.io)
-        attached = theme_input_attach!(lifecycle)
+        attached = theme_input_restore!(resume_input,lifecycle)
         if attached.ok
             app.settings.theme_input = attached.input
             theme_lifecycle_start!(lifecycle)
@@ -64,6 +64,7 @@ end
 
 """Apply color and file notifications on the UI owner before rendering the next frame."""
 function Tachikoma.pre_render!(app::App)
+    terminal_lease_failed(app) && return nothing
     input = app.settings.theme_input
     if !isnothing(input) && theme_input_poll!(input)
         refresh_theme_controls!(app)

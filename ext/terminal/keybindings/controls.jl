@@ -62,6 +62,8 @@ function native_chat_keybinding_action!(app::App,action::String)
         chat_host_interrupt!(app)
     elseif action=="app.exit"
         quit_command!(app,"")
+    elseif action=="app.suspend"
+        terminal_self_suspend!(app)
     elseif action=="app.thinking.cycle"
         cycle_terminal_thinking!(app)
     elseif action=="app.model.cycleForward" || action=="app.model.cycleBackward"
