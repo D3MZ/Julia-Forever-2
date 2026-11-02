@@ -357,11 +357,22 @@ function session_parser_colors(grammar::SessionSyntaxGrammar,language::String,te
                 end
             end
         end
+        # The syntax tree can protect thousands of object keys and directives.
+        # Avoid scanning every protected span for every Tree-sitter capture.
+        sort!(protected; by=first)
+        protected_starts = first.(protected)
+        protected_max_ends = Vector{Int}(undef, length(protected))
+        last_end = typemin(Int)
+        for index in eachindex(protected)
+            last_end = max(last_end, protected[index][2])
+            protected_max_ends[index] = last_end
+        end
         for found in eachmatch(grammar.query,tree)
             if TreeSitter.predicate(grammar.query,found,text)
                 for capture in TreeSitter.captures(found)
                     a,b=session_parser_range(capture.node)
-                    if !any(range->range[1]<=a&&b<=range[2],protected)
+                    index = searchsortedlast(protected_starts, a)
+                    if index == 0 || protected_max_ends[index] < b
                         kind=session_parser_capture_kind(language,TreeSitter.capture_name(grammar.query,capture),capture.node,text)
                         session_parser_color!(colors,a,b,kind;priority=kind==:variable ? 3 : 1)
                     end
