@@ -201,9 +201,7 @@ function pi_command!(app::App, name::AbstractString, arguments)
     elseif name == "compact"
         compact_command!(app, arguments)
     elseif name == "reload"
-        refresh_settings!(app)
-        discover_disk_resources!(app)
-        app.status = "Commands, skills and provider settings refreshed"
+        native_reload_command!(app)
     elseif name == "quit"
         quit_command!(app, arguments)
     end

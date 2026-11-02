@@ -110,7 +110,7 @@ function chat_host_packet!(app::App,packet::AbstractString)
     editor=chat_editor_state!(app)
     before=chat_text(editor)
     state=chat_completion_state!(app)
-    result=if external_editor_packet(packet) && !editor.pasting
+    result=if native_keybinding_matches(app,"app.editor.external",packet) && !editor.pasting
         external_editor_command!(app)
         (action=:handled,text="")
     else
@@ -118,12 +118,10 @@ function chat_host_packet!(app::App,packet::AbstractString)
     end
     if result.action==:submit
         chat_host_submit!(app,editor,result.text)
-    elseif result.action==:interrupt
+    elseif result.action==:interrupt && native_keybinding_matches(app,"app.interrupt",packet)
         chat_editor_escape!(app,editor)
-    elseif result.action==:exit
-        quit_command!(app,"")
-    elseif result.action==:copy
-        chat_host_interrupt!(app)
+    # Copy is reserved for the parent app action, and an empty editor Delete does not quit.
+    # Only the effective app.clear/app.exit handlers may perform those operations.
     end
     chat_completion_ready!(app,nothing)
     nothing

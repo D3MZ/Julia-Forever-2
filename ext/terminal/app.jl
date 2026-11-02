@@ -58,6 +58,7 @@ function App(session::Session; settings_dir::AbstractString=config_dir(), regist
     load_menu_preferences!(app)
     load_model_preferences!(app)
     initialize_theme_controls!(app; fallback=theme_fallback)
+    load_native_keybindings!(app)
     initialize_startup_host!(app)
     initialize_notice_settings!(app)
     chat_completion_state!(app)

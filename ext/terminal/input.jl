@@ -254,6 +254,8 @@ function default_input!(app::App, event::KeyEvent)
         nothing
     elseif app.page==:pi_menu && app.menus.path==["trust"]
         project_trust_input!(app,event,raw)
+    elseif native_chat_paste_prefix!(app,menu_packet(event,raw);escape_key=event.key==:escape)
+        nothing
     elseif terminal_search_host_pasting(app,menu_packet(event,raw))
         terminal_search_host_key!(app,event,raw)
     elseif !terminal_search_host_focused(app) && app.page == :pi_menu && app.menus.path in (["settings"], ["settings", "warnings"]) && menu_search_pasting(app.menus.search, raw)
@@ -272,7 +274,7 @@ function default_input!(app::App, event::KeyEvent)
             selected_event = app.menus.path in (["model"], ["scoped-models"], ["thinking"]) ? event : KeyEvent(:escape)
             page_input!(app, Val(:pi_menu), selected_event, raw)
         elseif app.page==:chat
-            chat_host_interrupt!(app)
+            page_input!(app,Val(:chat),event,raw)
         else
             quit_command!(app, "")
         end
@@ -292,40 +294,15 @@ function page_input!(app::App, page::Val, event::KeyEvent)
 end
 
 function page_input!(app::App, ::Val{:chat}, event::KeyEvent, raw::AbstractVector{UInt8})
-    packet = menu_packet(event, raw)
+    packet=menu_packet(event,raw)
     if chat_host_pasting(app,packet)
         chat_host_packet!(app,packet)
-    elseif pending_follow_up_key(packet)
-        chat_host_follow_up!(app)
-    elseif pending_dequeue_key(packet)
-        restore_pending_input!(app)
-    elseif event.key == :escape && app.busy && !chat_host_completion_open(app)
-        restore_pending_input!(app; abort=true)
-    elseif event.key == :escape && !isnothing(app.operations.shell.active) && !chat_host_completion_open(app)
-        cancel_user_shell!(app)
-    elseif menu_packet(event, raw) == "\x18"
-        terminal_viewport_copy!(app) || copy_last_assistant!(app)
-    elseif menu_packet(event, raw) == "\x0f"
-        state = app.transcript.display
-        session_display_transition!(state, state.expand_all ? :collapse_all : :expand_all)
-        user_shell_expand!(app,state.expand_all)
-        controls=app.menus.startup
-        isnothing(controls) || startup_set_expanded!(controls.document,state.expand_all;on_notice=message->frontend_notice!(app,message))
-    elseif menu_packet(event, raw) == "\x14"
-        toggle_thinking_visibility!(app)
-    elseif menu_packet(event, raw) in ("\x10", "\e[112;6u", "\e[80;6u", "\ep")
-        packet = menu_packet(event, raw)
-        cycle_terminal_model!(app, packet == "\x10" ? 1 : -1)
-    elseif event.key == :backtab || menu_packet(event, raw) == "\e[Z"
-        cycle_terminal_thinking!(app)
-    elseif menu_packet(event, raw) == "\x0c"
-        open_menu!(app, "model")
-    elseif event.key in (:enter,:pageup,:pagedown)
-        chat_host_packet!(app,packet)
+    elseif native_chat_keybinding!(app,packet)
+        nothing
     else
-        edit_chat_input!(app, event, raw)
+        chat_host_packet!(app,packet)
     end
-    return nothing
+    nothing
 end
 
 
