@@ -2,6 +2,7 @@ module JuliaForever2HTTPExt
 
 using HTTP
 using JSON
+using Base64
 using UUIDs: uuid4
 using Random: RandomDevice, rand
 using SHA: sha256
@@ -9,6 +10,7 @@ using JuliaForever2
 
 include("web/access.jl")
 include("web/controller.jl")
+include("web/files.jl")
 include("web/chat_only.jl")
 
 struct WebServer{S,C}
@@ -178,13 +180,14 @@ WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(p
 """Start a token-authenticated loopback Web server backed only by Julia-native sessions."""
 JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0,
         token=web_secret(), handler=web_request, request_trust=trusted_web_request,
-        public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin)) =
-    serve(api, WebAddress(host, port), token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
+        public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin),
+        files=nothing) =
+    serve(api, WebAddress(host, port), token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only, files)
 
-function serve(api, address::WebAddress, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
+function serve(api, address::WebAddress, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only, files)
     remote_web_api_allowed(api, public_origin, workspace) || error("Public Web requires a dedicated chat-only API; pass a native OpenAIProvider instead of an ambient SessionAPI")
     access = WebAccess(String(token); public_origin, lifetime, session_lifetime, browser_only)
-    controller = WebController(api; workspace, access)
+    controller = WebController(api; workspace, access, files)
     server = HTTP.serve!(request -> authorize_web_request(controller, access, handler, request, request_trust),
         address.host, address.port; verbose=false, max_body_bytes=1_048_576)
     interval = min(1.0, Float64(lifetime), Float64(session_lifetime))
@@ -197,15 +200,22 @@ function serve(api, address::WebAddress, token, handler, request_trust, public_o
     WebServer(server, address.host, Int(HTTP.port(server)), String(token), access, controller, expiry)
 end
 """Publish a replaceable native Web service with optional pinned HTTPS origin and bounded lifetime."""
+web_file_service(context, files, ::Nothing) = files
+web_file_service(context, files, contract::Symbol) = JuliaForever2.service(context, contract)
+
 function JuliaForever2.web_server_plugin(; name=:web_server, service_name=:web_server,
         api_service=:session_api, host="127.0.0.1", port=0, token=web_secret(), handler=web_request,
-        request_trust=trusted_web_request, public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin))
+        request_trust=trusted_web_request, public_origin="", lifetime=86400, session_lifetime=31536000,
+        workspace=pwd(), browser_only=!isempty(public_origin), files=nothing, files_service=nothing)
     contract = Symbol(service_name)
     dependency = Symbol(api_service)
+    file_dependency = isnothing(files_service) ? nothing : Symbol(files_service)
+    dependencies = isnothing(file_dependency) ? [dependency] : [dependency, file_dependency]
     setup = context -> JuliaForever2.provide!(context, contract,
         JuliaForever2.start_web_server(JuliaForever2.service(context, dependency);
-            host, port, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only); cleanup=close)
-    JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
+            host, port, token, handler, request_trust, public_origin, lifetime, session_lifetime,
+            workspace, browser_only, files=web_file_service(context, files, file_dependency)); cleanup=close)
+    JuliaForever2.PluginSpec(name, setup; requires=dependencies, provides=[contract])
 end
 
 end
