@@ -11,7 +11,7 @@ workspace_registry_directory(registry::WorkspaceRegistry) = joinpath(registry.di
 workspace_registry_file(registry::WorkspaceRegistry) = joinpath(workspace_registry_directory(registry), "registry.json")
 
 """Serialize registry reads and writes across Julia processes using an operating-system file lock."""
-function with_workspace_registry(registry::WorkspaceRegistry, operation)
+function with_workspace_registry(operation, registry::WorkspaceRegistry)
     lock(registry.lock) do
         directory = workspace_registry_directory(registry)
         islink(registry.directory) && error("Refusing a symbolic-link workspace store")
@@ -114,7 +114,7 @@ workspace_success(value, event=nothing) = (ok=true, reason="", changed=!isnothin
     value=value, event=event)
 
 """Apply a transaction with a bounded replay journal and monotonically increasing revision."""
-function workspace_mutate!(registry::WorkspaceRegistry, mutation)
+function workspace_mutate!(mutation, registry::WorkspaceRegistry)
     with_workspace_registry(registry) do
         state = read_workspace_state(registry)
         result = mutation(state["items"])

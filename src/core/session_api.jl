@@ -18,6 +18,14 @@ SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing,
     SessionAPI(factory, store, query, titles, workspaces, ReentrantLock(),
         Dict{String,Session}(), Dict{String,TaskHandle}(), Set{String}(), false)
 
+"""Preserve the existing positional SessionAPI constructor for callers not using workspaces."""
+SessionAPI(factory, store, query, titles, lock::ReentrantLock,
+    sessions::Dict{String,Session}, handles::Dict{String,TaskHandle},
+    closing::Set{String}, closed::Bool) =
+    SessionAPI(factory, store, query, titles,
+        store isa SessionStore ? WorkspaceRegistry(store) : nothing,
+        lock, sessions, handles, closing, closed)
+
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
 
