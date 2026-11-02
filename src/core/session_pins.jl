@@ -8,9 +8,15 @@ function read_session_pin_entries(store::SessionStore)
     path = session_pin_file(store)
     if islink(dirname(path)) || islink(path)
         error("Refusing symbolic-link session pin metadata")
-    elseif !isfile(path)
-        return SessionPinEntry[]
+    elseif isfile(path)
+        parse_session_pin_entries(path)
+    else
+        SessionPinEntry[]
     end
+end
+
+"""Parse validated on-disk entries without changing their original order."""
+function parse_session_pin_entries(path::AbstractString)
     data = JSON.parsefile(path)
     if !(data isa AbstractDict) || get(data, "format", nothing) != "JuliaForever2.session-pins" ||
             get(data, "version", nothing) != 1 ||
