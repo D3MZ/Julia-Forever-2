@@ -70,7 +70,10 @@ function filesystem_skill_header(path::AbstractString)
     prefix = open(path, "r") do input
         read(input, 8193)
     end
-    isvalid(String, prefix) || return nothing
+    while !isempty(prefix) && !isvalid(String, prefix)
+        pop!(prefix)
+    end
+    isempty(prefix) && return nothing
     parts = prompt_frontmatter_parts(String(prefix))
     isnothing(parts.yaml) ? nothing : (yaml=parts.yaml, metadata=prompt_yaml_metadata(parts.yaml))
 end
@@ -94,7 +97,7 @@ function filesystem_skill_entry(path::AbstractString, name::AbstractString, head
     isnothing(header) && return nothing
     occursin(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", name) || return nothing
     get(header.metadata, "name", "") == name || return nothing
-    description = strip(replace(get(header.metadata, "description", ""), r"\\s+" => " "))
+    description = strip(replace(get(header.metadata, "description", ""), r"\s+" => " "))
     isempty(description) && return nothing
     disabled = filesystem_skill_boolean(header.yaml, "disable-model-invocation", false)
     user = filesystem_skill_boolean(header.yaml, "user-invocable", true)
