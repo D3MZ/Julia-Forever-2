@@ -185,8 +185,8 @@ function fork_session(source::Session, messages::AbstractVector{<:Message})
         working_directory=working_directory(source))
 end
 
-"""Read the session's workspace independently of the process-wide working directory."""
-working_directory(session::Session)::String = lock(() -> session.runtime.working_directory, session.runtime.execution_lock)
+"""Read the session's workspace without waiting for an active turn to finish."""
+working_directory(session::Session)::String = lock(() -> session.runtime.working_directory, session.conversation.lock)
 
 """Resolve a path against the session's workspace without changing process state."""
 function workspace_path(session::Session, path::AbstractString)
@@ -211,7 +211,10 @@ end
 
 function relocate!(session::Session, destination::AbstractString)
     if isdir(destination)
-        session.runtime.working_directory = realpath(destination)
+        directory = realpath(destination)
+        lock(session.conversation.lock) do
+            session.runtime.working_directory = directory
+        end
         (ok=true, reason="")
     else
         (ok=false, reason="Not a directory: $destination")

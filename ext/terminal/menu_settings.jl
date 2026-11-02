@@ -63,60 +63,10 @@ function setting_value(app::App, item::SettingSpec)
     end
 end
 
-"""Score ordered characters using proximity and word boundaries, with exact matches first."""
-function menu_alignment_score(text::Vector{Char}, positions::Vector{Int})
-    score = 0.0
-    prior = 0
-    run = 0
-    for index in positions
-        if index == prior + 1
-            run += 1
-            score -= run * 5
-        else
-            run = 0
-            prior == 0 || (score += (index - prior - 1) * 2)
-        end
-        if index == 1 || isspace(text[index - 1]) || text[index - 1] in ('-', '_', '.', '/', ':')
-            score -= 10
-        end
-        score += (index - 1) / 10
-        prior = index
-    end
-    score
-end
-
-"""Find the best greedy or contiguous alignment for one search token."""
-function menu_token_score(label::AbstractString, query::AbstractString)
-    text, token = collect(lowercase(String(label)::String)), collect(lowercase(String(query)::String))
-    positions = Int[]
-    cursor = 1
-    for (index, character) in enumerate(text)
-        if cursor <= length(token) && character == token[cursor]
-            push!(positions, index)
-            cursor += 1
-        end
-    end
-    score = Inf
-    if length(positions) == length(token)
-        score = menu_alignment_score(text, positions)
-        for start in 1:(length(text) - length(token) + 1)
-            indexes = collect(start:(start + length(token) - 1))
-            if text[indexes] == token
-                score = min(score, menu_alignment_score(text, indexes))
-            end
-        end
-        text == token && (score -= 100)
-    end
-    score
-end
-
-"""Search all whitespace-separated tokens and retain stable ordering for equal scores."""
-function search_settings(items::Vector{SettingSpec}, query::AbstractString)
-    tokens = split(strip(query), r"[\s/]+"; keepempty=false)
-    scored = [(item, sum(token -> menu_token_score(item.label, token), tokens; init=0.0)) for item in items]
-    sort!(filter!(pair -> isfinite(last(pair)), scored); by=last, alg=Base.Sort.MergeSort)
-    [first(pair) for pair in scored]
-end
+"""Share model and setting menu ranking; retain the original no-swap settings contract."""
+menu_alignment_score(text::Vector{Char}, positions::Vector{Int}) = selector_alignment(text, positions)
+menu_token_score(label::AbstractString, query::AbstractString) = selector_token_score(label, query; swap=false)
+search_settings(items::Vector{SettingSpec}, query::AbstractString) = selector_filter(items, query, item -> item.label; swap=false)
 
 const WARNING_SETTINGS = [SettingSpec("anthropic-extra-usage", "Anthropic extra usage",
     "Warn when Anthropic subscription auth may use paid extra usage", "true", ["true", "false"])]
@@ -126,24 +76,10 @@ active_settings(app::App) = app.menus.path == ["settings", "warnings"] ? WARNING
 settings_searchable(app::App) = app.menus.path != ["settings", "warnings"]
 visible_settings(app::App) = search_settings(active_settings(app), settings_searchable(app) ? Tachikoma.text(app.menus.search) : "")
 
-"""Bound a string by terminal graphemes, never splitting combining or joined glyphs."""
-function menu_clip(text::AbstractString, width::Integer; ellipsis::Bool=false)
-    value = String(text)
-    room = max(0, width)
-    if textwidth(value) > room
-        suffix = ellipsis && room > 0 ? first("...", min(room, 3)) : ""
-        value = ""
-        for grapheme in Base.Unicode.graphemes(text)
-            if textwidth(value) + textwidth(grapheme) <= room - textwidth(suffix)
-                value *= grapheme
-            else
-                break
-            end
-        end
-        value *= suffix
-    end
-    value
-end
+"""Clip terminal text with Tachikoma's native grapheme-aware width calculation."""
+menu_clip(text::AbstractString, width::Integer; ellipsis::Bool=false) =
+    Tachikoma.truncate_to_width(text, max(0, Int(width));
+        ellipsis=ellipsis ? repeat(".", min(max(0, Int(width)), 3)) : "")
 
 """Wrap descriptive text on spaces while preserving narrow-terminal readability."""
 function menu_wrap(text::AbstractString, width::Integer)
@@ -264,9 +200,12 @@ end
 function settings_input!(app::App, event::KeyEvent, raw::AbstractVector{UInt8}=UInt8[])
     items = visible_settings(app)
     count = length(items)
+    navigation=menu_select_navigation(menu_packet(event,raw))
     if menu_search_pasting(app.menus.search, raw)
         menu_search_input!(app.menus.search, event, raw)
         app.menus.cursor = 1
+    elseif navigation==:release
+        nothing
     elseif event.key == :escape
         if isempty(app.menus.parents)
             app.page = :chat
@@ -276,10 +215,10 @@ function settings_input!(app::App, event::KeyEvent, raw::AbstractVector{UInt8}=U
             app.menus.cursor = cursor
             Tachikoma.set_text!(app.menus.search, query)
         end
-    elseif event.key in (:up, :down) && count > 0
-        app.menus.cursor = mod1(app.menus.cursor + (event.key == :up ? -1 : 1), count)
-    elseif event.key in (:pageup, :pagedown) && count > 0
-        app.menus.cursor = clamp(app.menus.cursor + (event.key == :pageup ? -10 : 10), 1, count)
+    elseif navigation in (:up, :down) && count > 0
+        app.menus.cursor = mod1(app.menus.cursor + (navigation == :up ? -1 : 1), count)
+    elseif navigation in (:page_up, :page_down) && count > 0
+        app.menus.cursor = clamp(app.menus.cursor + (navigation == :page_up ? -10 : 10), 1, count)
     elseif event.key == :enter || (event.key == :char && event.char == ' ' && isempty(Tachikoma.text(app.menus.search)))
         activate_setting!(app)
     elseif settings_searchable(app)
@@ -435,7 +374,7 @@ function settings_mouse!(app::App, event::MouseEvent)
     in_wheel_region=(search ? 3 : 1)<=local_row<length(lines)-1
     if in_wheel_region && count>0 && event.button in (Tachikoma.mouse_scroll_up,Tachikoma.mouse_scroll_down)
         handled=true
-        app.menus.cursor=clamp(app.menus.cursor+(event.button==Tachikoma.mouse_scroll_up ? -1 : 1),1,count)
+        app.menus.cursor=Tachikoma.list_scroll(event,app.menus.cursor-1,count,1)+1
     elseif event.button==Tachikoma.mouse_left
         first_item=max(1,min(app.menus.cursor-5,count-9))
         index=first_item+row

@@ -6,6 +6,7 @@ Base.@kwdef mutable struct WebTurn
     revision::Int = 0
     request::String = ""
     prompt_digest::Vector{UInt8} = UInt8[]
+    persistence::Union{Nothing,Task} = nothing
 end
 
 Base.@kwdef mutable struct WebController{A}
@@ -13,6 +14,7 @@ Base.@kwdef mutable struct WebController{A}
     workspace::String = pwd()
     access::Union{Nothing,WebAccess} = nothing
     lock::ReentrantLock = ReentrantLock()
+    save_lock::ReentrantLock = ReentrantLock()
     turns::Dict{String,WebTurn} = Dict{String,WebTurn}()
     requests::Dict{Tuple{String,String},WebTurn} = Dict{Tuple{String,String},WebTurn}()
 end
@@ -56,7 +58,11 @@ function browser_dispatch(controller::WebController, frame::AbstractDict)
 end
 
 function browser_command!(controller::WebController, method::AbstractString, params::AbstractDict)
-    if method in BROWSER_SESSION_METHODS
+    if method == "session/list/all"
+        browser_session_inventory(controller, params)
+    elseif method == "session/save"
+        save_browser_session!(controller, params)
+    elseif method in BROWSER_SESSION_METHODS
         JuliaForever2.session_api_request!(controller.api, method, params)
     elseif method in LOCAL_WORKSPACE_METHODS && web_local_workspaces(controller)
         JuliaForever2.session_api_request!(controller.api, method, params)
@@ -69,8 +75,7 @@ function browser_command!(controller::WebController, method::AbstractString, par
         end
         browser_open!(controller, method, selected)
     elseif method == "session/close"
-        saved = JuliaForever2.session_api_request!(controller.api, "session/save", params)
-        saved isa JuliaForever2.RpcError ? saved : JuliaForever2.session_api_request!(controller.api, method, params)
+        close_browser_session!(controller, params, controller.api.store)
     elseif method == "web/turn"
         admit_web_turn!(controller, params)
     elseif method == "web/status"
@@ -83,6 +88,37 @@ function browser_command!(controller::WebController, method::AbstractString, par
             "chatOnly" => controller.api.factory isa WebChatFactory, "workspaces" => web_local_workspaces(controller))
     else
         JuliaForever2.RpcError(-32601, "Method is not available to the browser")
+    end
+end
+
+browser_saved_title(titles, store, name) = nothing
+browser_saved_title(titles::JuliaForever2.SessionTitleService, store::JuliaForever2.SessionStore, name::AbstractString) =
+    JuliaForever2.saved_session_title(titles, store, name)
+
+function browser_session_inventory(controller::WebController, params::AbstractDict)
+    rows = JuliaForever2.session_api_request!(controller.api, "session/list/all", params)
+    if rows isa AbstractVector
+        for row in rows
+            if !get(row, "live", false)
+                title = browser_saved_title(controller.api.titles, controller.api.store, row["session"])
+                isnothing(title) || (row["title"] = title)
+            end
+        end
+    end
+    rows
+end
+
+function save_browser_session!(controller::WebController, params)
+    lock(controller.save_lock) do
+        JuliaForever2.session_api_request!(controller.api, "session/save", params)
+    end
+end
+
+close_browser_session!(controller, params, ::Nothing) = JuliaForever2.session_api_request!(controller.api, "session/close", params)
+function close_browser_session!(controller, params, store)
+    lock(controller.save_lock) do
+        saved = JuliaForever2.session_api_request!(controller.api, "session/save", params)
+        saved isa JuliaForever2.RpcError ? saved : JuliaForever2.session_api_request!(controller.api, "session/close", params)
     end
 end
 
@@ -114,13 +150,15 @@ function start_web_turn!(controller::WebController, params::AbstractDict)
             lock(controller.api.lock) do
                 session = get(controller.api.sessions, String(name), nothing)
                 previous = get(controller.api.handles, String(name), nothing)
+                previous_turn = get(controller.turns, String(name), nothing)
                 replay = get(controller.requests, (String(name), String(request)), nothing)
                 if !isnothing(replay)
                     web_equal(replay.prompt_digest, web_digest(prompt)) ?
                         Dict("accepted" => true, "turn" => replay.id) : JuliaForever2.RpcError(-32602, "Submission identity does not match its message")
                 elseif controller.api.closed || isnothing(session)
                     JuliaForever2.RpcError(-32004, "Session is not available")
-                elseif !isnothing(previous) && !istaskdone(previous)
+                elseif !isnothing(previous) && !istaskdone(previous) ||
+                        !isnothing(previous_turn) && !web_turn_settled(previous_turn)
                     JuliaForever2.RpcError(-32000, "This conversation already has an active reply")
                 elseif length(controller.requests) >= 1024
                     JuliaForever2.RpcError(-32000, "This temporary workspace has reached its submission limit")
@@ -132,10 +170,42 @@ function start_web_turn!(controller::WebController, params::AbstractDict)
                         event_sink=event -> capture_web_progress!(controller, String(name), turn, event))
                     turn.handle = JuliaForever2.submit_turn!(session, prompt; context)
                     controller.api.handles[String(name)] = turn.handle
+                    if !isnothing(controller.api.store)
+                        turn.persistence = Threads.@spawn persist_web_turn!(controller, String(name), session, turn.handle)
+                    end
                     Dict("accepted" => true, "turn" => turn.id)
                 end
             end
         end
+    end
+end
+
+"""Save a settled turn independently of browser polling without replacing a different session."""
+function persist_web_turn!(controller::WebController, name::String, session, handle)
+    wait(handle; throw=false)
+    api = controller.api
+    lock(controller.save_lock) do
+        lock(api.lock) do
+            if api.closed || get(api.sessions, name, nothing) !== session
+                (ok=false, reason="Conversation closed before automatic save")
+            else
+                JuliaForever2.save_session!(api.store, name, session)
+            end
+        end
+    end
+end
+
+web_turn_settled(turn::WebTurn) = !isnothing(turn.handle) && istaskdone(turn.handle) &&
+    (isnothing(turn.persistence) || istaskdone(turn.persistence))
+
+function web_save_error(turn::WebTurn)
+    task = turn.persistence
+    if isnothing(task)
+        nothing
+    elseif istaskfailed(task)
+        "Automatic save failed. Save the conversation to retry."
+    else
+        fetch(task).ok ? nothing : "Automatic save failed. Save the conversation to retry."
     end
 end
 
@@ -150,14 +220,19 @@ web_turn_status(::Nothing) = Dict("status" => "idle")
 function web_turn_status(turn::WebTurn)
     result = Dict{String,Any}("turn" => turn.id, "request" => turn.request, "text" => turn.text,
         "kind" => String(turn.kind), "revision" => turn.revision)
-    if !isnothing(turn.handle) && istaskdone(turn.handle)
+    if web_turn_settled(turn)
         final = fetch(turn.handle)
         result["status"] = "completed"
         result["ok"] = final.ok
         result["result"] = final.text
         result["cancelled"] = JuliaForever2.cancelled(turn.handle.context)
+        save_error = web_save_error(turn)
+        isnothing(save_error) || (result["saveError"] = save_error)
     else
         result["status"] = "running"
+        if !isnothing(turn.handle) && istaskdone(turn.handle)
+            result["phase"] = "saving"
+        end
     end
     result
 end
@@ -180,6 +255,16 @@ function cancel_web_turns!(controller::WebController)
             JuliaForever2.cancel_api_turn!(turn.handle)
         end
     end
+    nothing
+end
+
+"""Finish saves for turns that already settled before the server closes."""
+function wait_settled_web_saves!(controller::WebController)
+    tasks = lock(controller.lock) do
+        [turn.persistence for turn in values(controller.turns) if !isnothing(turn.handle) &&
+            istaskdone(turn.handle) && !isnothing(turn.persistence)]
+    end
+    foreach(task -> wait(task; throw=false), tasks)
     nothing
 end
 

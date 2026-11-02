@@ -32,7 +32,7 @@
     const blocked = busy || !authorized;
     $("send").disabled = blocked || !!operation || cancelling || !$("prompt").value.trim();
     $("send").hidden = !!operation;
-    $("stop").hidden = !operation;
+    $("stop").hidden = !operation || !!operation.saving;
     $("stop").disabled = cancelling || !authorized;
     $("new-chat").disabled = blocked || !!operation;
     $("new-menu").disabled = blocked || !!operation;
@@ -80,11 +80,11 @@
     menu.style.top = (rect.top > height + 20 ? rect.top-height-8 : rect.bottom+8) + "px";
     anchor.setAttribute("aria-expanded","true"); menu.querySelector("button:not(:disabled)")?.focus();
   }
-  function settings(show, push = true) {
+  function settings(show, push = true, focus = true) {
     $("settings").hidden = !show; $("chat").hidden = show;
     document.body.classList.toggle("settings-open",show); sidebar(false); closeMenus();
     if (push) history.pushState({settings:show},"",show ? "#settings" : "/");
-    if (show) $("settings-back").focus(); else $("prompt").focus();
+    if (focus) { if (show) $("settings-back").focus(); else $("prompt").focus(); }
   }
   window.addEventListener("popstate",() => settings(location.hash === "#settings",false));
   function drawSessions() {
@@ -117,34 +117,52 @@
     $("chat").classList.toggle("empty",messages.length === 0);
   }
   function clearChat() {
-    active = null; operation = null; ++viewEpoch; clearTimeout(pollTimer);
+    active = null; setting("active",""); operation = null; ++viewEpoch; clearTimeout(pollTimer);
     drawMessages([]); $("working").hidden = true; $("prompt").value = "";
     document.title = "Julia Forever"; drawSessions(); enable(); notice();
   }
-  async function selectSession(entry) {
+  async function selectSession(entry, focus = true) {
     if (operation && entry.session !== active) throw new Error("Stop or finish the current reply before switching conversations.");
     clearTimeout(pollTimer); const epoch = ++viewEpoch;
-    if (!entry.live) await rpc("session/resume",{session:entry.session});
-    active = entry.session; sidebar(false); settings(false,false);
+    if (!entry.live) { await rpc("session/resume",{session:entry.session}); entry.live = true; }
+    active = entry.session; setting("active",active); sidebar(false); settings(false,false,focus);
     const rows = await rpc("session/messages",{session:active}); if (epoch !== viewEpoch) return;
     drawMessages(rows); const state = await rpc("web/status",{session:active});
-    operation = state.status === "running" ? {session:active,turn:state.turn} : null;
+    const text = [...rows].reverse().find(row => row.role === "user")?.content || "";
+    operation = state.status === "running" ? {session:active,turn:state.turn,text,saving:state.phase === "saving"} : null;
+    if (operation) $("announcement").textContent = "";
     document.title = (entry.title || "Conversation") + " · Julia Forever";
     notice(); drawSessions(); enable();
-    if (operation) poll(operation,epoch); else $("working").hidden = true;
+    if (operation) poll(operation,epoch);
+    else { $("working").hidden = true; if (state.status === "completed") showTurnOutcome(state,text); }
   }
   async function ensureSession() {
-    if (!active) { const directory = capabilities.workspaces ? fields.workspace.value.trim() : ""; const result = await rpc("session/open",directory ? {workingDirectory:directory} : {}); active = result.session; ++viewEpoch; await refresh(); }
+    if (!active) { const directory = capabilities.workspaces ? fields.workspace.value.trim() : ""; const result = await rpc("session/open",directory ? {workingDirectory:directory} : {}); active = result.session; setting("active",active); ++viewEpoch; await refresh(); }
     return active;
   }
   function preview(state) {
     $("working").hidden = false;
-    $("work-label").textContent = state.kind === "code" ? "Preparing response…" : "Thinking…";
+    $("work-label").textContent = state.phase === "saving" ? "Saving conversation…" : state.kind === "code" ? "Preparing response…" : "Thinking…";
     let partial = $("messages").querySelector(".preview");
     if (state.text) {
       if (!partial) { partial = message("assistant",state.text,state.kind); partial.classList.add("preview"); $("messages").append(partial); }
       else partial.lastChild.textContent = state.text;
-      $("work-label").textContent = "Responding…";
+      if (state.phase !== "saving") $("work-label").textContent = "Responding…";
+    }
+  }
+  function showTurnOutcome(state,text) {
+    const detail = state.cancelled ? "Reply stopped. You can send another message." : state.ok ? "" : state.result || "Reply failed.";
+    const summary = Array.from(String(state.result || "")).slice(0,300).join("").trim();
+    $("announcement").textContent = state.ok && !state.cancelled ? `Reply complete. ${summary} Read the full response in messages.` : "";
+    notice([detail,state.saveError].filter(Boolean).join(" "),!!state.saveError || (!state.ok && !state.cancelled));
+    if (!state.ok && !state.cancelled && state.result) {
+      const failure = message("assistant",state.result); failure.classList.add("error");
+      if (text) {
+        const retry = document.createElement("button"); retry.className = "retry"; retry.textContent = "Edit and retry";
+        retry.addEventListener("click",() => { $("prompt").value = text; enable(); $("prompt").focus(); notice("Edit the message, then send it again."); });
+        failure.append(retry);
+      }
+      $("messages").append(failure); $("chat").classList.remove("empty");
     }
   }
   async function poll(owner,epoch) {
@@ -156,11 +174,9 @@
       if (state.status === "completed") {
         operation = null; $("working").hidden = true;
         drawMessages(await rpc("session/messages",{session:owner.session}));
-        notice(state.cancelled ? "Reply stopped. You can send another message." : state.ok ? "" : state.result || "Reply failed.",!state.ok && !state.cancelled);
-        if (!state.ok && state.result) { const failure = message("assistant",state.result); failure.classList.add("error"); $("messages").append(failure); $("chat").classList.remove("empty"); }
-        if (capabilities.persistent) await rpc("session/save",{session:owner.session});
+        showTurnOutcome(state,owner.text);
         await refresh(); enable();
-      } else { preview(state); pollTimer = setTimeout(() => poll(owner,epoch),250); }
+      } else { owner.saving = state.phase === "saving"; preview(state); enable(); pollTimer = setTimeout(() => poll(owner,epoch),250); }
     } catch (error) {
       notice(error.message || String(error),true);
       if (authorized && operation === owner) pollTimer = setTimeout(() => poll(owner,epoch),1500);
@@ -202,7 +218,9 @@
   $("composer").addEventListener("submit",event => {
     event.preventDefault(); if (operation || cancelling || !$("prompt").value.trim()) return;
     action(async () => {
+      $("announcement").textContent = "";
       const text = $("prompt").value.trim(), session = await ensureSession();
+      const previous = await rpc("session/messages",{session});
       if (!pendingSubmission || pendingSubmission.session !== session || pendingSubmission.text !== text)
         pendingSubmission = {session,text,request:crypto.randomUUID()};
       let result;
@@ -213,9 +231,15 @@
         result = {turn:state.turn};
       }
       pendingSubmission = null;
-      operation = {session,turn:result.turn}; $("prompt").value = "";
-      drawMessages(await rpc("session/messages",{session})); $("chat").classList.remove("empty");
-      $("working").hidden = false; notice(); poll(operation,viewEpoch);
+      operation = {session,turn:result.turn,text}; $("prompt").value = "";
+      const owner = operation, epoch = viewEpoch;
+      try {
+        const rows = await rpc("session/messages",{session});
+        if (!rows.slice(previous.length).some(row => row.role === "user" && row.content === text)) rows.push({role:"user",content:text,kind:"text"});
+        drawMessages(rows); $("chat").classList.remove("empty"); notice();
+      } finally {
+        if (operation === owner && epoch === viewEpoch) { $("working").hidden = false; poll(owner,epoch); }
+      }
     });
   });
   $("stop").addEventListener("click",async () => {
@@ -235,7 +259,7 @@
   $("end-cancel").addEventListener("click",() => $("end-dialog").close());
   $("end-confirm").addEventListener("click",async () => {
     $("end-confirm").disabled = true;
-    try { const response = await fetch("/auth/logout",{method:"POST",credentials:"same-origin",headers:{"X-JuliaForever2-Request":"1"}}); if (!response.ok) throw new Error("Access could not be ended."); authorized = false; operation = null; clearTimeout(pollTimer); $("end-dialog").close(); settings(false); drawMessages([]); enable(); notice("Private access ended. A new invitation is required."); }
+    try { const response = await fetch("/auth/logout",{method:"POST",credentials:"same-origin",headers:{"X-JuliaForever2-Request":"1"}}); if (!response.ok) throw new Error("Access could not be ended."); authorized = false; setting("active",""); operation = null; clearTimeout(pollTimer); $("end-dialog").close(); settings(false); drawMessages([]); enable(); notice("Private access ended. A new invitation is required."); }
     catch (error) { $("end-dialog").close(); notice(error.message,true); }
     finally { $("end-confirm").disabled = false; }
   });
@@ -380,6 +404,7 @@
   }
   fields.workspaceSessionUp.addEventListener("click", () => moveWorkspaceSession(-1));
   fields.workspaceSessionDown.addEventListener("click", () => moveWorkspaceSession(1));
+  fields.workspaceMember.addEventListener("change", synchronizeWorkspaceControls);
   fields.savedSessions.addEventListener("change", synchronizeWorkspaceControls);
 
   async function changeSavedSession(method) {
@@ -411,9 +436,11 @@
     capabilities = await rpc("web/info");
     $("composer-caption").textContent = capabilities.chatOnly ? "Chat only · no host tools" : "Julia-native session";
     await refresh();
+    const previous = sessions.find(entry => entry.session === preference("active",""));
+    if (previous) await selectSession(previous,false); else setting("active","");
     const response = await fetch("/api/access",{credentials:"same-origin",cache:"no-store"});
-    if (response.ok) { const access = await response.json(); const expiry = new Date(access.expiresAt*1000).toLocaleString(); $("access-expiry").textContent = "Access ends " + new Date(access.expiresAt*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); $("security-detail").textContent = "Access ends " + expiry + ". The invitation works once. Clearing cookies does not reset it."; }
-    settings(location.hash === "#settings",false); notice();
+    if (response.ok) { const access = await response.json(); const expiry = new Date(access.expiresAt*1000).toLocaleString(); $("access-expiry").textContent = "Access ends " + new Date(access.expiresAt*1000).toLocaleDateString(); $("security-detail").textContent = "Access ends " + expiry + ". The invitation works once. Anyone with a copy of the session cookie can use it."; }
+    settings(location.hash === "#settings",false,false);
   });
   window.setInterval(() => { pollWorkspaceChanges().catch(error => notice(error.message || String(error),true)); },5000);
 })();

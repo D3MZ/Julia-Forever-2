@@ -15,8 +15,8 @@ function cache_miss_notice_rows(miss::JuliaForever2.SessionCacheMiss,width::Int)
 end
 cache_miss_notice_rows(::Nothing,width::Int)=SessionDisplayRows()
 
-function cache_miss_after_record_rows(app::App,id::String,anchor,width::Int,misses)
-    rows=frontend_after_record_rows(app,id,anchor,width)
+function cache_miss_after_record_rows(app::App,id::String,anchor,width::Int,misses;projection=interrupted_fallback_projection(app),on_component=nothing)
+    rows=frontend_after_record_rows(app,id,anchor,width;projection,on_component)
     append!(rows,cache_miss_notice_rows(get(misses,anchor,nothing),width))
     rows
 end

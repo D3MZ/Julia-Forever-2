@@ -85,6 +85,16 @@ function web_session_cookie(access::WebAccess, request::HTTP.Request)
     end
 end
 
+"""Limit legacy local bearer access to the unclaimed, unexpired invitation period."""
+function web_local_bearer(access::WebAccess, authorization::AbstractString)
+    lock(access.lock) do
+        !access.browser_only && !access.redeemed && web_access_alive(access) &&
+            time() < access.invitation_expires_at && time_ns() < access.invitation_deadline &&
+            startswith(authorization, "Bearer ") &&
+            web_equal(access.invitation, web_digest(authorization[8:end]))
+    end
+end
+
 function web_cookie(access::WebAccess; clear=false)
     remaining = clear ? 0 : max(0, floor(Int, access.expires_at - time()))
     value = clear ? "" : access.cookie
@@ -170,8 +180,7 @@ function authorize_trusted_web_request(controller, access::WebAccess, handler, r
                 browser_route(controller, request, path)
             end
         end
-    elseif !access.browser_only && startswith(HTTP.header(request, "Authorization"), "Bearer ") &&
-            web_equal(access.invitation, web_digest(HTTP.header(request, "Authorization")[8:end]))
+    elseif web_local_bearer(access, HTTP.header(request, "Authorization"))
         Base.invokelatest(handler, controller.api, access.local_bearer, request)
     else
         response(401, "{\"error\":\"Open your one-time invitation in this browser\"}")

@@ -32,7 +32,7 @@ jobs:
         run: julia --project=app -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
       - uses: charmbracelet/vhs-action@v2.1.1
         with:
-          version: 'v0.12.0'
+          version: 'v0.12.1'
       - name: Record reproducible Julia Forever 2 terminal scenarios
         shell: bash
         run: |

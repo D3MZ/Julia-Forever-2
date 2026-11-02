@@ -22,8 +22,14 @@ end
 function remote_web_api_allowed(api, public_origin, workspace)
     isempty(public_origin) || api.factory isa WebChatFactory &&
         lock(() -> isempty(api.sessions) && isempty(api.handles) && !api.closed, api.lock) &&
-        remote_web_store_allowed(api.store, realpath(workspace))
+        remote_web_store_allowed(api.store, realpath(workspace)) &&
+        remote_web_titles_allowed(api.titles, realpath(workspace))
 end
+
+remote_web_titles_allowed(::Nothing, workspace) = true
+remote_web_titles_allowed(titles, workspace) = false
+remote_web_titles_allowed(titles::JuliaForever2.SessionTitleService, workspace) =
+    remote_web_store_allowed(titles.store, workspace)
 
 remote_web_store_allowed(::Nothing, workspace) = true
 remote_web_store_allowed(store, workspace) = false

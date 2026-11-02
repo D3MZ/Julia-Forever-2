@@ -97,19 +97,23 @@ function finish_operation!(app::App)
 end
 
 """Run completion effects only after the active operation has been retired."""
-function settle_operation!(app::App, handle::TaskHandle, previous)
+function settle_operation!(app::App, handle::TaskHandle, previous;result=session_action_result(handle),interrupted_save_failed::Bool=false)
     app.settings.workspace = working_directory(app.session)
     app.directory = directory_label(app.settings.workspace)
-    result = session_action_result(handle)
     previous.kind == :compaction_done && result.ok && clear_command_documents!(app)
     app.status = result.ok ? "Ready" : result.text
+    interrupted_save_failed && (app.status *= " Interrupted output could not be saved.")
     flush_user_shell!(app) && continue_terminal_pending!(app, result, previous.kind, previous.ids, previous.continuation)
     result
 end
 
 function operation_finished!(app::App, handle::TaskHandle)
     if app.operations.active === handle
-        settle_operation!(app, handle, finish_operation!(app))
+        result = session_action_result(handle)
+        result.ok || capture_interrupted_preview!(app,cancelled(handle.context) ? :aborted : :error)
+        clear_preview!(app)
+        interrupted_save_failed=finalize_interrupted_responses!(app,handle)
+        settle_operation!(app,handle,finish_operation!(app);result,interrupted_save_failed)
     end
     nothing
 end
@@ -140,6 +144,10 @@ function finish_shutdown!(app::App)
     auth_task = app.settings.auth_task
     isnothing(auth_task) || wait(auth_task)
     foreach(wait, app.operations.watchers)
+    active=app.operations.active
+    if !isnothing(active) && finalize_interrupted_responses!(app,active)
+        app.status="Interrupted output could not be saved."
+    end
     discard_pending_session!(app)
     empty!(app.operations.watchers)
     return nothing

@@ -42,11 +42,11 @@ function frontend_notice!(app::App,message::AbstractString;kind::Symbol=:notice)
 end
 
 """Interleave ephemeral notices with existing command documents using their real insertion order."""
-function frontend_after_record_rows(app::App,id::String,anchor,width::Int)
+function frontend_after_record_rows(app::App,id::String,anchor,width::Int;projection=interrupted_fallback_projection(app),on_component=nothing)
     state=app.transcript.notices
     documents=hasproperty(app.transcript,:documents) ? app.transcript.documents : nothing
     count=isnothing(documents) || documents.owner!=id ? 0 : length(documents.documents)
-    rows=SessionDisplayRows()
+    rows=interrupted_fallback_rows(app,id,anchor,width;projection,on_component)
     for index in 0:count
         if index>0 && !isnothing(documents)
             document=documents.documents[index]

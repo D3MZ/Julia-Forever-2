@@ -10,15 +10,18 @@ Set TypingSpeed 50ms
 Set CursorBlink false
 
 Output artifacts/vhs/jf2-terminal.ascii
+Output artifacts/vhs/jf2-terminal.gif
 
 Type "./bin/jf2"
 Enter
 Sleep 6s
+Wait+Screen /Julia Forever 2 v/
 Screenshot artifacts/vhs/chat.png
 
 Type "/settings"
 Enter
 Sleep 2s
+Wait+Screen /Auto-compact/
 Screenshot artifacts/vhs/settings.png
 
 Ctrl+C

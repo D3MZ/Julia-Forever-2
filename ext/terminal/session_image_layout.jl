@@ -76,13 +76,13 @@ end
 
 """Prepare once per source/style/width/capability change and reuse decoded pixels on ordinary frames."""
 function session_display_plan(projection::JuliaForever2.TimelineDisplayProjection,width::Int;
-        state=SessionDisplayState(),tool_renderers=nothing,custom_entry_renderer=nothing,after_record=nothing,
+        state=SessionDisplayState(),tool_renderers=nothing,custom_entry_renderer=nothing,after_record=nothing,on_component=nothing,
         options=SessionImageOptions(),protocol=session_image_protocol(),cell_pixels=Tachikoma.cell_pixels())
     options.limits.plan_pixels >= 0 || error("Invalid transcript image pixel budget")
     placements = SessionImagePlacement[]
     budget = Ref(options.limits.plan_pixels)
     collector = (tool,w,display,registry,offset) -> session_tool_image_rows!(placements,tool,w,display,registry,offset,options,protocol,cell_pixels,budget)
-    rows = session_display_lines(projection,width;state,tool_renderers,custom_entry_renderer,tool_layout=collector,after_record)
+    rows = session_display_lines(projection,width;state,tool_renderers,custom_entry_renderer,tool_layout=collector,after_record,on_component)
     SessionDisplayPlan(rows,placements,width,options,protocol,(Int(cell_pixels.w),Int(cell_pixels.h)))
 end
 

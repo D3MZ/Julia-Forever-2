@@ -28,6 +28,7 @@ function Base.close(server::WebServer)
     close(server.expiry)
     revoke_web_access!(server.access)
     cancel_web_turns!(server.controller)
+    wait_settled_web_saves!(server.controller)
     HTTP.forceclose(server.backend)
 end
 JuliaForever2.web_url(server::WebServer) = isempty(server.access.origin) ? "http://$(server.host):$(server.port)" : server.access.origin
