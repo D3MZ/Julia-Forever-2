@@ -119,10 +119,12 @@ end
 """An archive marker applies only to the matching durable session identity."""
 function session_archived(store::SessionStore, name::Union{Symbol,AbstractString})
     marker = session_archive_file(store, name)
-    if isnothing(marker) || !isfile(marker)
+    if isnothing(marker)
         false
     elseif islink(marker) || islink(dirname(marker))
         error("Refusing symbolic-link session archive metadata: $name")
+    elseif !isfile(marker)
+        false
     else
         data = JSON.parsefile(marker)
         if get(data, "format", nothing) != "JuliaForever2.session-archive" ||
