@@ -20,13 +20,11 @@ function wrap_printable_ascii_line(line::Union{String,SubString{String}}, width:
     return lines
 end
 
-function wrap_conversation_line(line::AbstractString, width::Int)
-    if line isa Union{String,SubString{String}} && all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
-        wrap_printable_ascii_line(line, width)
-    else
-        wrapgraphemes(line, width)
-    end
-end
+printable_ascii(::AbstractString) = false
+printable_ascii(line::Union{String,SubString{String}}) = all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
+
+wrap_conversation_line(line::AbstractString, width::Int) = wrapgraphemes(line, width)
+wrap_conversation_line(line::Union{String,SubString{String}}, width::Int) = printable_ascii(line) ? wrap_printable_ascii_line(line, width) : wrapgraphemes(line, width)
 
 function wrapgraphemes(line::AbstractString, width)
     graphemes = Base.Unicode.graphemes(line)
@@ -74,8 +72,7 @@ function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     columns = 0
     for span in spans
         content = span.content
-        if content isa Union{String,SubString{String}} &&
-                all(byte -> 0x20 <= byte <= 0x7e, codeunits(content))
+        if printable_ascii(content)
             # Printable ASCII graphemes each occupy one byte and one column.
             # Preserve boundaries and styles when a span crosses display lines.
             index = 1
