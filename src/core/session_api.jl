@@ -95,6 +95,27 @@ end
 api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(params["session"], session), api_session(api, params))
 api_session_messages(api::SessionAPI, params::AbstractDict) = apply(session -> api_message.(history_snapshot(session).messages), api_session(api, params))
 
+"""Resolve a replaceable durable store without holding the API lock during I/O."""
+function api_saved_store(api::SessionAPI)
+    lock(api.lock) do
+        api.closed ? RpcError(-32000, "Session API is closed") :
+            isnothing(api.store) ? RpcError(-32601, "No persistent session store is configured") : api.store
+    end
+end
+
+saved_summaries(error::RpcError) = error
+saved_summaries(store) = session_summaries(store)
+api_saved_session_list(api::SessionAPI, ::AbstractDict) = saved_summaries(api_saved_store(api))
+
+saved_summary(error::RpcError, name) = error
+saved_summary(store, name) = RpcError(-32602, "Expected a session identifier")
+saved_summary(store, name::AbstractString) = isempty(name) ?
+    RpcError(-32602, "Expected a session identifier") : saved_summary_lookup(store, name)
+saved_summary_lookup(store, name) = something(session_summary(store, name),
+    RpcError(-32004, "Session was not saved: $name"))
+api_saved_session_detail(api::SessionAPI, params::AbstractDict) =
+    saved_summary(api_saved_store(api), api_parameter(params, "session"))
+
 """Export public session text through a Julia-owned, replaceable Markdown renderer."""
 function api_session_markdown(api::SessionAPI, params::AbstractDict)
     title = get(params, "title", nothing)
@@ -341,6 +362,8 @@ const SESSION_OPERATIONS = Dict(
     "session/open" => api_open_session!,
     "session/resume" => (api, params) -> api_open_session!(api, params; resume=true),
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
+    "session/list/saved" => api_saved_session_list,
+    "session/describe/saved" => api_saved_session_detail,
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,
     "session/markdown" => api_session_markdown,
