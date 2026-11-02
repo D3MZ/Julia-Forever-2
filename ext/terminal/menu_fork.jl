@@ -31,20 +31,21 @@ end
 fork_selected(menu::ForkMenu)=1<=menu.cursor<=length(menu.messages) ? menu.messages[menu.cursor].id : nothing
 fork_mouse!(menu::ForkMenu,args...;kwargs...)=nothing
 
-function fork_input!(menu::ForkMenu,data::AbstractString)
+function fork_input!(menu::ForkMenu,data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     count=length(menu.messages)
+    navigation=native_selector_navigation(selectors,data)
     result=(action=:none,invoked=false,outcome=nothing)
     if !menu.disposed
-        if data=="\e[A"
+        if navigation==:up
             menu.cursor=menu.cursor==1 ? count : menu.cursor-1
-        elseif data=="\e[B"
+        elseif navigation==:down
             menu.cursor=menu.cursor==count ? 1 : menu.cursor+1
-        elseif data in ("\e[5~","\e[6~") && count>0
-            menu.cursor=clamp(menu.cursor+(data=="\e[5~" ? -1 : 1)*menu.maximum_rows,1,count)
-        elseif data in ("\r","\n") && 1<=menu.cursor<=count
+        elseif navigation in (:page_up,:page_down) && count>0
+            menu.cursor=clamp(menu.cursor+(navigation==:page_up ? -1 : 1)*menu.maximum_rows,1,count)
+        elseif native_selector_matches(selectors,:confirm,data) && 1<=menu.cursor<=count
             id=menu.messages[menu.cursor].id
             result=(action=:select,invoked=true,outcome=menu.on_select(id),entry_id=id)
-        elseif data in ("\e","\x03")
+        elseif native_selector_matches(selectors,:cancel,data)
             result=(action=:cancel,invoked=true,outcome=menu.on_cancel())
         end
     end

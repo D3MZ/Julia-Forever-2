@@ -227,17 +227,17 @@ function project_trust_input!(app::App,event::KeyEvent,raw::AbstractVector{UInt8
     if !isnothing(state)
         packet=menu_packet(event,raw)
         pasted=project_trust_paste!(state,packet;escape_key=event.key==:escape)
-        navigation=pasted ? :none : menu_select_navigation(packet)
-        action=pasted || terminal_viewport_action(packet)==:release ? :none : chat_key_packet(packet).action
-        if pasted
+        selectors=native_selector_context(app)
+        navigation=pasted ? :none : native_selector_navigation(selectors,packet)
+        if pasted || native_selector_expand_matches(selectors,packet)
             nothing
         elseif navigation==:up || packet=="k"
             state.cursor=max(1,state.cursor-1)
         elseif navigation==:down || packet=="j"
             state.cursor=min(max(1,length(state.options)),state.cursor+1)
-        elseif action==:submit || packet=="\n"
+        elseif native_selector_matches(selectors,:confirm,packet) || packet=="\n"
             project_trust_select!(app)
-        elseif action in (:interrupt,:copy)
+        elseif native_selector_matches(selectors,:cancel,packet)
             project_trust_cancel!(app)
         end
     end

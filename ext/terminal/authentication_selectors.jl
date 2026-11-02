@@ -93,42 +93,44 @@ end
 auth_selector_dispose!(menu::AuthenticationSelector)=(menu.disposed=true;nothing)
 
 """Dispatch a keyboard packet without submitting a grant or claiming the requested action succeeded."""
-function auth_selector_input!(menu::AuthProviderMenu,packet::AbstractString)
+function auth_selector_input!(menu::AuthProviderMenu,packet::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     if !menu.disposed
         count=length(menu.filtered)
+        navigation=native_selector_navigation(selectors,packet)
         if menu.search.pasting || occursin("\e[200~",packet)
             menu_search_input!(menu.search,packet)
             auth_selector_filter!(menu)
-        elseif packet in ("\e[A","\e[B","\e[5~","\e[6~")
-            delta=packet=="\e[A" ? -1 : packet=="\e[B" ? 1 : packet=="\e[5~" ? -8 : 8
+        elseif navigation!=:none
+            delta=navigation==:up ? -1 : navigation==:down ? 1 : navigation==:page_up ? -8 : 8
             menu.cursor=clamp(menu.cursor+delta,1,max(1,count))
-        elseif packet in ("\r","\n")
+        elseif native_selector_matches(selectors,:confirm,packet)
             if count>0
                 menu.on_select(menu.filtered[menu.cursor])
             end
-        elseif packet in ("\e","\x03")
+        elseif native_selector_matches(selectors,:cancel,packet)
             menu.on_cancel()
         else
-            menu_search_input!(menu.search,packet)
+            submitted=menu_search_input!(menu.search,packet)==:submit
+            submitted && count>0 && menu.on_select(menu.filtered[menu.cursor])
             auth_selector_filter!(menu)
         end
     end
     nothing
 end
 
-function auth_selector_input!(menu::AuthMethodMenu,packet::AbstractString)
+function auth_selector_input!(menu::AuthMethodMenu,packet::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     if !menu.disposed
-        if packet=="\x0f"
+        if native_selector_expand_matches(selectors,packet)
             menu.on_expand()
-        elseif packet in ("\e[A","k")
+        elseif native_selector_matches(selectors,:up,packet) || packet=="k"
             menu.cursor=max(1,menu.cursor-1)
-        elseif packet in ("\e[B","j")
+        elseif native_selector_matches(selectors,:down,packet) || packet=="j"
             menu.cursor=min(length(menu.options),menu.cursor+1)
-        elseif packet in ("\r","\n")
+        elseif native_selector_matches(selectors,:confirm,packet) || packet=="\n"
             if 1<=menu.cursor<=length(menu.options)
                 menu.on_select(menu.options[menu.cursor])
             end
-        elseif packet in ("\e","\x03")
+        elseif native_selector_matches(selectors,:cancel,packet)
             menu.on_cancel()
         end
     end
@@ -198,7 +200,7 @@ function auth_selector_truncated(menu::AuthenticationSelector,spans::AbstractVec
 end
 
 """Render a native provider selector at the requested geometry without fabricated catalog entries."""
-function auth_selector_lines(menu::AuthProviderMenu,width::Integer)
+function auth_selector_lines(menu::AuthProviderMenu,width::Integer;selectors::NativeSelectorBindings=NativeSelectorBindings())
     columns=Int(width)
     lines=Vector{Tachikoma.Span}[]
     push!(lines,[auth_selector_span(menu,repeat("─",max(1,columns)),:menu_border)])
@@ -249,7 +251,7 @@ function auth_selector_text(menu::AuthenticationSelector,spans,width::Int)
     lines
 end
 
-function auth_selector_lines(menu::AuthMethodMenu,width::Integer)
+function auth_selector_lines(menu::AuthMethodMenu,width::Integer;selectors::NativeSelectorBindings=NativeSelectorBindings())
     columns=Int(width)
     lines=Vector{Tachikoma.Span}[]
     push!(lines,[auth_selector_span(menu,repeat("─",max(1,columns)),:menu_border)])
@@ -267,9 +269,9 @@ function auth_selector_lines(menu::AuthMethodMenu,width::Integer)
         append!(lines,auth_selector_text(menu,row,columns))
     end
     push!(lines,Tachikoma.Span[])
-    hints=[auth_selector_span(menu,"↑↓",:dim),auth_selector_span(menu," navigate",:muted),auth_selector_span(menu,"  "),
-        auth_selector_span(menu,"enter",:dim),auth_selector_span(menu," select",:muted),auth_selector_span(menu,"  "),
-        auth_selector_span(menu,"escape/ctrl+c",:dim),auth_selector_span(menu," cancel",:muted)]
+    hints=[auth_selector_span(menu,native_selector_move_hint(selectors,"↑↓"),:dim),auth_selector_span(menu," navigate",:muted),auth_selector_span(menu,"  "),
+        auth_selector_span(menu,native_selector_text(selectors,:confirm),:dim),auth_selector_span(menu," select",:muted),auth_selector_span(menu,"  "),
+        auth_selector_span(menu,native_selector_text(selectors,:cancel),:dim),auth_selector_span(menu," cancel",:muted)]
     append!(lines,auth_selector_text(menu,hints,columns))
     push!(lines,Tachikoma.Span[])
     push!(lines,[auth_selector_span(menu,repeat("─",max(1,columns)),:menu_border)])

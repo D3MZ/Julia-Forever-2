@@ -4,9 +4,9 @@ function project_trust_text_lines(text::AbstractString,width::Int,style::Symbol=
 end
 
 """Render source-equivalent saved/current decisions and explicit choices, with native scope disclosed at admission."""
-project_trust_lines(app::App,width::Int) = project_trust_lines(app.menus.project_trust,width)
-project_trust_lines(::Nothing,width::Int) = Vector{Tachikoma.Span}[]
-function project_trust_lines(state::ProjectTrustState,width::Int)
+project_trust_lines(app::App,width::Int) = project_trust_lines(app.menus.project_trust,width;selectors=native_selector_context(app))
+project_trust_lines(::Nothing,width::Int;kwargs...) = Vector{Tachikoma.Span}[]
+function project_trust_lines(state::ProjectTrustState,width::Int;selectors::NativeSelectorBindings=NativeSelectorBindings())
     lines=Vector{Tachikoma.Span}[menu_line(repeat("─",max(0,width)),:menu_border),menu_line()]
     heading=state.startup_prompt ? "Trust project folder?" : "Project trust"
     push!(lines,[menu_span(" "),Tachikoma.Span(heading,Tachikoma.Style(;fg=pi_style(:accent).fg,bold=true))])
@@ -38,11 +38,11 @@ function project_trust_lines(state::ProjectTrustState,width::Int)
         isempty(reason) || append!(lines,project_trust_text_lines(reason,width,:warning))
     end
     push!(lines,menu_line())
-    hint=startup_rich("↑↓",pi_style(:text_dim))
+    hint=startup_rich(native_selector_move_hint(selectors,"↑↓"),pi_style(:text_dim))
     startup_rich!(hint," navigate",pi_style(:muted));startup_rich!(hint,"  ")
-    startup_rich!(hint,"enter",pi_style(:text_dim))
+    startup_rich!(hint,native_selector_text(selectors,:confirm),pi_style(:text_dim))
     startup_rich!(hint,state.startup_prompt ? " select" : " save",pi_style(:muted));startup_rich!(hint,"  ")
-    startup_rich!(hint,"escape/ctrl+c",pi_style(:text_dim));startup_rich!(hint," cancel",pi_style(:muted))
+    startup_rich!(hint,native_selector_text(selectors,:cancel),pi_style(:text_dim));startup_rich!(hint," cancel",pi_style(:muted))
     append!(lines,startup_text_lines(hint,width;padding=1))
     push!(lines,menu_line())
     push!(lines,menu_line(repeat("─",max(0,width)),:menu_border))

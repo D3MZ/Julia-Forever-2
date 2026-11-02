@@ -121,19 +121,20 @@ chat_completion_range(state::ChatCompletionState)=begin
     first:min(first+state.max_visible-1,length(state.items))
 end
 """Route actual completion interactions before editing; requests remain owned by the host."""
-function chat_completion_open_input!(state::ChatCompletionState,packet::AbstractString)
+function chat_completion_open_input!(state::ChatCompletionState,packet::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     chat_completion_sync!(state)
     action=chat_key_packet(packet).action;response=(action=:handled,text="")
     active=state.mode!=:none && !isempty(state.items)
+    navigation=native_selector_navigation(selectors,packet)
     if action==:copy
         response=(action=:copy,text="")
-    elseif active && action==:interrupt
+    elseif active && native_selector_matches(selectors,:cancel,packet)
         chat_completion_cancel!(state)
-    elseif active && action in (:up,:down,:page_up,:page_down)
+    elseif active && navigation in (:up,:down,:page_up,:page_down)
         count=length(state.items);previous=state.selected
-        state.selected=action==:up ? mod1(state.selected-1,count) : action==:down ? mod1(state.selected+1,count) : clamp(state.selected+(action==:page_up ? -1 : 1)*state.max_visible,1,count)
+        state.selected=navigation==:up ? mod1(state.selected-1,count) : navigation==:down ? mod1(state.selected+1,count) : clamp(state.selected+(navigation==:page_up ? -1 : 1)*state.max_visible,1,count)
         state.selected==previous || chat_completion_changed!(state)
-    elseif active && (action in (:complete,:submit) || packet=="\n")
+    elseif active && (action==:complete || native_selector_matches(selectors,:confirm,packet))
         slash=startswith(state.prefix,'/')
         outcome=chat_completion_install!(state,state.items[state.selected],state.prefix)
         if outcome.ok
@@ -187,6 +188,6 @@ function chat_completion_set_text!(state::ChatCompletionState,text::AbstractStri
     nothing
 end
 
-function chat_completion_input!(state::ChatCompletionState,packet::AbstractString)
-    state.closed ? (action=:handled,text="") : chat_completion_open_input!(state,packet)
+function chat_completion_input!(state::ChatCompletionState,packet::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
+    state.closed ? (action=:handled,text="") : chat_completion_open_input!(state,packet;selectors)
 end

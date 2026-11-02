@@ -347,9 +347,9 @@ end
 const TREE_MENU_FILTERS = ["default","no-tools","user-only","labeled-only","all"]
 
 """Route label editing through the native input while exposing actual owner outcomes."""
-function tree_label_input!(menu::TreeMenu,data::AbstractString)
+function tree_label_input!(menu::TreeMenu,data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     result = tree_request()
-    if data == "\r"
+    if native_selector_matches(selectors,:confirm,data)
         id = menu.entries[menu.editing].id
         text = strip(menu_search_text(menu.input))
         value = isempty(text) ? nothing : String(text)
@@ -357,7 +357,7 @@ function tree_label_input!(menu::TreeMenu,data::AbstractString)
         outcome = tree_label_callback(menu.on_label,id,value)
         result = tree_request(:label,id,value,outcome)
         menu.editing = 0
-    elseif data in ("\e","\x03")
+    elseif native_selector_matches(selectors,:cancel,data)
         menu.editing = 0
     else
         menu_search_input!(menu.input,data)
@@ -366,19 +366,20 @@ function tree_label_input!(menu::TreeMenu,data::AbstractString)
 end
 
 """Handle tree navigation and substring search without passing viewport keys to an editor."""
-function tree_input!(menu::TreeMenu,data::AbstractString)
+function tree_input!(menu::TreeMenu,data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     result = tree_request()
     if menu.editing != 0
-        result = tree_label_input!(menu,data)
+        result = tree_label_input!(menu,data;selectors)
     else
         count = length(menu.visible)
+        navigation=native_selector_navigation(selectors,data)
         current = tree_selected_entry(menu)
         refilter = false
         clear_folds = false
-        if data in ("\e[A","\eOA")
-            menu.cursor = menu.cursor==1 ? count : menu.cursor-1
-        elseif data in ("\e[B","\eOB")
-            menu.cursor = menu.cursor==count ? 1 : menu.cursor+1
+        if navigation==:up
+            count>0 && (menu.cursor = menu.cursor==1 ? count : menu.cursor-1)
+        elseif navigation==:down
+            count>0 && (menu.cursor = menu.cursor==count ? 1 : menu.cursor+1)
         elseif data in ("\e[1;5D","\e[1;3D")
             if current != 0 && tree_foldable(menu,current) && !(current in menu.folded)
                 push!(menu.folded,current)
@@ -393,17 +394,17 @@ function tree_input!(menu::TreeMenu,data::AbstractString)
             else
                 menu.cursor = tree_segment(menu,:down)
             end
-        elseif data in ("\e[D","\eOD","\e[5~","\x02")
+        elseif data in ("\e[D","\eOD","\x02") || navigation==:page_up
             menu.cursor = max(1,menu.cursor-menu.maximum_rows)
-        elseif data in ("\e[C","\eOC","\e[6~","\x06")
+        elseif data in ("\e[C","\eOC","\x06") || navigation==:page_down
             menu.cursor = min(count,menu.cursor+menu.maximum_rows)
-        elseif data == "\r" && current != 0
+        elseif native_selector_matches(selectors,:confirm,data) && current != 0
             id = menu.entries[current].id
             result = tree_request(:select,id,nothing,menu.on_select(id))
         elseif data == "\x18"
             value = current == 0 ? nothing : tree_copy_text(menu.entries[current])
             result = tree_request(:copy,tree_selected(menu),value,menu.on_copy(value))
-        elseif data in ("\e","\x03")
+        elseif native_selector_matches(selectors,:cancel,data)
             if isempty(menu.query)
                 result = tree_request(:cancel,nothing,nothing,menu.on_cancel())
             else

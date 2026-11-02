@@ -40,13 +40,13 @@ end
 
 function thinking_defaults_controls_input!(app::App, event::KeyEvent, raw)
     menu = app.menus.thinking_defaults_menu
-    isnothing(menu) || thinking_defaults_input!(menu, menu_packet(event, raw))
+    isnothing(menu) || thinking_defaults_input!(menu,menu_packet(event,raw);selectors=native_selector_context(app))
     nothing
 end
 
 function thinking_defaults_controls_lines(app::App, width)
     menu = app.menus.thinking_defaults_menu
-    isnothing(menu) ? SessionDisplayRows() : thinking_defaults_lines(menu, width)
+    isnothing(menu) ? SessionDisplayRows() : thinking_defaults_lines(menu,width;selectors=native_selector_context(app))
 end
 
 

@@ -153,19 +153,20 @@ function thinking_defaults_activate!(menu::ThinkingDefaultsMenu)
 end
 
 """Handle real two-step navigation, search and looping without treating cancel as a default change."""
-function thinking_defaults_input!(menu::ThinkingDefaultsMenu,data::AbstractString)
+function thinking_defaults_input!(menu::ThinkingDefaultsMenu,data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     result=nothing
     if menu.open
         count=length(menu.filtered)
-        if data in ("\e[A","\eOA")
+        navigation=native_selector_navigation(selectors,data)
+        if navigation==:up
             menu.cursor=menu.cursor==1 ? count : menu.cursor-1
-        elseif data in ("\e[B","\eOB")
+        elseif navigation==:down
             menu.cursor=menu.cursor==count ? 1 : menu.cursor+1
-        elseif data in ("\e[5~","\e[6~") && count>0
-            menu.cursor=clamp(menu.cursor+(data=="\e[5~" ? -1 : 1)*min(count,10),1,count)
-        elseif data=="\r"
+        elseif navigation in (:page_up,:page_down) && count>0
+            menu.cursor=clamp(menu.cursor+(navigation==:page_up ? -1 : 1)*min(count,10),1,count)
+        elseif native_selector_matches(selectors,:confirm,data)
             result=thinking_defaults_activate!(menu)
-        elseif data in ("\e","\x03")
+        elseif native_selector_matches(selectors,:cancel,data)
             if menu.step==:level
                 delete!(menu.context,"level")
                 thinking_defaults_step!(menu,:model)
