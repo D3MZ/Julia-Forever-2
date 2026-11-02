@@ -10,7 +10,8 @@ function browser_workspace_files(files, method::AbstractString, params::Abstract
         JuliaForever2.workspace_file_stat(files, workspace_id, relative)
     elseif method == "workspace/file/read"
         JuliaForever2.workspace_file_read(files, workspace_id, relative;
-            offset=get(params, "offset", 1), limit=get(params, "limit", 200))
+            offset=get(params, "offset", 1), limit=get(params, "limit", 200),
+            version=get(params, "version", nothing))
     elseif method == "workspace/file/bytes"
         browser_workspace_file_bytes(files, workspace_id, relative, params)
     elseif method == "workspace/file/observe"
@@ -24,7 +25,8 @@ end
 """JSON transports byte windows as base64; the Julia service returns native bytes."""
 function browser_workspace_file_bytes(files, workspace_id, relative, params)
     result = JuliaForever2.workspace_file_bytes(files, workspace_id, relative;
-        offset=get(params, "offset", 0), count=get(params, "length", 131_072))
+        offset=get(params, "offset", 0), count=get(params, "length", 131_072),
+        version=get(params, "version", nothing))
     if result isa JuliaForever2.RpcError
         result
     else

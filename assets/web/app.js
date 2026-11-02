@@ -14,7 +14,7 @@
     fileRead: $("workspace-file-read"), fileMore: $("workspace-file-more")
   };
   let workspaceRecords = [], workspaceGroups = [], workspaceRevision = null, savedRecords = [], pinnedNames = new Set();
-  let filePage = null;
+  let filePage = null, fileObservation = null, filePollInFlight = false;
   function synchronizeWorkspaceControls() {
     const unavailable = busy || !!operation || !authorized;
     const registered = workspaceRecords.some(row => row.id === fields.workspaceList.value);
@@ -364,6 +364,7 @@
     fields.filePreview.textContent = "";
     fields.fileStatus.textContent = "";
     filePage = null;
+    fileObservation = null;
     synchronizeWorkspaceControls();
   });
 
@@ -429,6 +430,7 @@
     fields.fileEntries.replaceChildren();
     fields.filePreview.textContent = "";
     filePage = null;
+    fileObservation = {...params, version:result.version, kind:"directory"};
     fields.fileStatus.textContent = result.entries.length + " item(s)" + (result.truncated ? " (listing truncated)" : "");
     for (const entry of result.entries) {
       const item = document.createElement("li"), button = document.createElement("button");
@@ -451,15 +453,37 @@
     if (!params.path) throw new Error("Enter a relative file path or select a file.");
     const continued = more && filePage && filePage.path === params.path && filePage.workspaceId === params.workspaceId;
     const offset = continued ? filePage.nextOffset : 1;
-    const page = await rpc("workspace/file/read",{...params,offset,limit:200});
+    const expectedVersion = continued ? filePage.version : null;
+    const request = {...params,offset,limit:200};
+    if (continued) request.version = expectedVersion;
+    let page;
+    try { page = await rpc("workspace/file/read",request); }
+    catch (error) {
+      if (continued) {
+        filePage = null; fileObservation = null;
+        fields.fileStatus.textContent = "File preview changed or became unavailable. Read it again.";
+        synchronizeWorkspaceControls();
+      }
+      throw error;
+    }
+    if (continued && page.version !== expectedVersion) {
+      filePage = null; fileObservation = null;
+      throw new Error("File changed between pages; restart the preview.");
+    }
     if (!continued) fields.filePreview.textContent = page.text;
     else fields.filePreview.textContent += page.lines ? "\n" + page.text : "";
-    filePage = {...params,nextOffset:offset + page.lines,eof:page.eof};
+    filePage = {...params,nextOffset:offset + page.lines,eof:page.eof,version:page.version};
+    fileObservation = {...params,version:page.version,kind:"file"};
     fields.fileStatus.textContent = page.lines + " line(s) read at " + offset +
       (page.eof ? " (end of file)" : " (more available)");
     synchronizeWorkspaceControls();
   }
 
+  fields.filePath.addEventListener("input",() => {
+    filePage = null; fileObservation = null;
+    fields.fileStatus.textContent = "";
+    synchronizeWorkspaceControls();
+  });
   fields.fileList.addEventListener("click",() => action(listWorkspaceFiles));
   fields.fileRead.addEventListener("click",() => action(() => readWorkspaceFile()));
   fields.fileMore.addEventListener("click",() => action(() => readWorkspaceFile(true)));
@@ -497,6 +521,40 @@
     if (change.type === "reset" || change.events.length) await refreshWorkspaces();
   }
 
+  async function pollWorkspaceFiles() {
+    const observation = fileObservation;
+    if (!observation || filePollInFlight || busy || operation || !authorized || !capabilities.files ||
+        $("settings").hidden || $("workspace-file-controls").hidden) return;
+    const selected = selectedWorkspace();
+    if (!selected || selected.id !== observation.workspaceId ||
+        fields.filePath.value.trim() !== observation.path) {
+      fileObservation = null;
+      filePage = null;
+      synchronizeWorkspaceControls();
+      return;
+    }
+    filePollInFlight = true;
+    try {
+      const state = await rpc("workspace/file/observe",{
+        workspaceId:observation.workspaceId,path:observation.path,version:observation.version
+      });
+      if (fileObservation !== observation || (!state.absent && !state.changed)) return;
+      fileObservation = null;
+      filePage = null;
+      fields.fileStatus.textContent = state.absent ?
+        "The selected file or directory was removed. Refresh the view." :
+        "The selected file or directory changed. Refresh before continuing.";
+    } catch (error) {
+      if (fileObservation !== observation) return;
+      fileObservation = null;
+      filePage = null;
+      fields.fileStatus.textContent = "File observation stopped: " + (error.message || String(error));
+    } finally {
+      filePollInFlight = false;
+    }
+    synchronizeWorkspaceControls();
+  }
+
   action(async () => {
     capabilities = await rpc("web/info");
     $("composer-caption").textContent = capabilities.chatOnly ? "Chat only · no host tools" : "Julia-native session";
@@ -507,5 +565,8 @@
     if (response.ok) { const access = await response.json(); const expiry = new Date(access.expiresAt*1000).toLocaleString(); $("access-expiry").textContent = "Access ends " + new Date(access.expiresAt*1000).toLocaleDateString(); $("security-detail").textContent = "Access ends " + expiry + ". The invitation works once. Anyone with a copy of the session cookie can use it."; }
     settings(location.hash === "#settings",false,false);
   });
-  window.setInterval(() => { pollWorkspaceChanges().catch(error => notice(error.message || String(error),true)); },5000);
+  window.setInterval(() => {
+    pollWorkspaceChanges().catch(error => notice(error.message || String(error),true));
+    pollWorkspaceFiles();
+  },5000);
 })();

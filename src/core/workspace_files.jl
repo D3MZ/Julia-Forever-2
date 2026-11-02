@@ -22,6 +22,8 @@ end
 
 workspace_file_error(message::AbstractString) = RpcError(-32602, String(message))
 workspace_file_unavailable(message::AbstractString) = RpcError(-32044, String(message))
+workspace_file_valid_token(version) = isnothing(version) ||
+    (version isa AbstractString && ncodeunits(version) <= 128)
 
 """Only normalized relative paths without escapes are accepted at this boundary."""
 function workspace_file_segments(relative::AbstractString)
@@ -117,21 +119,27 @@ function workspace_file_list(files::WorkspaceFileService, workspace_id, relative
             end
             push!(entries, row)
         end
+        metadata = workspace_file_identity(target.absolutePath)
         Dict("path" => target.path, "entries" => entries,
+            "version" => metadata["version"],
             "truncated" => length(names) > files.max_entries)
     end
 end
 
 """Page UTF-8 text by one-based line numbers, rejecting binary and changed files."""
 function workspace_file_read(files::WorkspaceFileService, workspace_id, relative;
-        offset=1, limit=files.max_lines)
-    if !(offset isa Integer && !(offset isa Bool) && 1 <= offset <= typemax(Int) &&
+        offset=1, limit=files.max_lines, version=nothing)
+    if !workspace_file_valid_token(version)
+        workspace_file_error("Invalid file freshness token")
+    elseif !(offset isa Integer && !(offset isa Bool) && 1 <= offset <= typemax(Int) &&
             limit isa Integer && !(limit isa Bool) && 1 <= limit <= files.max_lines)
         workspace_file_error("Invalid text line window")
     else
         target = workspace_file_stat(files, workspace_id, relative)
         if target isa RpcError
             target
+        elseif !isnothing(version) && target["version"] != version
+            workspace_file_unavailable("Workspace file changed; restart text preview")
         elseif target["bytes"] > files.max_file_bytes
             workspace_file_unavailable("Workspace file exceeds the text inspection limit")
         else
@@ -192,14 +200,18 @@ end
 
 """Read a zero-based byte window; callers choose their transport encoding."""
 function workspace_file_bytes(files::WorkspaceFileService, workspace_id, relative;
-        offset=0, count=files.max_page_bytes)
-    if !(offset isa Integer && !(offset isa Bool) && 0 <= offset <= typemax(Int) &&
+        offset=0, count=files.max_page_bytes, version=nothing)
+    if !workspace_file_valid_token(version)
+        workspace_file_error("Invalid file freshness token")
+    elseif !(offset isa Integer && !(offset isa Bool) && 0 <= offset <= typemax(Int) &&
             count isa Integer && !(count isa Bool) && 1 <= count <= files.max_page_bytes)
         workspace_file_error("Invalid byte window")
     else
         target = workspace_file_stat(files, workspace_id, relative)
         if target isa RpcError
             target
+        elseif !isnothing(version) && target["version"] != version
+            workspace_file_unavailable("Workspace file changed; restart binary preview")
         else
             workspace_file_read_bytes(files, target, Int(offset), Int(count))
         end
@@ -222,13 +234,16 @@ end
 
 """Check file freshness without transferring contents; clients can poll when desired."""
 function workspace_file_observe(files::WorkspaceFileService, workspace_id, relative; version=nothing)
-    target = workspace_file_target(files, workspace_id, relative)
+    target = workspace_file_valid_token(version) ?
+        workspace_file_target(files, workspace_id, relative) :
+        workspace_file_error("Invalid file freshness token")
     if target isa RpcError
         target
-    elseif !isfile(target.absolutePath)
+    elseif !isfile(target.absolutePath) && !isdir(target.absolutePath)
         Dict("absent" => true, "changed" => !isnothing(version))
     else
         metadata = workspace_file_identity(target.absolutePath)
+        metadata["kind"] = isdir(target.absolutePath) ? "directory" : "file"
         metadata["absent"] = false
         metadata["changed"] = isnothing(version) || metadata["version"] != version
         metadata
