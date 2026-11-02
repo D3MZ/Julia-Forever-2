@@ -34,6 +34,11 @@ end
 """Exercise real native first-use rendering and navigation paths using only detached in-memory state."""
 function terminal_compile_workload()
     app=terminal_compile_fixture()
+    # Infer the actual registered callback without invoking any command or its effects.
+    settings_index=command_dispatch_index(app.commands,"settings")
+    if !isnothing(settings_index)
+        precompile(Tuple{typeof(app.commands[settings_index].action),App,String})
+    end
     models=[SelectorModel("precompile","native-small";name="Native Small"),SelectorModel("precompile","native-large";name="Native Large")]
     selector=ModelMenu(models)
     scoped=ScopedModelMenu(models)
