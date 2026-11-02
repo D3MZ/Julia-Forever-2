@@ -1,8 +1,9 @@
 """An owned, replaceable interface to independent Julia sessions and their durable state."""
-mutable struct SessionAPI{F,S,Q}
+mutable struct SessionAPI{F,S,Q,T}
     factory::F
     store::S
     query::Q
+    titles::T
     lock::ReentrantLock
     sessions::Dict{String,Session}
     handles::Dict{String,TaskHandle}
@@ -10,7 +11,7 @@ mutable struct SessionAPI{F,S,Q}
 end
 
 """Construct a native session API; factories return a Kernel or AgentDefinition."""
-SessionAPI(; factory=Kernel, store=nothing, query=nothing) = SessionAPI(factory, store, query, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), false)
+SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing) = SessionAPI(factory, store, query, titles, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), false)
 
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
@@ -286,7 +287,46 @@ function api_fork_snapshot!(api::SessionAPI, source::Session, destination::Strin
         inherited = messages[1:Int(last)]
         child = Base.invokelatest(fork_session, source, inherited)
         api.sessions[destination] = child
+        isnothing(api.titles) || inherit_session_title!(api.titles, source, child)
         api_session_summary(destination, child)
+    end
+end
+
+"""Read the optional title service without projecting title state into model messages."""
+function api_session_title(api::SessionAPI, params::AbstractDict)
+    if isnothing(api.titles)
+        RpcError(-32601, "No session title service is configured")
+    else
+        apply(api_session(api, params)) do session
+            Dict("title" => session_title(api.titles, session))
+        end
+    end
+end
+
+"""Accept an explicit human rename, preserving the original session identity."""
+function api_session_rename_title!(api::SessionAPI, params::AbstractDict)
+    input = api_parameter(params, "title")
+    if isnothing(api.titles)
+        RpcError(-32601, "No session title service is configured")
+    elseif !(input isa AbstractString)
+        RpcError(-32602, "Expected a session title")
+    else
+        apply(api_session(api, params)) do session
+            accepted = rename_session_title!(api.titles, session, input)
+            isnothing(accepted) ? RpcError(-32602, "Invalid session title") :
+                Dict("title" => accepted)
+        end
+    end
+end
+
+"""Explicitly reset a pinned title to the current first-eligible-message fallback."""
+function api_session_refresh_title!(api::SessionAPI, params::AbstractDict)
+    if isnothing(api.titles)
+        RpcError(-32601, "No session title service is configured")
+    else
+        apply(api_session(api, params)) do session
+            Dict("title" => refresh_session_title!(api.titles, session))
+        end
     end
 end
 
@@ -304,6 +344,9 @@ const SESSION_OPERATIONS = Dict(
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,
     "session/markdown" => api_session_markdown,
+    "session/title/get" => api_session_title,
+    "session/title/rename" => api_session_rename_title!,
+    "session/title/refresh" => api_session_refresh_title!,
     "session/search" => api_session_search,
     "session/search/all" => api_persisted_search,
     "session/workspace/get" => api_session_workspace,
@@ -340,13 +383,14 @@ function Base.close(api::SessionAPI)
     nothing
 end
 """Install the replaceable Julia session API service under a profile."""
-function session_api_plugin(; name=:session_api, service_name=:session_api, store_service=nothing, query_service=nothing, factory=Kernel)
+function session_api_plugin(; name=:session_api, service_name=:session_api, store_service=nothing, query_service=nothing, title_service=nothing, factory=Kernel)
     contract = Symbol(service_name)
-    dependencies = unique(Symbol[Symbol(name) for name in (store_service, query_service) if !isnothing(name)])
+    dependencies = unique(Symbol[Symbol(name) for name in (store_service, query_service, title_service) if !isnothing(name)])
     setup = context -> begin
         store = isnothing(store_service) ? nothing : service(context, Symbol(store_service))
         query = isnothing(query_service) ? nothing : service(context, Symbol(query_service))
-        provide!(context, contract, SessionAPI(; factory, store, query); requires=dependencies, cleanup=close)
+        titles = isnothing(title_service) ? nothing : service(context, Symbol(title_service))
+        provide!(context, contract, SessionAPI(; factory, store, query, titles); requires=dependencies, cleanup=close)
     end
     PluginSpec(name, setup; requires=dependencies, provides=[contract])
 end

@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
 import { importSource, referenceSource, referenceRoot, cordisReference, scopedReference, toolsReference } from './reference.mjs'
 const { formatSessionMarkdown } = await importSource('packages/session-query/session-log-export/src/markdown.ts')
+const { normalizeSessionTitle, fallbackSessionTitle } = await importSource('packages/session/session-title/src/normalize.ts')
 const { filterSessionEventDocuments, filterSessionResults } = await import(pathToFileURL(resolve(referenceRoot, 'packages/session-query/session-query/src/filters.ts')).href)
 const { assertSupportedJsonSchema, validateJsonSchemaValue } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/json-schema.ts')).href)
 const { executeToolBatch } = await import(pathToFileURL(resolve(referenceRoot, 'packages/core/tools/src/batch.ts')).href)
@@ -1012,6 +1013,14 @@ function sessionMarkdownCase(input) {
   return formatSessionMarkdown(events, input.source_path)
 }
 
+function sessionTitleCase(input) {
+  return {
+    normalized: normalizeSessionTitle(input.text, input.maxBytes),
+    fallback: fallbackSessionTitle(input.text, input.maxWords, input.fallbackBytes),
+    renamed: normalizeSessionTitle(input.rename, input.maxBytes),
+  }
+}
+
 async function execute(input) {
   if (input.kind === 'tool_completion') return Promise.all(input.cases.map(toolCompletionCase))
   if (input.kind === 'tool_approval') return Promise.all(input.cases.map(toolApprovalCase))
@@ -1023,6 +1032,7 @@ async function execute(input) {
   if (input.kind === 'profile_groups') return input.cases.map(profileGroupCase)
   if (input.kind === 'session_query') return input.cases.map(sessionQueryCase)
   if (input.kind === 'session_markdown') return input.cases.map(sessionMarkdownCase)
+  if (input.kind === 'session_titles') return input.cases.map(sessionTitleCase)
   if (input.kind === 'session_control') return input.cases.map(sessionControlCase)
   if (input.kind === 'session_fork') return input.cases.map(sessionForkCase)
   if (input.kind === 'transport') return Promise.all(input.cases.map(transportCase))
