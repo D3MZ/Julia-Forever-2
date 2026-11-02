@@ -146,14 +146,15 @@ function workspace_file_read_page(files::WorkspaceFileService, metadata::Abstrac
         read(stream, files.max_file_bytes + 1)
     end
     current = workspace_file_identity(path)
-    if length(bytes) > files.max_file_bytes
+    size = length(bytes)
+    text = String(bytes)
+    if size > files.max_file_bytes
         workspace_file_unavailable("Workspace file exceeds the text inspection limit")
     elseif current["version"] != metadata["version"]
         workspace_file_unavailable("Workspace file changed while it was being read")
-    elseif any(iszero, bytes) || !isvalid(String(bytes))
+    elseif !isvalid(text) || occursin('\0', text)
         workspace_file_unavailable("Workspace file is not UTF-8 text")
     else
-        text = String(bytes)
         lines = split(text, '\n'; keepempty=true)
         endswith(text, "\n") && pop!(lines)
         first_line = Int(offset)
