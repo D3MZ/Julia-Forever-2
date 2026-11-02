@@ -44,6 +44,7 @@
     "packages/acp/acp/src/session.ts": "e4d624d1a4d305d924ae0cff23e0f005becf9a797b02c037e45a1e86c3c17d12",
     "packages/core/session/src/fork.ts": "de80ecbf0e6a7961c096a2d7f0304bc6f6c83f897268304e28352357da06bfb0",
     "packages/core/session/src/repair.ts": "c2835c920aba203c709e44686e55f43bb4d357ea59cfef3561c371b8ff115540",
-    "packages/session-query/session-log-export/src/markdown.ts": "df31523d62cd8a9d43602d586d1758fbc870a98302f008bdecdea258065d4841"
+    "packages/session-query/session-log-export/src/markdown.ts": "df31523d62cd8a9d43602d586d1758fbc870a98302f008bdecdea258065d4841",
+    "packages/session/session-title/src/normalize.ts": "97ed4df405f793a9b7155d723b2ccaa77b57884a27965dc6376efb6cde25e080"
   }
 }
