@@ -281,6 +281,8 @@ end
 
 """Map text-safe context into native Messages; rich blocks and native tool calls need an adapter."""
 function timeline_native_message(message::AbstractDict, source_id::AbstractString, original::AbstractDict=message)
+    inline = timeline_inline_native_message(message, source_id, original)
+    isnothing(inline) || return inline
     native = get(original, "jf2", nothing)
     if native isa AbstractDict && get(native, "format", nothing) == "JuliaForever2.message.v1"
         native_role, native_kind = get(native, "role", nothing), get(native, "kind", nothing)
@@ -347,6 +349,9 @@ end
 """Archive native roles/kinds separately from Pi roles, without inventing tool call identities."""
 function timeline_archive_message(message::Message; timestamp=floor(Int, time() * 1000),
         provider_message=nothing, provider=nothing, model=nothing, api=nothing)
+    if !isnothing(message_inline_content(message))
+        return timeline_archive_inline_message(message; timestamp, provider_message, provider, model, api)
+    end
     if message.metadata isa TimelineMessageMetadata
         previous = message.metadata
         if get(previous.projected, "role", nothing) in ("branchSummary", "compactionSummary")

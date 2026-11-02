@@ -8,6 +8,7 @@ export Answer, ActionDecision, RunJulia, Failure
 
 public respond, execute!, initialize_executor!, fork_executor, close_executor!, JuliaExecutor
 public PendingInput, PendingInputs, queue_input!, set_input_queue_mode!, pending_input_snapshot, peek_pending_inputs, clear_pending_inputs!, submit_queued_turn!
+public InlineText, InlineImage, InlineContentMetadata, InlineContentFailure, inline_image, inline_message, message_inline_content, native_message_content
 public ModelImagePolicy, ModelImagePolicyFailure, model_image_policy, with_model_image_policy, project_model_images, model_image_payload
 public response_reply, response_usage, emit!, cancelled, remaining_time, cancellation_event
 public register_cancellation!, unregister_cancellation!
@@ -64,6 +65,7 @@ public UpdateCheck, installation_root, check_for_updates, update_available, appl
 include("files/search_tool.jl")
 include("kernel.jl")
 include("agent.jl")
+include("core/inline_content.jl")
 include("core/plugins.jl")
 include("core/skills.jl")
 include("core/prompt_templates.jl")
@@ -96,10 +98,12 @@ include("runtime/backends.jl")
 include("core/profile_patches.jl")
 include("auth.jl")
 include("providers.jl")
+include("providers/inline_content_wire.jl")
 include("application/updates.jl")
 include("application/model_configuration.jl")
 include("application/provider_warning_facts.jl")
 include("core/session_context.jl")
+include("core/inline_content_archive.jl")
 include("core/user_shell_records.jl")
 include("core/session_display.jl")
 include("core/session_statistics.jl")
@@ -108,6 +112,7 @@ include("core/release_changelog.jl")
 include("core/startup_release_state.jl")
 include("core/bug_report_bundle.jl")
 include("core/compaction.jl")
+include("core/inline_content_compaction.jl")
 include("application/presentation.jl")
 
 """Create a session retaining the currently active plugin composition."""

@@ -88,7 +88,7 @@ function session_tool_range(args)
     end
 end
 
-function session_tool_read_header(args::AbstractDict,registry::SessionBuiltinToolRenderers,expanded::Bool)
+function session_tool_read_header(args::AbstractDict,registry::SessionBuiltinToolRenderers,expanded::Bool;expand_key::AbstractString="ctrl+o")
     raw=get(args,"file_path",nothing)
     path=session_tool_arg(isnothing(raw) ? get(args,"path",nothing) : raw)
     spans=Tachikoma.Span[]
@@ -118,7 +118,7 @@ function session_tool_read_header(args::AbstractDict,registry::SessionBuiltinToo
     end
     range=session_tool_range(args)
     !isempty(range)&&push!(spans,session_tool_span(range,:warning))
-    !isempty(classification)&&push!(spans,session_tool_span(" (ctrl+o to expand)",:dim))
+    !isempty(classification)&&push!(spans,session_tool_span(" ("*expand_key*" to expand)",:dim))
     spans
 end
 
@@ -155,8 +155,8 @@ function session_tool_read_warning(truncation)::String
         "[Truncated: $(get(truncation,"outputLines","?")) lines shown ("*session_tool_size(get(truncation,"maxBytes",51200))*" limit)]"
     end
 end
-function session_tool_hint(count,label)
-    [session_tool_span("... ($(count) $(label),",:muted),session_tool_span(" "),session_tool_span("ctrl+o",:dim),session_tool_span(" to expand",:muted),session_tool_span(")",:muted)]
+function session_tool_hint(count,label;expand_key::AbstractString="ctrl+o")
+    [session_tool_span("... ($(count) $(label),",:muted),session_tool_span(" "),session_tool_span(expand_key,:dim),session_tool_span(" to expand",:muted),session_tool_span(")",:muted)]
 end
 function session_tool_read(tool,width,state,registry)
     result=tool.result
@@ -164,7 +164,7 @@ function session_tool_read(tool,width,state,registry)
     failure=!isnothing(result)&&get(result,"isError",false)===true
     bg=session_tool_bg(isnothing(result) ? :pending : failure ? :error : :success)
     rows=SessionDisplayRows([session_display_blank(width),session_display_blank(width,bg)])
-    append!(rows,session_tool_rows(session_tool_read_header(session_tool_args(tool),registry,expanded),width,state,bg))
+    append!(rows,session_tool_rows(session_tool_read_header(session_tool_args(tool),registry,expanded;expand_key=state.expand_key),width,state,bg))
     if !isnothing(result)&&(expanded||failure)
         args=session_tool_args(tool)
         path=session_tool_arg(get(args,"file_path",get(args,"path",nothing)))
@@ -191,7 +191,7 @@ function session_tool_read(tool,width,state,registry)
         end
         if count<length(output)
             session_tool_restyle_edge!(last(rows),:last,session_display_style(:muted;bg))
-            hintrows=session_tool_rows(session_tool_hint(length(output)-count,"more lines"),width,state,bg)
+            hintrows=session_tool_rows(session_tool_hint(length(output)-count,"more lines";expand_key=state.expand_key),width,state,bg)
             append!(rows,hintrows)
         end
         truncation=session_tool_truncation(session_tool_details(tool))
@@ -263,9 +263,9 @@ function session_tool_shell(tool::JuliaForever2.TimelineDisplayTool,width::Int,s
             push!(rows,session_display_blank(width,bg))
             rendered=session_display_text_rows(output,width,state.output_padding;style=session_tool_style(:output),bg)
             if !session_display_expanded(state,tool.source_entry_id)&&length(rendered)>5
-                hint=session_tool_clip(session_tool_hint(length(rendered)-5,"earlier lines"),max(1,width-2state.output_padding))
+                hint=session_tool_clip(session_tool_hint(length(rendered)-5,"earlier lines";expand_key=state.expand_key),max(1,width-2state.output_padding))
                 hintrows=session_tool_rows(hint,width,state,bg)
-                if sum(textwidth(span.content) for span in session_tool_hint(length(rendered)-5,"earlier lines"))>max(1,width-2state.output_padding)
+                if sum(textwidth(span.content) for span in session_tool_hint(length(rendered)-5,"earlier lines";expand_key=state.expand_key))>max(1,width-2state.output_padding)
                     row=last(hintrows)
                     # The original truncator emits a full reset before its ellipsis.
                     capacity=max(1,width-2state.output_padding)

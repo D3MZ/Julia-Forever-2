@@ -1,9 +1,10 @@
 """Check upstream without blocking the terminal event loop."""
-function start_update_check!(app::App; root::AbstractString=installation_root())
+function start_update_check!(app::App; root::AbstractString=installation_root(), checker=check_for_updates)
     if !app.updates.checking && !app.operations.closing[]
+        Threads.atomic_add!(app.updates.manual_generation, UInt64(1))
         app.updates.checking = true
         app.status = "Checking for updates..."
-        task = Threads.@spawn check_for_updates(root)
+        task = Threads.@spawn checker(root)
         notify_completion!(app, :update_checked, task, task)
     end
     return nothing
@@ -23,6 +24,9 @@ end
 
 """Publish an update notification, or automatically install when opted in."""
 function update_checked!(app::App, check::UpdateCheck; installer=apply_update!)
+    if app.updates.checking
+        Threads.atomic_add!(app.updates.manual_generation, UInt64(1))
+    end
     app.updates.checking = false
     app.updates.latest = check
     if update_available(check)
@@ -44,8 +48,22 @@ function update_checked!(app::App, check::UpdateCheck; installer=apply_update!)
     return nothing
 end
 
+"""Reject queued background checks after permission or manual authority changes."""
+function update_checked!(app::App, result::BackgroundUpdateResult; installer=apply_update!)
+    state = app.updates
+    current = state.automatic && !app.operations.closing[] && !state.checking && !state.requested_install &&
+        state.permission_generation[] == result.permission && state.manual_generation[] == result.manual &&
+        state.background_sequence[] == result.sequence && state.accepted_background < result.sequence
+    if current
+        state.accepted_background = result.sequence
+        update_checked!(app, result.check; installer)
+    end
+    nothing
+end
+
 update_check_finished!(app::App, task::Task) = update_checked!(app, fetch(task))
 update_check_finished!(app::App, check::UpdateCheck) = update_checked!(app, check)
+update_check_finished!(app::App, result::BackgroundUpdateResult) = update_checked!(app, result)
 
 function update_installed!(app::App, task::Task)
     result = fetch(task)
@@ -70,6 +88,7 @@ end
 """Toggle whether updates are installed automatically after detection."""
 function toggle_auto_updates!(app::App; installer=apply_update!)
     app.updates.automatic = set_auto_updates!(app.settings.directory, !app.updates.automatic)
+    Threads.atomic_add!(app.updates.permission_generation, UInt64(1))
     app.updates.monitor_enabled[] = app.updates.automatic
     app.status = app.updates.automatic ? "Automatic updates enabled." : "Automatic updates disabled."
     if app.updates.automatic
@@ -100,8 +119,12 @@ function start_update_monitor!(app::App; root::AbstractString=installation_root(
             while !app.operations.closing[]
                 enabled = app.updates.monitor_enabled[]
                 if enabled
+                    permission = app.updates.permission_generation[]
+                    manual = app.updates.manual_generation[]
+                    sequence = Threads.atomic_add!(app.updates.background_sequence, UInt64(1)) + UInt64(1)
                     check = checker(root)
-                    app.updates.monitor_enabled[] && !app.operations.closing[] && enqueue_event!(app, TaskEvent(:update_checked, check))
+                    result = BackgroundUpdateResult(permission, manual, sequence, check)
+                    app.updates.monitor_enabled[] && !app.operations.closing[] && enqueue_event!(app, TaskEvent(:update_checked, result))
                 end
                 timedwait(() -> app.operations.closing[] || app.updates.monitor_enabled[] != enabled, interval_seconds; pollint=0.5)
             end

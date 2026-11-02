@@ -3,6 +3,7 @@ function prepare_terminal_session_preferences(app::App,session::Session)
     transcript=TranscriptState()
     previous=app.transcript.display
     transcript.display.expand_all=previous.expand_all
+    transcript.display.expand_key=previous.expand_key
     transcript.display.show_usage=previous.show_usage
     transcript.display.hidden_thinking_label=previous.hidden_thinking_label
     steering=menu_preference(app,"steering-mode","one-at-a-time")

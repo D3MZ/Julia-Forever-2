@@ -32,6 +32,7 @@ end
 RegisteredPrompt(name::String,description::String) = RegisteredPrompt(name,description,nothing,nothing,nothing)
 
 Base.@kwdef mutable struct MenusState
+    keybindings::NativeKeybindings=NativeKeybindings()
     project_trust::Union{Nothing,ProjectTrustState}=nothing
     viewport::Union{Nothing,TerminalViewport}=nothing
     bug_report::Union{Nothing,BugReportControl} = nothing
@@ -100,15 +101,29 @@ Base.@kwdef mutable struct SettingsState
 end
 SettingsState(directory::AbstractString, registry::ProviderRegistry) = SettingsState(; directory=String(directory), registry)
 
+"""Bind a background result to the permission and check generations that produced it."""
+struct BackgroundUpdateResult
+    permission::UInt64
+    manual::UInt64
+    sequence::UInt64
+    check::UpdateCheck
+end
+
 Base.@kwdef mutable struct UpdateState
     automatic::Bool = false
     monitor_enabled::Threads.Atomic{Bool} = Threads.Atomic{Bool}(automatic)
+    permission_generation::Threads.Atomic{UInt64} = Threads.Atomic{UInt64}(0)
+    manual_generation::Threads.Atomic{UInt64} = Threads.Atomic{UInt64}(0)
+    background_sequence::Threads.Atomic{UInt64} = Threads.Atomic{UInt64}(0)
+    accepted_background::UInt64 = UInt64(0)
     latest::Union{UpdateCheck,Nothing} = nothing
     checking::Bool = false
     installing::Bool = false
     requested_install::Bool = false
     monitor::Union{Task,Nothing} = nothing
 end
+UpdateState(automatic, monitor_enabled, latest, checking, installing, requested_install, monitor) =
+    UpdateState(; automatic, monitor_enabled, latest, checking, installing, requested_install, monitor)
 UpdateState(directory::AbstractString) = UpdateState(; automatic=auto_updates_enabled(directory))
 
 Base.@kwdef mutable struct TranscriptState

@@ -1,5 +1,11 @@
 import JSON
 
+"""Distinguish JSON numbers from booleans despite Julia's numeric Bool subtype."""
+metadata_number(::Any) = false
+metadata_number(::Real) = true
+metadata_number(::Bool) = false
+metadata_version(value, accepted::Tuple) = metadata_number(value) && value in accepted
+
 """Store resumable Julia session history and workspace without retaining runtime objects."""
 mutable struct SessionStore
     directory::String
@@ -15,7 +21,9 @@ end
 stored_session_version(message::Message)=2
 stored_session_message(message::Message)=Dict("role"=>String(message.role),"content"=>message.content,"kind"=>String(message.kind))
 function restored_session_message(entry::AbstractDict,version::Int)
-    if haskey(entry,"shell")
+    if haskey(entry,"inline")
+        restored_inline_session_message(entry,version)
+    elseif haskey(entry,"shell")
         restored_shell_message(entry,version)
     else
         Message(Symbol(entry["role"]),String(entry["content"]),Symbol(entry["kind"]))
@@ -87,7 +95,7 @@ end
 function validate(::Type{SessionRecord}, data, name::String)
     if get(data, "format", nothing) != "JuliaForever2.session"
         error("Invalid session format: $name")
-    elseif !(get(data, "version", nothing) in (1, 2, 3))
+    elseif !metadata_version(get(data, "version", nothing), (1, 2, 3, 4))
         error("Unsupported session version: $name")
     elseif get(data, "name", nothing) != name
         error("Session identity mismatch: $name")
@@ -167,7 +175,7 @@ function session_archived(store::SessionStore, name::Union{Symbol,AbstractString
     else
         data = JSON.parsefile(marker)
         if get(data, "format", nothing) != "JuliaForever2.session-archive" ||
-                get(data, "version", nothing) != 1 ||
+                !metadata_version(get(data, "version", nothing), (1,)) ||
                 get(data, "name", nothing) != String(name)
             error("Invalid session archive metadata: $name")
         end

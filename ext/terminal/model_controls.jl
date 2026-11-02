@@ -214,7 +214,7 @@ function model_controls_lines(app::App, width)
     elseif name == "scoped-models" && !isnothing(scoped)
         scoped_models_lines(scoped, width)
     elseif name == "thinking" && !isnothing(thinking)
-        thinking_lines(thinking, width)
+        thinking_lines(thinking,width;cycle_hint=native_keybinding_hint(app,"app.thinking.cycle"))
     else
         Vector{Tachikoma.Span}[]
     end
