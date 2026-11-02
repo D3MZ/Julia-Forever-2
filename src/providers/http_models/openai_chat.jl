@@ -3,6 +3,7 @@ struct OpenAIChatProtocol{C}
 end
 """Configure OpenAI Chat Completions without assigning provider-specific policy to the core."""
 OpenAIChatProtocol(; compatibility=Dict{String,Any}()) = OpenAIChatProtocol(compatibility)
+model_image_payload(::OpenAIChatProtocol,payload,policy::ModelImagePolicy=model_image_policy())=model_image_payload(Val(:openai_chat),payload,policy)
 model_endpoint(::OpenAIChatProtocol, endpoint, model) = endpoint * "/chat/completions"
 
 function openai_wire_message(message::Message)
@@ -27,7 +28,7 @@ function model_payload(protocol::OpenAIChatProtocol, model::ModelSpec, request::
         payload[get(compatibility, "maxTokensField", "max_completion_tokens")] = options["maxTokens"]
     end
     for (option, wire) in (("temperature", "temperature"), ("toolChoice", "tool_choice"),
-            ("tools", "tools"), ("reasoningEffort", "reasoning_effort"))
+            ("tools", "tools"), ("reasoningEffort", "reasoning_effort"), ("reasoning", "reasoning"))
         haskey(options, option) && (payload[wire] = deepcopy(options[option]))
     end
     isnothing(request.response_format) || (payload["response_format"] = request.response_format)
@@ -35,16 +36,35 @@ function model_payload(protocol::OpenAIChatProtocol, model::ModelSpec, request::
     return payload
 end
 
+"""Resolve documented cache-read aliases without interpreting an absent or null field as reported zero."""
+function openai_reported_cache(raw::AbstractDict)
+    cached=usage_detail(get(raw,"prompt_tokens_details",nothing),"cached_tokens")
+    cached=isnothing(cached) ? get(raw,"prompt_cache_hit_tokens",nothing) : cached
+    isnothing(cached) ? get(raw,"cached_tokens",nothing) : cached
+end
+
+"""Treat each OpenAI usage object as a snapshot while retaining absent counters as unknown."""
+function openai_metered_usage!(state::ModelStreamState,raw::AbstractDict)
+    details=get(raw,"prompt_tokens_details",nothing)
+    read=usage_tokens(openai_reported_cache(raw))
+    written=usage_tokens(usage_detail(details,"cache_write_tokens"))
+    prompt=usage_tokens(get(raw,"prompt_tokens",nothing))
+    state.metering=ModelUsageMeter(;input=isnothing(prompt) ? nothing : uncached_usage_tokens(prompt,read,written),
+        output=usage_tokens(get(raw,"completion_tokens",nothing)),cache_read=read,cache_write=written)
+    nothing
+end
+
 function openai_model_usage!(state::ModelStreamState, raw::AbstractDict)
+    openai_metered_usage!(state,raw)
     details = get(raw, "prompt_tokens_details", Dict{String,Any}())
-    cached = get(details, "cached_tokens", get(raw, "prompt_cache_hit_tokens", get(raw, "cached_tokens", 0)))
-    written = get(details, "cache_write_tokens", 0)
+    cached = something(openai_reported_cache(raw),0)
+    written = something(usage_detail(details,"cache_write_tokens"),0)
     usage = state.message["usage"]
-    usage["input"] = max(0, get(raw, "prompt_tokens", 0) - cached - written)
-    usage["output"] = get(raw, "completion_tokens", 0)
+    usage["input"] = max(0, something(get(raw,"prompt_tokens",nothing),0) - cached - written)
+    usage["output"] = something(get(raw,"completion_tokens",nothing),0)
     usage["cacheRead"] = cached
     usage["cacheWrite"] = written
-    usage["reasoning"] = get(get(raw, "completion_tokens_details", Dict{String,Any}()), "reasoning_tokens", 0)
+    usage["reasoning"] = something(usage_detail(get(raw,"completion_tokens_details",nothing),"reasoning_tokens"),0)
     usage["totalTokens"] = usage["input"] + usage["output"] + cached + written
     model_cost!(state)
     return nothing
@@ -61,68 +81,80 @@ function openai_tool_delta!(state::ModelStreamState, tool::AbstractDict)
         push!(state.message["content"], block)
         index = length(state.message["content"])
         state.blocks[key] = index
-        state.arguments[index] = ""
+        state.arguments[index] = IOBuffer()
         model_event!(state, "toolcall_start"; contentIndex=index - 1)
     end
     block = state.message["content"][index]
     isempty(block["id"]) && (block["id"] = get(tool, "id", ""))
     isempty(block["name"]) && (block["name"] = get(function_data, "name", ""))
     delta = get(function_data, "arguments", "")
-    state.arguments[index] *= delta
-    if possible_tool_object(state.arguments[index])
-        arguments = parse_json(state.arguments[index])
-        arguments isa AbstractDict && (block["arguments"] = arguments)
-    end
+    arguments = append_model_tool_arguments!(state, index, delta)
+    arguments isa AbstractDict && (block["arguments"] = arguments)
     model_event!(state, "toolcall_delta"; contentIndex=index - 1, delta)
     return nothing
 end
 
 function consume_model_event!(protocol::OpenAIChatProtocol, state::ModelStreamState, event::SSEEvent)
-    event.data == "[DONE]" && return nothing
-    chunk = parse_json(event.data)
-    if !(chunk isa AbstractDict)
-        state.error = "Invalid JSON in model event stream"
-        return nothing
+    if event.data != "[DONE]"
+        consume!(protocol, state, parse_json(event.data))
     end
+    nothing
+end
+
+consume!(::OpenAIChatProtocol, state::ModelStreamState, chunk) = (state.error = "Invalid JSON in model event stream"; nothing)
+
+function consume!(protocol::OpenAIChatProtocol, state::ModelStreamState, chunk::AbstractDict)
     start_model_stream!(state)
-    haskey(chunk, "id") && !haskey(state.message, "responseId") && (state.message["responseId"] = chunk["id"])
+    if haskey(chunk, "id") && !haskey(state.message, "responseId")
+        state.message["responseId"] = chunk["id"]
+    end
     if haskey(chunk, "model") && chunk["model"] != state.model.id && !isempty(chunk["model"])
         get!(state.message, "responseModel", chunk["model"])
     end
-    haskey(chunk, "usage") && openai_model_usage!(state, chunk["usage"])
+    if haskey(chunk, "usage")
+        openai_model_usage!(state, chunk["usage"])
+    end
     choices = get(chunk, "choices", Any[])
-    isempty(choices) && return nothing
-    choice = first(choices)
-    !haskey(chunk, "usage") && haskey(choice, "usage") && openai_model_usage!(state, choice["usage"])
+    if !isempty(choices)
+        consume!(protocol, state, chunk, first(choices))
+    end
+    nothing
+end
+
+function consume!(protocol::OpenAIChatProtocol, state::ModelStreamState, chunk, choice)
+    if !haskey(chunk, "usage") && haskey(choice, "usage")
+        openai_model_usage!(state, choice["usage"])
+    end
     reason = get(choice, "finish_reason", nothing)
     if !isnothing(reason) && reason != ""
         state.message["rawStopReason"] = reason
-        state.message["stopReason"] = get(Dict("stop" => "stop", "end" => "stop", "length" => "length",
-            "function_call" => "toolUse", "tool_calls" => "toolUse"), reason, "error")
-        state.message["stopReason"] == "error" && (state.error = "Provider finish_reason: $reason")
-    end
-    delta = get(choice, "delta", nothing)
-    delta isa AbstractDict || return nothing
-    for field in ("reasoning_content", "reasoning", "reasoning_text")
-        value = get(delta, field, nothing)
-        if value isa AbstractString && !isempty(value)
-            text_model_block!(state, "thinking", value; signature=field)
-            break
+        state.message["stopReason"] = get(Dict("stop" => "stop", "end" => "stop", "length" => "length", "function_call" => "toolUse", "tool_calls" => "toolUse"), reason, "error")
+        if state.message["stopReason"] == "error"
+            state.error = "Provider finish_reason: $reason"
         end
     end
-    text = get(delta, "content", nothing)
-    text isa AbstractString && text_model_block!(state, "text", text)
-    for tool in get(delta, "tool_calls", Any[])
-        openai_tool_delta!(state, tool)
-    end
-    return nothing
+    Base.append!(protocol, state, get(choice, "delta", nothing))
 end
 
+Base.append!(::OpenAIChatProtocol, state::ModelStreamState, delta) = nothing
+
+function Base.append!(::OpenAIChatProtocol, state::ModelStreamState, delta::AbstractDict)
+    fields = ("reasoning_content", "reasoning", "reasoning_text")
+    index = findfirst(field -> get(delta, field, nothing) isa AbstractString && !isempty(delta[field]), fields)
+    if !isnothing(index)
+        text_model_block!(state, "thinking", delta[fields[index]]; signature=fields[index])
+    end
+    text = get(delta, "content", nothing)
+    if text isa AbstractString
+        text_model_block!(state, "text", text)
+    end
+    foreach(tool -> openai_tool_delta!(state, tool), get(delta, "tool_calls", Any[]))
+    nothing
+end
 function finish_protocol_stream!(::OpenAIChatProtocol, state::ModelStreamState)
     finish_model_blocks!(state)
-    cancelled(state.context) && return nothing
-    if state.message["stopReason"] == "pending" && isempty(state.error)
+    if !cancelled(state.context) && state.message["stopReason"] == "pending" && isempty(state.error)
         state.error = "Stream ended without finish_reason"
     end
-    return nothing
+    nothing
 end

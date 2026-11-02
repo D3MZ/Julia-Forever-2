@@ -9,29 +9,27 @@ function runtime_notify! end
 """Finish a gracefully stopped backend; alternative runtimes may extend their own shutdown wait."""
 finish_runtime!(backend::AbstractRuntimeBackend; timeout=2.0) = close(backend)
 
-mutable struct JsonRpcRuntime{P} <: AbstractRuntimeBackend
+Base.@kwdef mutable struct JsonRpcRuntime{P} <: AbstractRuntimeBackend
     peer::P
     process::Base.Process
-    lock::ReentrantLock
-    closed::Bool
+    lock::ReentrantLock = ReentrantLock()
+    closed::Bool = false
 end
 
 """Launch a caller-selected executable with a bidirectional, framework-neutral JSON-RPC transport."""
 function start_runtime(command::Cmd; on_request=nothing, on_notification=nothing, stderr=Base.stderr)
     worker = Threads.@spawn open(pipeline(ignorestatus(command); stderr), "r+")
     wait(worker; throw=false)
-    if istaskfailed(worker)
-        return RpcResult(RpcError(nothing, JSONRPCTransport.task_failure_message(worker)))
-    end
-    process = fetch(worker)
-    peer = JsonRpcPeer(process, process; on_request, on_notification)
-    runtime = JsonRpcRuntime(peer, process, ReentrantLock(), false)
-    start!(peer)
-    return RpcResult(runtime)
+    istaskfailed(worker) ? RpcResult(RpcError(nothing, JSONRPCTransport.task_failure_message(worker))) : start!(JsonRpcRuntime(fetch(worker); on_request, on_notification))
 end
 
-runtime_request!(runtime::JsonRpcRuntime, method, params=Dict{String,Any}(); kwargs...) =
-    request!(runtime.peer, method, params; kwargs...)
+JsonRpcRuntime(process::Base.Process; on_request=nothing, on_notification=nothing) = JsonRpcRuntime(; peer=JsonRpcPeer(process, process; on_request, on_notification), process)
+
+function JSONRPCTransport.start!(runtime::JsonRpcRuntime)
+    start!(runtime.peer)
+    RpcResult(runtime)
+end
+runtime_request!(runtime::JsonRpcRuntime, method, params=Dict{String,Any}(); kwargs...) = request!(runtime.peer, method, params; kwargs...)
 runtime_notify!(runtime::JsonRpcRuntime, method, params=nothing) = notify!(runtime.peer, method, params)
 Base.isopen(runtime::JsonRpcRuntime) = !runtime.closed && isopen(runtime.peer)
 
@@ -57,10 +55,10 @@ function Base.close(runtime::JsonRpcRuntime)
     return nothing
 end
 
-mutable struct ProcessFeature
+Base.@kwdef mutable struct ProcessFeature
     process::Base.Process
-    lock::ReentrantLock
-    closed::Bool
+    lock::ReentrantLock = ReentrantLock()
+    closed::Bool = false
 end
 
 """Run a frontend or other process feature with caller-selected IO and an owned lifetime."""
@@ -68,8 +66,10 @@ function launch_feature(command::Cmd; stdin=devnull, stdout=Base.stdout, stderr=
     worker = Threads.@spawn run(pipeline(ignorestatus(command); stdin, stdout, stderr); wait=false)
     wait(worker; throw=false)
     return istaskfailed(worker) ? RpcResult(RpcError(nothing, JSONRPCTransport.task_failure_message(worker))) :
-        RpcResult(ProcessFeature(fetch(worker), ReentrantLock(), false))
+        RpcResult(ProcessFeature(fetch(worker)))
 end
+
+ProcessFeature(process::Base.Process) = ProcessFeature(; process)
 
 Base.isopen(feature::ProcessFeature) = !feature.closed && process_running(feature.process)
 Base.wait(feature::ProcessFeature) = (wait(feature.process); feature)
@@ -86,9 +86,7 @@ function Base.close(feature::ProcessFeature)
 end
 
 """Publish a replaceable JSON-RPC transport service for caller-selected processes."""
-runtime_transport_plugin(name=:jsonrpc_transport; service_name=:runtime_transport, factory=start_runtime) =
-    PluginSpec(name, context -> provide!(context, service_name, factory); provides=[service_name])
+runtime_transport_plugin(name=:jsonrpc_transport; service_name=:runtime_transport, factory=start_runtime) = PluginSpec(name, context -> provide!(context, service_name, factory); provides=[service_name])
 
 """Publish generic process lifetime management independently of any application protocol."""
-process_launcher_plugin(name=:process_launcher; service_name=:process_launcher, launcher=launch_feature) =
-    PluginSpec(name, context -> provide!(context, service_name, launcher); provides=[service_name])
+process_launcher_plugin(name=:process_launcher; service_name=:process_launcher, launcher=launch_feature) = PluginSpec(name, context -> provide!(context, service_name, launcher); provides=[service_name])

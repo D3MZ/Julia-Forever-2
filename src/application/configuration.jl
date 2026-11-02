@@ -1,6 +1,6 @@
 function configured_provider(dir::AbstractString=config_dir(); registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
     path = joinpath(dir, "provider")
-    return provider_from_name(isfile(path) ? strip(read(path, String)) : "demo"; dir, registry)
+    return isfile(path) ? provider_from_name(strip(read(path, String)); dir, registry) : nothing
 end
 
 function save_provider!(dir::AbstractString, provider::Symbol)
@@ -14,36 +14,36 @@ function save_provider!(dir::AbstractString, provider::Symbol)
     return nothing
 end
 
-function default_kernel(provider=DemoProvider())
-    kernel = Kernel()
-    install!(kernel, ComponentSpec(:provider, provider))
-    install!(kernel, ComponentSpec(:executor, default_evaluate!))
-    install!(kernel, ComponentSpec(:loop, default_loop!))
-    return kernel
+Kernel(provider) = Kernel(AgentDefinition(provider; protocol=nothing))
+default_kernel(provider=DemoProvider()) = Kernel(provider)
+"""Return a typed identity while the selected provider generation remains retained."""
+function provider_selection_snapshot(kernel::Kernel)::ProviderIdentity
+    identity = with_component(kernel, :provider) do provider
+        Base.invokelatest(provider_identity, provider)
+    end
+    provider_selection_identity(identity)
 end
 
-"""Return display information while the selected provider generation remains retained."""
-function provider_selection_snapshot(kernel::Kernel)
-    snapshot = with_component(kernel, :provider) do provider
-        (id=Base.invokelatest(provider_id, provider),
-            name=String(Base.invokelatest(provider_name, provider)),
-            detail=String(Base.invokelatest(provider_detail, provider)))
-    end
-    return isnothing(snapshot) ? (id=:none, name="No provider", detail="No provider") : snapshot
-end
+provider_selection_identity(identity::ProviderIdentity) = identity
+provider_selection_identity(::Nothing) = ProviderIdentity(; id=:none, name="No provider", detail="No provider")
+provider_selection_identity(identity) = error("Provider identity must return ProviderIdentity or nothing")
 
 """Read provider availability for settings without coupling views to credential storage."""
-function provider_settings_snapshot(dir::AbstractString=config_dir(); registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
-    return [(descriptor=descriptor, status=String(Base.invokelatest(descriptor.status, dir)))
-        for descriptor in provider_descriptors(registry)]
-end
+provider_settings_snapshot(dir::AbstractString=config_dir(); registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) = [(descriptor=descriptor, status=String(Base.invokelatest(descriptor.status, dir))) for descriptor in provider_descriptors(registry)]
 
 """Select and persist a provider only after its component is installed successfully."""
-function select_provider!(kernel::Kernel, id::Symbol; dir::AbstractString=config_dir(),
-        registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
-    provider = provider_from_name(id; dir, registry)
-    isnothing(provider) && return (ok=false, reason="Provider is unavailable.")
+select_provider!(kernel::Kernel, id::Symbol; dir::AbstractString=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) = select!(kernel, provider_from_name(id; dir, registry), id, dir)
+"""Select an available provider model without changing the surrounding session history."""
+select_provider_model!(kernel::Kernel, id::Symbol, model::AbstractString;
+        dir::AbstractString=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) =
+    select!(kernel, provider_from_name(id; dir, registry, model), id, dir)
+
+select!(kernel::Kernel, ::Nothing, id::Symbol, directory) = (ok=false, reason="Provider is unavailable.")
+
+function select!(kernel::Kernel, provider, id::Symbol, directory)
     result = install!(kernel, ComponentSpec(:provider, provider))
-    result.ok && save_provider!(dir, id)
-    return result
+    if result.ok
+        save_provider!(directory, id)
+    end
+    result
 end

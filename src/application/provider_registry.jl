@@ -1,18 +1,17 @@
-struct ProviderDescriptor{F,A,S}
+Base.@kwdef struct ProviderDescriptor{F,A,S}
     id::Symbol
     label::String
     create::F
-    auth::A
-    status::S
+    auth::A = nothing
+    status::S = Returns("")
 end
 ProviderDescriptor(id::Symbol, label::AbstractString, create; auth=nothing, status=Returns("")) =
-    ProviderDescriptor(id, String(label), create, auth, status)
+    ProviderDescriptor(; id, label=String(label), create, auth, status)
 
-struct ProviderRegistry
-    lock::ReentrantLock
-    descriptors::Vector{ProviderDescriptor}
+Base.@kwdef struct ProviderRegistry
+    lock::ReentrantLock = ReentrantLock()
+    descriptors::Vector{ProviderDescriptor} = ProviderDescriptor[]
 end
-ProviderRegistry() = ProviderRegistry(ReentrantLock(), ProviderDescriptor[])
 const DEFAULT_PROVIDER_REGISTRY = ProviderRegistry()
 const PROVIDER_REGISTRY_LOCK = DEFAULT_PROVIDER_REGISTRY.lock
 const PROVIDER_REGISTRY = DEFAULT_PROVIDER_REGISTRY.descriptors
@@ -39,8 +38,7 @@ function unregister_provider!(registry::ProviderRegistry, id::Symbol)
 end
 unregister_provider!(id::Symbol) = unregister_provider!(DEFAULT_PROVIDER_REGISTRY, id)
 
-provider_descriptors(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) =
-    lock(() -> copy(registry.descriptors), registry.lock)
+provider_descriptors(registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY) = lock(() -> copy(registry.descriptors), registry.lock)
 
 function provider_descriptor(registry::ProviderRegistry, id::Symbol)
     lock(registry.lock) do

@@ -1,0 +1,9 @@
+[[fd]]
+arch = "x86_64"
+os = "linux"
+git-tree-sha1 = "e87d491cb93b8ed7853a30df678380ba31682a28"
+lazy = false
+
+    [[fd.download]]
+    url = "https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-unknown-linux-musl.tar.gz"
+    sha256 = "761c72dc8e120d85b22292063be8a796e2eeb20eb3e4f38b8fa2343ccf3514a7"

@@ -10,88 +10,292 @@ end
 
 function session_file(store::SessionStore, name::Union{Symbol,AbstractString})
     label = String(name)::String
-    if isempty(label) || label in (".", "..") || any(character -> character in ('/', '\\', '\0'), label)
-        return nothing
+    validname(label) ? joinpath(store.directory, string(label, ".json")) : nothing
+end
+stored_session_version(message::Message)=2
+stored_session_message(message::Message)=Dict("role"=>String(message.role),"content"=>message.content,"kind"=>String(message.kind))
+function restored_session_message(entry::AbstractDict,version::Int)
+    if haskey(entry,"shell")
+        restored_shell_message(entry,version)
+    else
+        Message(Symbol(entry["role"]),String(entry["content"]),Symbol(entry["kind"]))
     end
-    return joinpath(store.directory, string(label, ".json"))
 end
 
 function session_record(session::Session)
     return lock(session.runtime.execution_lock) do
-        messages = [Dict("role" => String(message.role), "content" => message.content,
-            "kind" => String(message.kind)) for message in history_snapshot(session).messages]
-        return (messages=messages, directory=working_directory(session), lineage=session_lineage(session))
+        snapshot = lock(session.conversation.lock) do
+            (messages=copy(session.messages), compaction=session.conversation.compaction)
+        end
+        messages = stored_session_message.(snapshot.messages)
+        version=maximum(stored_session_version,snapshot.messages;init=2)
+        return (messages=messages, version, compaction=snapshot.compaction,
+            directory=working_directory(session), lineage=session_lineage(session))
     end
 end
 
 """Atomically persist a session's messages and workspace, excluding transient execution metadata."""
-function save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session)
-    path = session_file(store, name)
-    isnothing(path) && return (ok=false, reason="Invalid session name")
+save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session) =
+    persist!(store, name, session, session_file(store, name))
+persist!(store::SessionStore, name, session::Session, ::Nothing) = (ok=false, reason="Invalid session name")
+
+function persist!(store::SessionStore, name, session::Session, path::AbstractString)
     record = session_record(session)
     lineage = record.lineage
-    data = Dict("format" => "JuliaForever2.session", "version" => 2, "name" => String(name),
+    data = Dict("format" => "JuliaForever2.session", "version" => record.version, "name" => String(name),
         "working_directory" => record.directory, "messages" => record.messages,
         "lineage" => Dict("id" => string(lineage.id),
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
-    serialized = JSON.json(data) * "\n"
-    lock(store.lock) do
-        mkpath(store.directory; mode=0o700)
-        mktemp(store.directory) do temporary, output
-            chmod(temporary, 0o600)
-            write(output, serialized)
-            close(output)
-            Base.Filesystem.rename(temporary, path)
-        end
-        store.revision += UInt64(1)
+    if !isnothing(record.compaction)
+        data["compaction"] = saved_compaction(record.compaction)
     end
-    return (ok=true, reason="")
+    serialized = JSON.json(data) * "\n"
+    return lock(store.lock) do
+        if session_archived(store, name)
+            (ok=false, reason="Session is archived: $name")
+        else
+            mkpath(store.directory; mode=0o700)
+            mktemp(store.directory) do temporary, output
+                chmod(temporary, 0o600)
+                write(output, serialized)
+                close(output)
+                Base.Filesystem.rename(temporary, path)
+            end
+            store.revision += UInt64(1)
+            (ok=true, reason="")
+        end
+    end
 end
 
 function saved_session_record(store::SessionStore, name::Union{Symbol,AbstractString})
     path = session_file(store, name)
-    (isnothing(path) || !isfile(path)) && return nothing
-    data = JSON.parsefile(path)
-    get(data, "format", nothing) == "JuliaForever2.session" || error("Invalid session format: $name")
-    version = get(data, "version", nothing)
-    version in (1, 2) || error("Unsupported session version: $name")
-    get(data, "name", nothing) == String(name) || error("Session identity mismatch: $name")
-    entries = data["messages"]
-    entries isa AbstractVector || error("Invalid session messages: $name")
-    messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"]))
-        for entry in entries]
-    lineage = if version == 1
-        id = uuid5(UUID("075b3f8b-fd8a-400f-9aeb-7c9970270ab2"), joinpath(store.directory, String(name)))
-        (id=id, parent_id=nothing, root_id=id)
-    else
-        identity = data["lineage"]
-        id = UUID(String(identity["id"]))
-        ancestor = get(identity, "parent_id", nothing)
-        (id=id, parent_id=isnothing(ancestor) ? nothing : UUID(String(ancestor)),
-            root_id=UUID(String(identity["root_id"])))
-    end
-    return (messages=messages, directory=String(data["working_directory"]), lineage)
+    !isnothing(path) && isfile(path) ? session_record(SessionRecord(JSON.parsefile(path), store, String(name))) : nothing
 end
 
-"""Read a saved session's persistent identity without restoring its execution environment."""
+struct SessionRecord{D}
+    data::D
+    directory::String
+    name::String
+
+    function SessionRecord(data::D, store::SessionStore, name::String) where {D}
+        validate(SessionRecord, data, name)
+        new{D}(data, store.directory, name)
+    end
+end
+
+function validate(::Type{SessionRecord}, data, name::String)
+    if get(data, "format", nothing) != "JuliaForever2.session"
+        error("Invalid session format: $name")
+    elseif !(get(data, "version", nothing) in (1, 2, 3))
+        error("Unsupported session version: $name")
+    elseif get(data, "name", nothing) != name
+        error("Session identity mismatch: $name")
+    elseif !(data["messages"] isa AbstractVector)
+        error("Invalid session messages: $name")
+    end
+    nothing
+end
+
+saved_compaction(::Nothing) = nothing
+saved_compaction(entry::CompactionEntry) =
+    Dict("summary" => entry.summary, "first_kept" => entry.first_kept)
+
+restored_compaction(::Nothing, messages) = nothing
+function restored_compaction(data::AbstractDict, messages)
+    summary = get(data, "summary", nothing)
+    first_kept = get(data, "first_kept", nothing)
+    if !(summary isa AbstractString && !isempty(strip(summary)) &&
+            first_kept isa Integer && !(first_kept isa Bool) &&
+            1 <= first_kept <= length(messages))
+        error("Invalid saved compaction entry")
+    end
+    return CompactionEntry(String(summary), Int(first_kept))
+end
+restored_compaction(data, messages) = error("Invalid saved compaction entry")
+
+function session_record(record::SessionRecord)
+    messages = Message[restored_session_message(entry,Int(record.data["version"])) for entry in record.data["messages"]]
+    compaction = restored_compaction(get(record.data, "compaction", nothing), messages)
+    (; messages, compaction, directory=String(record.data["working_directory"]),
+        lineage=session_lineage(record))
+end
+
+function session_lineage(record::SessionRecord)
+    if record.data["version"] == 1
+        id = uuid5(UUID("075b3f8b-fd8a-400f-9aeb-7c9970270ab2"), joinpath(record.directory, record.name))
+        (id=id, parent_id=nothing, root_id=id)
+    else
+        identity = record.data["lineage"]
+        ancestor = get(identity, "parent_id", nothing)
+        (id=UUID(String(identity["id"])), parent_id=isnothing(ancestor) ? nothing : UUID(String(ancestor)), root_id=UUID(String(identity["root_id"])))
+    end
+end
+function validated_session_lineage(record::SessionRecord)
+    # JSON strings already have the required representation; validate their
+    # shape without constructing a Symbol for every persisted message.
+    for entry in record.data["messages"]
+        role = entry["role"]
+        role isa AbstractString || Symbol(role)
+        content = entry["content"]
+        content isa String || String(content)
+        kind = entry["kind"]
+        kind isa AbstractString || Symbol(kind)
+    end
+    String(record.data["working_directory"])
+    session_lineage(record)
+end
+
+"""Locate an archive marker outside the saved transcript, with validated names."""
+function session_archive_file(store::SessionStore, name::Union{Symbol,AbstractString})
+    label = String(name)::String
+    validname(label) ? joinpath(store.directory, ".session-archives", label * ".json") : nothing
+end
+
+"""Stores without optional archive support keep their existing session operations."""
+session_archived(store, name) = false
+
+"""An archive marker applies only to the matching durable session identity."""
+function session_archived(store::SessionStore, name::Union{Symbol,AbstractString})
+    marker = session_archive_file(store, name)
+    if isnothing(marker)
+        false
+    elseif islink(marker) || islink(dirname(marker))
+        error("Refusing symbolic-link session archive metadata: $name")
+    elseif !isfile(marker)
+        false
+    else
+        data = JSON.parsefile(marker)
+        if get(data, "format", nothing) != "JuliaForever2.session-archive" ||
+                get(data, "version", nothing) != 1 ||
+                get(data, "name", nothing) != String(name)
+            error("Invalid session archive metadata: $name")
+        end
+        saved = session_file(store, name)
+        if !is_saved_profile_file(saved)
+            false
+        else
+            record = SessionRecord(JSON.parsefile(saved), store, String(name))
+            get(data, "id", nothing) == string(session_lineage(record).id)
+        end
+    end
+end
+
+"""Unsupported optional archive operations return a typed status, not a MethodError."""
+archive_session!(store, name) = (ok=false, reason="Session archive service is not configured")
+unarchive_session!(store, name) = (ok=false, reason="Session archive service is not configured")
+
+"""Archive a saved session without moving its history, workspace or lineage."""
+function archive_session!(store::SessionStore, name::Union{Symbol,AbstractString})
+    marker = session_archive_file(store, name)
+    if isnothing(marker)
+        (ok=false, reason="Invalid session name")
+    else
+        lock(store.lock) do
+            saved = session_file(store, name)
+            if !is_saved_profile_file(saved)
+                (ok=false, reason="Session was not saved: $name")
+            elseif session_archived(store, name)
+                (ok=true, reason="")
+            else
+                record = SessionRecord(JSON.parsefile(saved), store, String(name))
+                directory = dirname(marker)
+                islink(directory) && error("Refusing symbolic-link session archive directory")
+                mkpath(directory; mode=0o700)
+                unpin_session!(store, name)
+                data = Dict("format" => "JuliaForever2.session-archive", "version" => 1,
+                    "name" => String(name), "id" => string(session_lineage(record).id))
+                mktemp(directory) do temporary, output
+                    chmod(temporary, 0o600)
+                    write(output, JSON.json(data) * "\n")
+                    close(output)
+                    Base.Filesystem.rename(temporary, marker)
+                end
+                store.revision += UInt64(1)
+                (ok=true, reason="")
+            end
+        end
+    end
+end
+
+"""Unarchive without rewriting the saved transcript; repeated requests are safe."""
+function unarchive_session!(store::SessionStore, name::Union{Symbol,AbstractString})
+    marker = session_archive_file(store, name)
+    if isnothing(marker)
+        (ok=false, reason="Invalid session name")
+    else
+        lock(store.lock) do
+            if islink(dirname(marker)) || islink(marker)
+                (ok=false, reason="Unsafe session archive marker")
+            elseif isfile(marker)
+                rm(marker)
+                store.revision += UInt64(1)
+                (ok=true, reason="")
+            else
+                (ok=true, reason="")
+            end
+        end
+    end
+end
+
+"""Inspect a saved session without constructing an agent, executor or Julia Message objects."""
+function session_summary(store::SessionStore, name::AbstractString)
+    path = session_file(store, name)
+    if !is_saved_profile_file(path)
+        nothing
+    else
+        record = SessionRecord(JSON.parsefile(path), store, String(name))
+        lineage = session_lineage(record)
+        Dict{String,Any}(
+            "session" => String(name), "id" => string(lineage.id),
+            "parent" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
+            "root" => string(lineage.root_id),
+            "workingDirectory" => String(record.data["working_directory"]),
+            "messages" => length(record.data["messages"]))
+    end
+end
+
+"""Enumerate saved session summaries in stable name order without resuming sessions."""
+function session_summaries(store::SessionStore; archived::Union{Nothing,Bool}=false)
+    lock(store.lock) do
+        summaries = Dict{String,Any}[]
+        for name in session_names(store; archived)
+            summary = session_summary(store, name)
+            isnothing(summary) || push!(summaries, summary)
+        end
+        summaries
+    end
+end
+
+"""Read persisted ancestry without materializing the session's message history."""
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
-    record = saved_session_record(store, name)
-    return isnothing(record) ? nothing : record.lineage
+    path = session_file(store, name)
+    isnothing(path) || !isfile(path) ? nothing :
+        validated_session_lineage(SessionRecord(JSON.parsefile(path), store, String(name)))
 end
 
 """Return stored descendants of a session identity in deterministic session-name order."""
 function session_descendants(store::SessionStore, ancestor::UUID; include_self=false)
     relationships = Dict{UUID,Tuple{String,Union{Nothing,UUID}}}()
-    for name in session_names(store)
+    for name in session_names(store; archived=nothing)
         lineage = session_lineage(store, name)
-        isnothing(lineage) || (relationships[lineage.id] = (name, lineage.parent_id))
+        if !isnothing(lineage)
+            relationships[lineage.id] = (name, lineage.parent_id)
+        end
     end
     reachable = Set{UUID}([ancestor])
+    names = descendants!(relationships, reachable)
+    if include_self && haskey(relationships, ancestor)
+        push!(names, relationships[ancestor][1])
+    end
+    sort!(names)
+end
+
+function descendants!(relationships, reachable)
     names = String[]
     changed = true
     passes = 0
-    while changed
+    while changed && passes < 8
         changed = false
         for (id, (name, parent)) in relationships
             if !(id in reachable) && !isnothing(parent) && parent in reachable
@@ -101,39 +305,35 @@ function session_descendants(store::SessionStore, ancestor::UUID; include_self=f
             end
         end
         passes += 1
-        if changed && passes == 8
-            # Long parent chains otherwise require repeatedly scanning every session.
-            # Keep the inexpensive scan for the common shallow lineage trees.
-            children = Dict{UUID,Vector{Tuple{UUID,String}}}()
-            for (id, (name, parent)) in relationships
-                isnothing(parent) && continue
-                push!(get!(Vector{Tuple{UUID,String}}, children, parent), (id, name))
-            end
-            queue = collect(reachable)
-            next = 1
-            while next <= length(queue)
-                parent = queue[next]
-                next += 1
-                descendants = get(children, parent, nothing)
-                isnothing(descendants) && continue
-                for (id, name) in descendants
-                    id in reachable && continue
-                    push!(reachable, id)
-                    push!(queue, id)
-                    push!(names, name)
-                end
-            end
-            break
-        end
     end
-    if include_self && haskey(relationships, ancestor)
-        push!(names, relationships[ancestor][1])
+    if changed
+        descend!(names, reachable, relationships)
     end
-    return sort!(names)
+    names
 end
 
-session_descendants(store::SessionStore, ancestor::Session; kwargs...) =
-    session_descendants(store, session_lineage(ancestor).id; kwargs...)
+function descend!(names, reachable, relationships)
+    children = Dict{UUID,Vector{Tuple{UUID,String}}}()
+    for (id, (name, parent)) in relationships
+        if !isnothing(parent)
+            push!(get!(Vector{Tuple{UUID,String}}, children, parent), (id, name))
+        end
+    end
+    queue = collect(reachable)
+    index = 1
+    while index <= length(queue)
+        for (id, name) in get(children, queue[index], ())
+            if !(id in reachable)
+                push!(reachable, id)
+                push!(queue, id)
+                push!(names, name)
+            end
+        end
+        index += 1
+    end
+    names
+end
+session_descendants(store::SessionStore, ancestor::Session; kwargs...) = session_descendants(store, session_lineage(ancestor).id; kwargs...)
 
 function session_descendants(store::SessionStore, name::Union{Symbol,AbstractString}; kwargs...)
     lineage = session_lineage(store, name)
@@ -141,14 +341,15 @@ function session_descendants(store::SessionStore, name::Union{Symbol,AbstractStr
 end
 
 """Resume a saved session using a caller-owned Julia kernel or independent agent definition."""
-function load_session(store::SessionStore, name::Union{Symbol,AbstractString},
-        target::Union{Kernel,AgentDefinition}; kwargs...)
-    record = saved_session_record(store, name)
-    isnothing(record) && return nothing
-    return Session(target; messages=record.messages, working_directory=record.directory,
-        id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
+function load_session(store::SessionStore, name::Union{Symbol,AbstractString}, target::Union{Kernel,AgentDefinition}; kwargs...)
+    record = session_archived(store, name) ? nothing : saved_session_record(store, name)
+    isnothing(record) ? nothing : Session(target, record; kwargs...)
 end
 
+Session(target::Union{Kernel,AgentDefinition}, record::NamedTuple; kwargs...) =
+    Session(target; messages=record.messages, compaction_entry=record.compaction,
+        working_directory=record.directory, id=record.lineage.id,
+        parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
 """Publish replaceable native session persistence as an ordinary Julia plugin service."""
 function session_store_plugin(directory; name=:session_store, service_name=:session_store, factory=SessionStore)
     contract = Symbol(service_name)

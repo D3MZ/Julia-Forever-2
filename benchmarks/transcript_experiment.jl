@@ -140,8 +140,7 @@ function profile_case(f, name)
     Profile.Allocs.@profile sample_rate=1.0 f()
     allocations = Profile.Allocs.fetch().allocs
     sites = Dict{String,Tuple{Int,Int}}()
-    for allocation in allocations
-        isempty(allocation.stacktrace) && continue
+    for allocation in Iterators.filter(allocation -> !isempty(allocation.stacktrace), allocations)
         frame = first(allocation.stacktrace)
         for candidate in allocation.stacktrace
             if occursin("ext/terminal/transcript.jl", string(candidate.file))

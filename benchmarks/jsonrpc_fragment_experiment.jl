@@ -119,8 +119,7 @@ function profile_case(f, label)
     Profile.Allocs.clear()
     Profile.Allocs.@profile sample_rate=1.0 f()
     sites = Dict{String,Tuple{Int,Int}}()
-    for allocation in Profile.Allocs.fetch().allocs
-        isempty(allocation.stacktrace) && continue
+    for allocation in Iterators.filter(allocation -> !isempty(allocation.stacktrace), Profile.Allocs.fetch().allocs)
         frame = first(allocation.stacktrace)
         for location in allocation.stacktrace
             if occursin("jsonrpc.jl", string(location.file))

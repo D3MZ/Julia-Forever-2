@@ -21,8 +21,6 @@ function execute_julia!(executor::JuliaExecutor, code::AbstractString, filename:
     return ExecutionResult(true, output * rendered, value)
 end
 
-execute!(executor::JuliaExecutor, code::AbstractString, ::ExecutionContext) =
-    execute_julia!(executor, code, "agent-code.jl")
+execute!(executor::JuliaExecutor, code::AbstractString, ::ExecutionContext) = execute_julia!(executor, code, "agent-code.jl")
 
-execute!(executor::JuliaExecutor, action::RunJulia, context::ExecutionContext) =
-    execute!(executor, action.source, context)
+execute!(executor::JuliaExecutor, action::RunJulia, context::ExecutionContext) = execute!(executor, action.source, context)

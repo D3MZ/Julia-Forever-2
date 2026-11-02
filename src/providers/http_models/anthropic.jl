@@ -1,4 +1,5 @@
 struct AnthropicMessagesProtocol end
+model_image_payload(::AnthropicMessagesProtocol,payload,policy::ModelImagePolicy=model_image_policy())=model_image_payload(Val(:anthropic),payload,policy)
 model_endpoint(::AnthropicMessagesProtocol, endpoint, model) = endpoint * "/v1/messages?beta=true"
 model_protocol_headers(::AnthropicMessagesProtocol) = ["anthropic-version" => "2023-06-01"]
 
@@ -8,24 +9,49 @@ function anthropic_wire_message(message::Message)
     return Dict{String,Any}("role" => role,
         "content" => role == "assistant" ? [Dict("type" => "text", "text" => content)] : content)
 end
-anthropic_wire_message(message::AbstractDict) = deepcopy(message)
+function anthropic_wire_message(message::AbstractDict)
+    wire=Dict{String,Any}("role"=>message["role"],"content"=>deepcopy(message["content"]))
+    haskey(message,"output_config") && (wire["output_config"]=deepcopy(message["output_config"]))
+    wire
+end
+
+anthropic_sendable(message) = true
+anthropic_sendable(message::Message) = !isempty(strip(wire_content(message)))
 
 function model_payload(::AnthropicMessagesProtocol, model::ModelSpec, request::ModelRequest, options)
-    messages = [anthropic_wire_message(message) for message in request.messages
-        if !(message isa Message) || !isempty(strip(wire_content(message)))]
+    messages = anthropic_context_messages(model,request,options)
     payload = Dict{String,Any}("model" => model.id, "messages" => messages,
         "max_tokens" => get(options, "maxTokens", get(model_metadata(model), "maxTokens", 4096)), "stream" => true)
     if !isempty(request.instructions)
         payload["system"] = [Dict("type" => "text", "text" => request.instructions)]
     end
     for (option, wire) in (("temperature", "temperature"), ("tools", "tools"),
-            ("toolChoice", "tool_choice"), ("thinking", "thinking"))
+            ("toolChoice", "tool_choice"), ("thinking", "thinking"), ("outputConfig", "output_config"))
         haskey(options, option) && (payload[wire] = deepcopy(options[option]))
     end
+    anthropic_managed_payload!(payload,model,options)
     return payload
 end
 
+"""Retain observed Anthropic counters across deltas without filling absent fields with initialized zero."""
+function anthropic_metered_usage!(state::ModelStreamState,raw::AbstractDict;initial=false)
+    initial && (state.metering=ModelUsageMeter())
+    meter=state.metering
+    for (source,field) in (("input_tokens",:input),("output_tokens",:output),
+            ("cache_read_input_tokens",:cache_read),("cache_creation_input_tokens",:cache_write))
+        if haskey(raw,source)
+            setfield!(meter,field,usage_tokens(raw[source]))
+        end
+    end
+    cache=get(raw,"cache_creation",nothing)
+    if cache isa AbstractDict && haskey(cache,"ephemeral_1h_input_tokens")
+        meter.cache_write_1h=usage_tokens(cache["ephemeral_1h_input_tokens"])
+    end
+    nothing
+end
+
 function anthropic_model_usage!(state::ModelStreamState, raw::AbstractDict; initial=false)
+    anthropic_metered_usage!(state,raw;initial)
     usage = state.message["usage"]
     for (source, target) in (("input_tokens", "input"), ("output_tokens", "output"),
             ("cache_read_input_tokens", "cacheRead"), ("cache_creation_input_tokens", "cacheWrite"))
@@ -50,53 +76,62 @@ function anthropic_model_usage!(state::ModelStreamState, raw::AbstractDict; init
     return nothing
 end
 
-function anthropic_block_start!(state::ModelStreamState, event::AbstractDict)
-    source = event["content_block"]
+anthropic_block_start!(state::ModelStreamState, event::AbstractDict) = insertblock!(state, event["index"], anthropicblock(event["content_block"]))
+
+function anthropicblock(source)
     kind = source["type"]
-    block = if kind == "text"
+    if kind == "text"
         Dict{String,Any}("type" => "text", "text" => get(source, "text", ""))
     elseif kind == "thinking"
-        Dict{String,Any}("type" => "thinking", "thinking" => get(source, "thinking", ""),
-            "thinkingSignature" => get(source, "signature", ""))
+        Dict{String,Any}("type" => "thinking", "thinking" => get(source, "thinking", ""), "thinkingSignature" => get(source, "signature", ""))
     elseif kind == "redacted_thinking"
-        Dict{String,Any}("type" => "thinking", "thinking" => "[Reasoning redacted]",
-            "thinkingSignature" => source["data"], "redacted" => true)
+        Dict{String,Any}("type" => "thinking", "thinking" => "[Reasoning redacted]", "thinkingSignature" => source["data"], "redacted" => true)
     elseif kind == "tool_use"
-        Dict{String,Any}("type" => "toolCall", "id" => source["id"], "name" => source["name"],
-            "arguments" => get(source, "input", Dict{String,Any}()))
+        Dict{String,Any}("type" => "toolCall", "id" => source["id"], "name" => source["name"], "arguments" => get(source, "input", Dict{String,Any}()))
     else
-        return nothing
+        nothing
     end
+end
+
+insertblock!(state, key, ::Nothing) = nothing
+
+function insertblock!(state::ModelStreamState, key, block::AbstractDict)
     push!(state.message["content"], block)
     index = length(state.message["content"])
-    state.blocks[event["index"]] = index
+    state.blocks[key] = index
     if block["type"] == "toolCall"
-        state.arguments[index] = ""
+        state.arguments[index] = IOBuffer()
         model_event!(state, "toolcall_start"; contentIndex=index - 1)
     else
         model_event!(state, string(block["type"], "_start"); contentIndex=index - 1)
     end
-    return nothing
+    nothing
 end
-
 function anthropic_block_delta!(state::ModelStreamState, event::AbstractDict)
     index = get(state.blocks, event["index"], 0)
-    index == 0 && return nothing
+    if index != 0
+        appenddelta!(state, index, event["delta"])
+    end
+    nothing
+end
+
+function appenddelta!(state::ModelStreamState, index, delta)
     block = state.message["content"][index]
-    delta = event["delta"]
     kind = delta["type"]
     if kind == "text_delta" || kind == "thinking_delta"
         field = kind == "text_delta" ? "text" : "thinking"
-        block[field] *= delta[field]
+        buffer = get!(state.text_buffers, index) do
+            output = IOBuffer()
+            write(output, block[field])
+            output
+        end
+        write(buffer, delta[field])
         model_event!(state, kind; contentIndex=index - 1, delta=delta[field])
     elseif kind == "signature_delta"
         block["thinkingSignature"] = get(block, "thinkingSignature", "") * delta["signature"]
     elseif kind == "input_json_delta"
-        state.arguments[index] *= delta["partial_json"]
-        if possible_tool_object(state.arguments[index])
-            arguments = parse_json(state.arguments[index])
-            arguments isa AbstractDict && (block["arguments"] = arguments)
-        end
+        arguments = append_model_tool_arguments!(state, index, delta["partial_json"])
+        arguments isa AbstractDict && (block["arguments"] = arguments)
         model_event!(state, "toolcall_delta"; contentIndex=index - 1, delta=delta["partial_json"])
     end
     return nothing
@@ -104,7 +139,13 @@ end
 
 function anthropic_stop_reason!(state::ModelStreamState, delta::AbstractDict)
     reason = get(delta, "stop_reason", nothing)
-    isnothing(reason) && return nothing
+    if !isnothing(reason)
+        stop!(state, delta, reason)
+    end
+    nothing
+end
+
+function stop!(state::ModelStreamState, delta, reason)
     state.message["rawStopReason"] = reason
     state.message["stopReason"] = get(Dict("end_turn" => "stop", "max_tokens" => "length",
         "tool_use" => "toolUse", "pause_turn" => "stop", "stop_sequence" => "stop"), reason, "error")
@@ -124,10 +165,15 @@ function consume_model_event!(::AnthropicMessagesProtocol, state::ModelStreamSta
     start_model_stream!(state)
     if event.event == "error"
         state.error = event.data
-        return nothing
+    else
+        consume!(AnthropicMessagesProtocol(), state, parse_json(event.data))
     end
-    parsed = parse_json(event.data)
-    parsed isa AbstractDict || return nothing
+    nothing
+end
+
+consume!(::AnthropicMessagesProtocol, state::ModelStreamState, parsed) = nothing
+
+function consume!(::AnthropicMessagesProtocol, state::ModelStreamState, parsed::AbstractDict)
     kind = get(parsed, "type", "")
     if kind == "message_start"
         state.received_start = true
