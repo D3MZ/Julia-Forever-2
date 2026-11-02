@@ -69,7 +69,7 @@ jobs:
           julia --project=app "$RUNNER_TEMP/terminal_smoke.jl" 2>&1 | tee evidence/terminal-smoke.log
       - uses: charmbracelet/vhs-action@v2.1.1
         with:
-          version: 'v0.12.0'
+          version: 'v0.12.1'
       - name: Launch real JF2 terminal and capture interactive screenshots
         shell: bash
         run: |
