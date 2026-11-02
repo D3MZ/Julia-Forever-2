@@ -172,6 +172,34 @@ function api_session_inventory(api::SessionAPI, params::AbstractDict)
     return sort!(collect(values(records)); by=row -> (String(row["session"]), string(row["id"])))
 end
 
+"""Group cold-safe session summaries by lexical working directory, not process ownership.
+
+This is a derived view, not a persistent Workspace registry or authorization boundary.
+The caller retains ownership of all session state and may replace the API service.
+"""
+function session_workspace_groups(summaries::AbstractVector)
+    groups = Dict{String,Vector{Dict{String,Any}}}()
+    for row in summaries
+        directory = normpath(String(row["workingDirectory"]))
+        summary = Dict{String,Any}(String(key) => value for (key, value) in pairs(row))
+        push!(get!(groups, directory, Dict{String,Any}[]), summary)
+    end
+    result = Dict{String,Any}[]
+    for (directory, sessions) in groups
+        sort!(sessions; by=row -> (String(row["session"]), String(row["id"])))
+        push!(result, Dict{String,Any}(
+            "workingDirectory" => directory, "sessions" => sessions,
+            "sessionCount" => length(sessions)))
+    end
+    sort!(result; by=row -> String(row["workingDirectory"]))
+end
+
+"""Project live and persisted Julia sessions into independent directory groups."""
+function api_session_workspace_groups(api::SessionAPI, params::AbstractDict)
+    sessions = api_session_inventory(api, params)
+    sessions isa RpcError ? sessions : session_workspace_groups(sessions)
+end
+
 saved_summary(error::RpcError, name) = error
 saved_summary(error::RpcError, ::AbstractString) = error
 saved_summary(store, name) = RpcError(-32602, "Expected a session identifier")
@@ -501,6 +529,7 @@ const SESSION_OPERATIONS = Dict(
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
     "session/list/saved" => api_saved_session_list,
     "session/list/all" => api_session_inventory,
+    "session/list/workspaces" => api_session_workspace_groups,
     "session/archive" => (api, params) -> api_set_saved_archive!(api, params, true),
     "session/unarchive" => (api, params) -> api_set_saved_archive!(api, params, false),
     "session/pin" => (api, params) -> api_set_saved_pin!(api, params, true),

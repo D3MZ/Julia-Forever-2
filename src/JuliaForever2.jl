@@ -53,7 +53,7 @@ public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, s
 public SessionTitleService, session_title, rename_session_title!, refresh_session_title!, session_title_plugin
 public normalize_session_title, fallback_session_title
 public session_markdown, session_markdown_entry
-public SessionAPI, session_api_plugin, session_api_request!, session_api_peer
+public SessionAPI, session_api_plugin, session_api_request!, session_api_peer, session_workspace_groups
 public start_web_server, web_server_plugin, web_url, web_launch_url
 
 include("files/search_tool.jl")
