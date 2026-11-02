@@ -239,7 +239,7 @@ function session_action_finished!(app::App, handle::TaskHandle)
                 clear_preview!(app)
                 app.transcript = prepared.transcript
                 app.settings.workspace = working_directory(app.session)
-                app.directory = directory_label(app.settings.workspace)
+                app.directory = prepared.directory
                 close_session_selectors!(app)
                 app.scroll = 0
                 app.page = :chat

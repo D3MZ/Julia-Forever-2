@@ -1,13 +1,11 @@
-function directory_label(dir::AbstractString=pwd())
+"""Format a factual workspace label, optionally using a branch already resolved before a transition."""
+function directory_label(dir::AbstractString=pwd(); branch=startup_host_branch(dir))
     home = homedir()
     label = dir == home ? "~" : startswith(dir, joinpath(home, "")) ? replace(dir, home => "~"; count=1) : String(dir)
-    git = Sys.which("git")
-    if !isnothing(git)
-        branch = readchomp(pipeline(ignorestatus(`$git -C $dir symbolic-ref --quiet --short HEAD`); stderr=devnull))
-        isempty(branch) || (label *= " ($branch)")
-    end
-    return label
+    isnothing(branch) || isempty(branch) || (label *= " ($branch)")
+    label
 end
+
 
 App(kernel::Kernel=default_kernel(); kwargs...) = App(Session(kernel); kwargs...)
 

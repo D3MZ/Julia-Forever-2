@@ -153,7 +153,7 @@ function archive_transcript_lines!(app::App, width::Int)
     else
         snapshot = lock(timeline.lock) do
             key = (timeline.identity.id, timeline.leaf, length(timeline.entries), width, palette, app.transcript.notices.revision, app.transcript.documents.revision,
-                state.expand_all, state.hide_thinking, state.show_usage, state.output_padding,
+                state.expand_all, state.hide_thinking, state.show_usage, state.output_padding, state.mermaid_mode,
                 copy(state.expanded), copy(state.collapsed), menu_preference(app,"cache-miss-notices","false"), session_image_layout_key(options, protocol, cell))
             projection = isequal(key, app.transcript.display_key) ? nothing : JuliaForever2.timeline_display_projection(timeline)
             misses=isnothing(projection)||menu_preference(app,"cache-miss-notices","false")!="true" ? Dict{String,JuliaForever2.SessionCacheMiss}() : JuliaForever2.session_cache_misses(JuliaForever2.timeline_branch(timeline))

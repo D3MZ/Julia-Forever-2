@@ -464,13 +464,32 @@ end
 """Export the active branch as interoperable version-three JSONL, retaining opaque fields."""
 function timeline_export_jsonl(timeline::SessionTimeline; leaf=missing)
     lock(timeline.lock) do
-        entries = timeline_branch(timeline, leaf)
+        selected = ismissing(leaf) ? timeline.leaf : leaf
+        if !isnothing(selected) && !haskey(timeline.indices, selected)
+            error("Unknown branch entry: $selected")
+        end
+        # Only rewrite parent pointers; nested archival payloads are read-only.
+        # Shallow per-entry copies avoid cloning the complete message history.
+        path = Dict{String,Any}[]
+        while !isnothing(selected)
+            entry = timeline.entries[timeline.indices[selected]]
+            push!(path, entry)
+            selected = entry["parentId"]
+        end
+        reverse!(path)
+
+        output = IOBuffer()
+        JSON.print(output, timeline_header(timeline))
+        write(output, '\n')
         parent = nothing
-        for entry in entries
-            entry["parentId"] = parent
+        for entry in path
+            exported = copy(entry)
+            exported["parentId"] = parent
+            JSON.print(output, exported)
+            write(output, '\n')
             parent = entry["id"]
         end
-        join(JSON.json.([timeline_header(timeline); entries]), "\n") * "\n"
+        String(take!(output))
     end
 end
 

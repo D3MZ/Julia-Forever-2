@@ -51,17 +51,18 @@ const TERMINAL_SETTINGS = SettingSpec[
 settings_definitions(images::Bool) = filter(item -> images || !(item.id in ("show-images", "image-width-cells")), TERMINAL_SETTINGS)
 
 """Describe unavailable native consumers without hiding the original menu entries."""
-setting_unavailable_reason(::Val) = ""
-setting_unavailable_reason(::Val{Symbol("install-telemetry")}) = "Install telemetry is unavailable: no approved Julia Forever 2 destination or privacy contract. No ping is sent."
-setting_unavailable_reason(::Val{Symbol("transport")}) = "Transport selection is unavailable: native providers currently use HTTP/SSE. WebSocket and cached WebSocket transports are not implemented."
-setting_unavailable_reason(::Val{Symbol("cache-warming-mode")}) = "Cache warming is unavailable: no native background warming service is installed. No warming requests are sent."
-setting_unavailable_reason(::Val{Symbol("auto-resize-images")}) = "Input image resizing is unavailable: terminal image sizing only changes display, not images sent to a provider."
-setting_unavailable_reason(::Val{Symbol("share-destination")}) = "Session sharing is unavailable: no native Radius or GitHub Gist publisher is installed. No session is uploaded."
-setting_unavailable_reason(::Val{Symbol("mermaid-rendering")}) = "Mermaid diagrams are unavailable: diagram fences remain source text. No native diagram renderer is installed."
+const SETTING_UNAVAILABLE_REASONS=Dict{String,String}(
+    "install-telemetry"=>"Install telemetry is unavailable: no approved Julia Forever 2 destination or privacy contract. No ping is sent.",
+    "transport"=>"Transport selection is unavailable: native providers currently use HTTP/SSE. WebSocket and cached WebSocket transports are not implemented.",
+    "cache-warming-mode"=>"Cache warming is unavailable: no native background warming service is installed. No warming requests are sent.",
+    "auto-resize-images"=>"Input image resizing is unavailable: terminal image sizing only changes display, not images sent to a provider.",
+    "share-destination"=>"Session sharing is unavailable: no native Radius or GitHub Gist publisher is installed. No session is uploaded.",
+)
+setting_unavailable_reason(name::AbstractString)=get(SETTING_UNAVAILABLE_REASONS,name,"")
 
 """Show availability first; supported settings retain their persisted or declared value."""
 function setting_value(app::App, item::SettingSpec)
-    if !isempty(setting_unavailable_reason(Val(Symbol(item.id))))
+    if !isempty(setting_unavailable_reason(item.id))
         "unavailable"
     elseif item.id == "model-thinking"
         thinking_defaults_summary(get(app.menus.model_preferences, "thinkingDefaults", Dict{String,Any}()))
@@ -73,7 +74,6 @@ function setting_value(app::App, item::SettingSpec)
 end
 
 """Share model and setting menu ranking; retain the original no-swap settings contract."""
-menu_alignment_score(text::Vector{Char}, positions::Vector{Int}) = selector_alignment(text, positions)
 menu_token_score(label::AbstractString, query::AbstractString) = selector_token_score(label, query; swap=false)
 search_settings(items::Vector{SettingSpec}, query::AbstractString) = selector_filter(items, query, item -> item.label; swap=false)
 
@@ -170,7 +170,7 @@ function settings_lines(app::App, width::Integer)
         if first_item > 1 || last_item < length(items)
             push!(lines, menu_line(menu_clip("  ($selected/$(length(items)))", width - 2), :text_dim))
         end
-        unavailable_reason=setting_unavailable_reason(Val(Symbol(items[selected].id)))
+        unavailable_reason=setting_unavailable_reason(items[selected].id)
         description = isempty(unavailable_reason) ? items[selected].description : unavailable_reason
         if !isempty(description)
             push!(lines, menu_line())
@@ -178,7 +178,7 @@ function settings_lines(app::App, width::Integer)
         end
     end
     push!(lines, menu_line())
-    unavailable=!isempty(items) && !isempty(setting_unavailable_reason(Val(Symbol(items[clamp(app.menus.cursor,1,length(items))].id))))
+    unavailable=!isempty(items) && !isempty(setting_unavailable_reason(items[clamp(app.menus.cursor,1,length(items))].id))
     hint = unavailable ? "  Unavailable in this build · Esc to cancel" : settings_searchable(app) ? "  Type to search · Enter/Space to change · Esc to cancel" : "  Enter/Space to change · Esc to cancel"
     push!(lines, menu_clipped_line(hint, width, :text_dim))
     push!(lines, menu_line(repeat("─", max(0, width)), :menu_border))
@@ -266,7 +266,7 @@ end
 
 """Commit private persistence and runtime effects together; publish only verified outcomes."""
 function set_setting_value!(app::App, name::AbstractString, value::AbstractString)
-    reason=setting_unavailable_reason(Val(Symbol(name)))
+    reason=setting_unavailable_reason(name)
     if !isempty(reason)
         setting_status_outcome!(app,name,false,reason)
         frontend_notice!(app,reason;kind=:warning)
