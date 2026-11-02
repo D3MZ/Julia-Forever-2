@@ -217,11 +217,14 @@ function web_turn_status(controller::WebController, params::AbstractDict)
     end
 end
 web_turn_status(::Nothing) = Dict("status" => "idle")
+web_turn_result(handle) = istaskfailed(handle) ?
+    JuliaForever2.ExecutionResult(false, "Reply failed unexpectedly. Edit and retry.") : fetch(handle)
+
 function web_turn_status(turn::WebTurn)
     result = Dict{String,Any}("turn" => turn.id, "request" => turn.request, "text" => turn.text,
         "kind" => String(turn.kind), "revision" => turn.revision)
     if web_turn_settled(turn)
-        final = fetch(turn.handle)
+        final = web_turn_result(turn.handle)
         result["status"] = "completed"
         result["ok"] = final.ok
         result["result"] = final.text
