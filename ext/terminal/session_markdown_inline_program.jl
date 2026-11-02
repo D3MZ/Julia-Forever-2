@@ -66,7 +66,9 @@ end
 
 function session_markdown_node_program(node::CommonMark.Node,style::Tachikoma.Style,prefix::SessionMarkdownProgram;heading=false,hyperlinks::Bool=false)
     data=node.t
-    if data isa CommonMark.Text || data isa CommonMark.HtmlInline
+    if data isa SessionMarkdownMathInline
+        session_math_inline_program(data,style;heading)
+    elseif data isa CommonMark.Text || data isa CommonMark.HtmlInline
         session_markdown_literal_program(node.literal,style;heading)
     elseif data isa CommonMark.Image
         session_markdown_literal_program(replace(session_markdown_raw_label(node),r"\\([\[\]])"=>s"\1"),style;heading)
