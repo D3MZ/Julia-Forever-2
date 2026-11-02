@@ -70,7 +70,8 @@ function timeline_display_projection(entries::AbstractVector; leaf=missing, mode
     end
     path = timeline_path_entries(archive, indices, selected)
     entries = mode == :pi ? timeline_context_entries(path) : path
-    TimelineDisplayProjection(deepcopy(entries), timeline_display_items(entries), mode)
+    # The archive was copied on entry; selected entries already belong to this projection.
+    TimelineDisplayProjection(entries, timeline_display_items(entries), mode)
 end
 function timeline_display_projection(timeline::SessionTimeline; leaf=missing, mode::Symbol=:pi)
     lock(timeline.lock) do

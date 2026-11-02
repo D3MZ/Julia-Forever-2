@@ -1,0 +1,40 @@
+name: Isolated display projection copy performance experiment
+on:
+  push:
+    branches:
+      - experiment/display-projection-copy-20261102-0107
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      JULIA_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Install identical Julia benchmark dependencies
+        run: julia --project=benchmarks -e 'using Pkg; Pkg.instantiate()'
+      - name: Benchmark exact pinned baseline versus candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/display-baseline" 9c87b78f717b52a505eddee0dc7737bace0d0ff2
+          mkdir -p "$RUNNER_TEMP/display-performance"
+          julia --project=benchmarks benchmarks/experiments/display_projection_copy.jl "$RUNNER_TEMP/display-baseline" "$RUNNER_TEMP/display-performance" 2>&1 | tee "$RUNNER_TEMP/display-performance/run.log"
+      - name: Preserve measurements and profiles regardless of gate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: display-projection-benchmark-evidence
+          path: ${{ runner.temp }}/display-performance/
+          if-no-files-found: warn
+          retention-days: 30
