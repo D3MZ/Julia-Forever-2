@@ -1,9 +1,10 @@
 """An owned, replaceable interface to independent Julia sessions and their durable state."""
-mutable struct SessionAPI{F,S,Q,T}
+mutable struct SessionAPI{F,S,Q,T,W}
     factory::F
     store::S
     query::Q
     titles::T
+    workspaces::W
     lock::ReentrantLock
     sessions::Dict{String,Session}
     handles::Dict{String,TaskHandle}
@@ -12,7 +13,18 @@ mutable struct SessionAPI{F,S,Q,T}
 end
 
 """Construct a native session API; factories return a Kernel or AgentDefinition."""
-SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing) = SessionAPI(factory, store, query, titles, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), Set{String}(), false)
+SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing,
+    workspaces=store isa SessionStore ? WorkspaceRegistry(store) : nothing) =
+    SessionAPI(factory, store, query, titles, workspaces, ReentrantLock(),
+        Dict{String,Session}(), Dict{String,TaskHandle}(), Set{String}(), false)
+
+"""Preserve the existing positional SessionAPI constructor for callers not using workspaces."""
+SessionAPI(factory, store, query, titles, lock::ReentrantLock,
+    sessions::Dict{String,Session}, handles::Dict{String,TaskHandle},
+    closing::Set{String}, closed::Bool) =
+    SessionAPI(factory, store, query, titles,
+        store isa SessionStore ? WorkspaceRegistry(store) : nothing,
+        lock, sessions, handles, closing, closed)
 
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
@@ -197,7 +209,100 @@ end
 """Project live and persisted Julia sessions into independent directory groups."""
 function api_session_workspace_groups(api::SessionAPI, params::AbstractDict)
     sessions = api_session_inventory(api, params)
-    sessions isa RpcError ? sessions : session_workspace_groups(sessions)
+    if sessions isa RpcError
+        sessions
+    elseif isnothing(api.workspaces)
+        session_workspace_groups(sessions)
+    else
+        registered_workspace_groups(api.workspaces, sessions)
+    end
+end
+
+"""Resolve the optional, replaceable registry without trusting browser-supplied identity."""
+function api_workspace_registry(api::SessionAPI)
+    lock(api.lock) do
+        api.closed ? RpcError(-32000, "Session API is closed") :
+            isnothing(api.workspaces) ? RpcError(-32601, "Workspace registry is not configured") :
+            api.workspaces
+    end
+end
+
+workspace_api_result(result::RpcError) = result
+workspace_api_result(result) = result.ok ? result.value :
+    RpcError(result.reason == "Unknown workspace" ? -32004 : -32602, result.reason)
+
+function api_workspace_list(api::SessionAPI, params::AbstractDict)
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry : workspace_snapshot(registry)
+end
+
+function api_workspace_create!(api::SessionAPI, params::AbstractDict)
+    path = get(params, "path", nothing)
+    title = get(params, "title", nothing)
+    if !(path isa AbstractString) || !(isnothing(title) || title isa AbstractString)
+        return RpcError(-32602, "Expected an absolute directory and optional title")
+    end
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry :
+        workspace_api_result(register_workspace!(registry, path; title))
+end
+
+function api_workspace_rename!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    title = get(params, "title", nothing)
+    if !(id isa AbstractString && title isa AbstractString)
+        return RpcError(-32602, "Expected a workspace identifier and title")
+    end
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry :
+        workspace_api_result(rename_workspace!(registry, id, title))
+end
+
+function api_workspace_delete!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    id isa AbstractString || return RpcError(-32602, "Expected a workspace identifier")
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry :
+        workspace_api_result(delete_workspace!(registry, id))
+end
+
+function api_workspace_move!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    before = get(params, "beforeWorkspaceId", nothing)
+    if !(id isa AbstractString && (isnothing(before) || before isa AbstractString))
+        return RpcError(-32602, "Invalid workspace ordering request")
+    end
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry :
+        workspace_api_result(move_workspace!(registry, id, before))
+end
+
+function api_workspace_session_move!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    session_id = get(params, "sessionId", nothing)
+    before = get(params, "beforeSessionId", nothing)
+    if !(id isa AbstractString && session_id isa AbstractString &&
+            (isnothing(before) || before isa AbstractString))
+        return RpcError(-32602, "Invalid workspace session ordering request")
+    end
+    registry = api_workspace_registry(api)
+    registry isa RpcError && return registry
+    inventory = api_session_inventory(api, Dict{String,Any}())
+    inventory isa RpcError && return inventory
+    groups = registered_workspace_groups(registry, inventory)
+    index = findfirst(group -> get(group, "workspaceId", nothing) == id, groups)
+    isnothing(index) && return RpcError(-32004, "Unknown workspace")
+    members = String[string(row["id"]) for row in groups[index]["sessions"]]
+    workspace_api_result(move_workspace_session!(registry, id, session_id, before, members))
+end
+
+function api_workspace_feed(api::SessionAPI, params::AbstractDict)
+    since = get(params, "since", nothing)
+    if !(isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0))
+        return RpcError(-32602, "Workspace cursor must be a nonnegative integer")
+    end
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry : workspace_changes(registry; since)
 end
 
 saved_summary(error::RpcError, name) = error
@@ -530,6 +635,13 @@ const SESSION_OPERATIONS = Dict(
     "session/list/saved" => api_saved_session_list,
     "session/list/all" => api_session_inventory,
     "session/list/workspaces" => api_session_workspace_groups,
+    "workspace/list" => api_workspace_list,
+    "workspace/create" => api_workspace_create!,
+    "workspace/rename" => api_workspace_rename!,
+    "workspace/delete" => api_workspace_delete!,
+    "workspace/move" => api_workspace_move!,
+    "workspace/session/move" => api_workspace_session_move!,
+    "workspace/feed" => api_workspace_feed,
     "session/archive" => (api, params) -> api_set_saved_archive!(api, params, true),
     "session/unarchive" => (api, params) -> api_set_saved_archive!(api, params, false),
     "session/pin" => (api, params) -> api_set_saved_pin!(api, params, true),
@@ -579,14 +691,21 @@ function Base.close(api::SessionAPI)
     nothing
 end
 """Install the replaceable Julia session API service under a profile."""
-function session_api_plugin(; name=:session_api, service_name=:session_api, store_service=nothing, query_service=nothing, title_service=nothing, factory=Kernel)
+function session_api_plugin(; name=:session_api, service_name=:session_api,
+        store_service=nothing, query_service=nothing, title_service=nothing,
+        workspace_service=nothing, factory=Kernel)
     contract = Symbol(service_name)
-    dependencies = unique(Symbol[Symbol(name) for name in (store_service, query_service, title_service) if !isnothing(name)])
+    dependencies = unique(Symbol[Symbol(dependency) for dependency in
+        (store_service, query_service, title_service, workspace_service) if !isnothing(dependency)])
     setup = context -> begin
         store = isnothing(store_service) ? nothing : service(context, Symbol(store_service))
         query = isnothing(query_service) ? nothing : service(context, Symbol(query_service))
         titles = isnothing(title_service) ? nothing : service(context, Symbol(title_service))
-        provide!(context, contract, SessionAPI(; factory, store, query, titles); requires=dependencies, cleanup=close)
+        workspaces = isnothing(workspace_service) ?
+            (store isa SessionStore ? WorkspaceRegistry(store) : nothing) :
+            service(context, Symbol(workspace_service))
+        provide!(context, contract, SessionAPI(; factory, store, query, titles, workspaces);
+            requires=dependencies, cleanup=close)
     end
     PluginSpec(name, setup; requires=dependencies, provides=[contract])
 end

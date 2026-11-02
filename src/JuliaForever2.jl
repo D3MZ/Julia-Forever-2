@@ -54,6 +54,8 @@ public SessionTitleService, session_title, rename_session_title!, refresh_sessio
 public normalize_session_title, fallback_session_title
 public session_markdown, session_markdown_entry
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer, session_workspace_groups
+public WorkspaceRegistry, workspace_registry_plugin, workspace_snapshot, workspace_changes
+public register_workspace!, rename_workspace!, delete_workspace!, move_workspace!, move_workspace_session!, registered_workspace_groups
 public start_web_server, web_server_plugin, web_url, web_launch_url
 
 include("files/search_tool.jl")
@@ -71,6 +73,7 @@ include("core/history_journal.jl")
 include("core/session_pins.jl")
 include("core/session_titles.jl")
 include("core/session_query.jl")
+include("core/workspace_registry.jl")
 include("infrastructure/infrastructure.jl")
 include("infrastructure/terminal_jobs.jl")
 include("infrastructure/user_shell_output.jl")
