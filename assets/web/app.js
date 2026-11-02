@@ -11,8 +11,6 @@
   let requestId = 0;
   let busy = false;
   let runningSession = null;
-  let cancelling = false;
-  let stopRequested = false;
 
   function status(message) {
     fields.status.textContent = String(message);
@@ -24,7 +22,7 @@
       fields.sessionName, fields.workspace]) field.disabled = busy;
     for (const field of [fields.save, fields.close, fields.prompt, fields.send])
       field.disabled = busy || !active;
-    fields.stop.disabled = runningSession === null || cancelling;
+    fields.stop.disabled = runningSession === null || runningSession.cancelling;
   }
 
   async function rpc(method, params = {}) {
@@ -135,21 +133,24 @@
 
   // Stop is independent of the busy gate: session/wait may be in flight.
   fields.stop.addEventListener("click", async () => {
-    const name = runningSession;
-    if (name === null || cancelling) return;
-    cancelling = true;
+    const turn = runningSession;
+    if (turn === null || turn.cancelling) return;
+    turn.cancelling = true;
     synchronize();
     try {
-      const result = await rpc("session/cancel", { session: name });
-      if (result.cancelled && runningSession === name) {
-        stopRequested = true;
+      const result = await rpc("session/cancel", {
+        session: turn.name, operationId: turn.operationId,
+      });
+      if (result.cancelled && runningSession === turn) {
+        turn.stopRequested = true;
         status("Stopping turn…");
       }
     } catch (error) {
-      status(error instanceof Error ? error.message : String(error));
+      if (runningSession === turn)
+        status(error instanceof Error ? error.message : String(error));
     } finally {
-      cancelling = false;
-      synchronize();
+      turn.cancelling = false;
+      if (runningSession === turn) synchronize();
     }
   });
 
@@ -159,20 +160,23 @@
       const name = fields.sessions.value;
       const prompt = fields.prompt.value.trim();
       if (!name || !prompt) return;
-      await rpc("session/turn", { session: name, prompt });
-      runningSession = name;
-      stopRequested = false;
+      const accepted = await rpc("session/turn", { session: name, prompt, includeOperationId: true });
+      if (typeof accepted.operationId !== "string" || !accepted.operationId)
+        throw new Error("The server did not identify the accepted turn.");
+      const turn = { name, operationId: accepted.operationId, cancelling: false, stopRequested: false };
+      runningSession = turn;
       fields.prompt.value = "";
       status("Running turn…");
       synchronize();
       try {
-        const result = await rpc("session/wait", { session: name });
+        const result = await rpc("session/wait", { session: name, operationId: turn.operationId });
         await loadMessages();
         if (result.status === "completed")
-          status(result.ok ? "Turn completed." : stopRequested ? "Turn stopped." : "Turn failed.");
+          status(result.ok ? "Turn completed." : turn.stopRequested ? "Turn stopped." : "Turn failed.");
+        else if (result.status === "stale")
+          status("The turn is no longer active.");
       } finally {
-        runningSession = null;
-        stopRequested = false;
+        if (runningSession === turn) runningSession = null;
         synchronize();
       }
     });
