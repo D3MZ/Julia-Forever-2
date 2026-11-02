@@ -1,3 +1,4 @@
+include("terminal/editor_text_actions.jl")
 include("terminal/menu_search_input.jl")
 include("terminal/footer_native.jl")
 include("terminal/menu_models.jl")

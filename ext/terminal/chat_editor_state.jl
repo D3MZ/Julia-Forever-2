@@ -179,11 +179,7 @@ function chat_delete!(editor::ChatEditorState,start::Int,stop::Int;kill::Bool=fa
         chat_push_undo!(editor)
         text=chat_text(editor);removed=chat_slice(text,start,stop)
         if kill
-            if editor.last_action==:kill && !isempty(editor.kills)
-                editor.kills[end]=backward ? removed*editor.kills[end] : editor.kills[end]*removed
-            else
-                push!(editor.kills,removed)
-            end
+            editor_kill_push!(editor.kills,removed;prepend=backward,accumulate=editor.last_action==:kill)
         end
         editor.last_action=kill ? :kill : :none
         chat_write!(editor,chat_prefix(text,start)*chat_suffix(text,stop),start);chat_cursor!(editor,start)
@@ -198,7 +194,7 @@ function chat_yank!(editor::ChatEditorState;rotate::Bool=false)
         if rotate
             stop=editor.input.cursor;start=max(0,stop-length(last(editor.kills)))
             chat_write!(editor,chat_prefix(chat_text(editor),start)*chat_suffix(chat_text(editor),stop),start)
-            pushfirst!(editor.kills,pop!(editor.kills))
+            editor_kill_rotate!(editor.kills)
         end
         chat_insert!(editor,last(editor.kills);snapshot=false);editor.last_action=:yank
     end
