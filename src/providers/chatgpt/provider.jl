@@ -40,7 +40,7 @@ function chatgpt_request_payload(provider::OpenAIProvider,request::ModelRequest,
             payload["reasoning"]["summary"]=summary
         end
     end
-    payload
+    model_image_payload(Val(:responses),payload)
 end
 
 (provider::OpenAIProvider)(messages, session) = call_provider(provider, messages, session)
@@ -160,10 +160,15 @@ function select(provider::OpenAIProvider, request, context, headers, catalog)
 end
 
 function respond(provider::OpenAIProvider, request::ModelRequest, context, headers, model)
-    body = JSON.json(chatgpt_request_payload(provider,request,model))
-    stream = ChatGPTStream(context, request.protocol)
-    response = transport_request(provider.transport, OPENAI_RESOURCE * "/responses", "POST", body, headers, context, SSEDecoder(stream))
-    200 <= response.status < 300 ? result(stream, request.protocol) : transport_failure(response, "ChatGPT")
+    payload=chatgpt_request_payload(provider,request,model)
+    if payload isa ModelImagePolicyFailure
+        provider_failure(payload.reason)
+    else
+        body = JSON.json(payload)
+        stream = ChatGPTStream(context, request.protocol)
+        response = transport_request(provider.transport, OPENAI_RESOURCE * "/responses", "POST", body, headers, context, SSEDecoder(stream))
+        200 <= response.status < 300 ? result(stream, request.protocol) : transport_failure(response, "ChatGPT")
+    end
 end
 
 result(stream::ChatGPTStream, protocol) = stream.completed && !stream.failed ? ProviderResult(decode_reply(protocol, String(take!(stream.text))), stream.usage) : provider_failure("ChatGPT response ended before successful completion.")

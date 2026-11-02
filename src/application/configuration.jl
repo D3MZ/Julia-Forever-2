@@ -1,6 +1,6 @@
 function configured_provider(dir::AbstractString=config_dir(); registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
     path = joinpath(dir, "provider")
-    return provider_from_name(isfile(path) ? strip(read(path, String)) : "demo"; dir, registry)
+    return isfile(path) ? provider_from_name(strip(read(path, String)); dir, registry) : nothing
 end
 
 function save_provider!(dir::AbstractString, provider::Symbol)

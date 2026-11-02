@@ -349,12 +349,19 @@ function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     return StreamedCompletion(reply, report, message, model_completion_provenance(state,report))
 end
 
+"""Retain native transport provenance separately from provider-controlled event strings."""
+struct ModelHTTPFailure
+    status::Int
+    reason::String
+end
+Base.show(io::IO,failure::ModelHTTPFailure)=print(io,"ModelHTTPFailure(status=",failure.status,")")
+model_http_failure_text(response)="Model HTTP request failed ($(response.status)): $(response.reason)"
+model_http_failure_outcome(transport,state::ModelStreamState,response)=state
+
 function respond_model(backend::HTTPModelBackend, model::ModelSpec, request::ModelRequest, context::ExecutionContext)
     state = ModelStreamState(model, context)
-    if !cancelled(context)
-        exchange!(backend, state, request)
-    end
-    sanitize_model_failure!(backend.transport,state)
+    outcome=cancelled(context) ? state : exchange!(backend, state, request)
+    sanitize_model_failure!(backend.transport,state,outcome)
     finish_model_stream!(state)
     StreamedCompletion(state, request)
 end
@@ -362,32 +369,41 @@ end
 function exchange!(backend::HTTPModelBackend, state::ModelStreamState, request::ModelRequest)
     model, context = state.model, state.context
     options = model_request_options(backend.options, model, request)
-    headers = Pair{String,String}["Content-Type" => "application/json"]
-    append!(headers, model_protocol_headers(backend.protocol,model,options,request))
-    append!(headers, Base.invokelatest(backend.credentials, model, context))
-    payload = model_payload(backend.protocol, model, request, options)
-    prepare_protocol_state!(backend.protocol,state,payload,options)
-    progress=HTTPModelProgress(;policy=request.protocol)
-    decoder = SSEDecoder() do event
-        if !cancelled(context)
-            consume_model_event!(backend.protocol, state, event)
-            publish_model_progress!(progress,state;force=state.received_stop || state.message["stopReason"]!="pending")
+    payload = model_image_payload(backend.protocol,model_payload(backend.protocol, model, request, options))
+    outcome=state
+    if payload isa ModelImagePolicyFailure
+        state.error=payload.reason
+        outcome=payload
+    else
+        headers = Pair{String,String}["Content-Type" => "application/json"]
+        append!(headers, model_protocol_headers(backend.protocol,model,options,request))
+        append!(headers, Base.invokelatest(backend.credentials, model, context))
+        prepare_protocol_state!(backend.protocol,state,payload,options)
+        progress=HTTPModelProgress(;policy=request.protocol)
+        decoder = SSEDecoder() do event
+            if !cancelled(context)
+                consume_model_event!(backend.protocol, state, event)
+                publish_model_progress!(progress,state;force=state.received_stop || state.message["stopReason"]!="pending")
+            end
+        end
+        response = Base.invokelatest(backend.transport, model_endpoint(backend.protocol, backend.endpoint, model), "POST", JSON.json(payload), headers, context, decoder)
+        if response.status in 200:299
+            start_model_stream!(state)
+            finish_protocol_stream!(backend.protocol, state)
+            publish_model_progress!(progress,state;force=true)
+        else
+            state.error = model_http_failure_text(response)
+            outcome=model_http_failure_outcome(backend.transport,state,response)
         end
     end
-    response = Base.invokelatest(backend.transport, model_endpoint(backend.protocol, backend.endpoint, model), "POST", JSON.json(payload), headers, context, decoder)
-    if response.status in 200:299
-        start_model_stream!(state)
-        finish_protocol_stream!(backend.protocol, state)
-        publish_model_progress!(progress,state;force=true)
-    else
-        state.error = "Model HTTP request failed ($(response.status)): $(response.reason)"
-    end
-    state
+    outcome
 end
 model_protocol_headers(protocol) = Pair{String,String}[]
 model_protocol_headers(protocol,model,options,request)=model_protocol_headers(protocol)
 prepare_protocol_state!(protocol,state,payload,options)=nothing
 
 sanitize_model_failure!(transport,state::ModelStreamState)=nothing
+sanitize_model_failure!(transport,state::ModelStreamState,outcome)=sanitize_model_failure!(transport,state)
+sanitize_model_failure!(transport,state::ModelStreamState,::ModelImagePolicyFailure)=nothing
 
 completion_result(state::ModelStreamState, request::ModelRequest) = StreamedCompletion(state, request)

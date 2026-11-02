@@ -20,6 +20,7 @@ end
 function initialize_startup_host!(app::App)
     controls=startup_controls(app;bindings=startup_host_bindings(app),supported=["bash","bash.noContext"])
     app.menus.startup=controls
+    initialize_project_trust!(app)
     startup_discover_resources!(controls,app)
     refresh_footer_controls!(app;models=menu_model_snapshot(app),branch=startup_host_branch(app.settings.workspace),home=homedir())
     nothing
@@ -171,6 +172,8 @@ function startup_menu_rows(app::App,width::Int,height::Int)
             menu.maximum_rows=10
             selector_lines(menu,width)
         end
+    elseif app.menus.path==["trust"]
+        project_trust_lines(app,width)
     elseif app.menus.path==["tree"]
         menu=app.menus.tree_menu
         if isnothing(menu)

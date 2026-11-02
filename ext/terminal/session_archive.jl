@@ -244,6 +244,7 @@ function session_action_finished!(app::App, handle::TaskHandle)
                 app.scroll = 0
                 app.page = :chat
                 Tachikoma.set_text!(app.input, transition.editor)
+                project_trust_session_transition!(app)
             else
                 discard_session_transition!(transition)
                 result = JuliaForever2.ExecutionResult(false, prepared.reason)

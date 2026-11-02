@@ -20,7 +20,7 @@ function openrouter_request_payload(provider::OpenRouterProvider,request::ModelR
     if !isnothing(reasoning)
         payload["reasoning"]=Dict("effort"=>reasoning)
     end
-    payload
+    model_image_payload(Val(:openai_chat),payload)
 end
 
 Base.show(io::IO, provider::OpenRouterProvider) = print(io, "OpenRouterProvider(", repr(provider.model), ", [redacted])")
@@ -49,15 +49,20 @@ function respond(provider::OpenRouterProvider, request::ModelRequest, context::E
 end
 
 function exchange(provider::OpenRouterProvider, request::ModelRequest, context)
-    body = JSON.json(openrouter_request_payload(provider,request))
-    headers = ["Authorization" => "Bearer $(provider.api_key)", "Content-Type" => "application/json"]
-    response = transport_request(provider.transport, "https://openrouter.ai/api/v1/chat/completions", body, headers, context)
-    if response.status == 401
-        provider_failure("OpenRouter rejected the API key (HTTP 401). Check or replace the configured key.")
-    elseif 200 <= response.status < 300
-        result(provider, request, parse_json(response.body))
+    payload=openrouter_request_payload(provider,request)
+    if payload isa ModelImagePolicyFailure
+        provider_failure(payload.reason)
     else
-        transport_failure(response, "OpenRouter")
+        body = JSON.json(payload)
+        headers = ["Authorization" => "Bearer $(provider.api_key)", "Content-Type" => "application/json"]
+        response = transport_request(provider.transport, "https://openrouter.ai/api/v1/chat/completions", body, headers, context)
+        if response.status == 401
+            provider_failure("OpenRouter rejected the API key (HTTP 401). Check or replace the configured key.")
+        elseif 200 <= response.status < 300
+            result(provider, request, parse_json(response.body))
+        else
+            transport_failure(response, "OpenRouter")
+        end
     end
 end
 

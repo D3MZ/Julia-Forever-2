@@ -8,7 +8,8 @@ function prepare_terminal_session_preferences(app::App,session::Session)
     steering=menu_preference(app,"steering-mode","one-at-a-time")
     follow_up=menu_preference(app,"follow-up-mode","one-at-a-time")
     hide_thinking=menu_preference(app,"hide-thinking","false")
-    valid=steering in ("one-at-a-time","all") && follow_up in ("one-at-a-time","all") && hide_thinking in ("false","true")
+    block_images=menu_preference(app,"block-images","false")
+    valid=steering in ("one-at-a-time","all") && follow_up in ("one-at-a-time","all") && hide_thinking in ("false","true") && block_images in ("false","true")
     result=if !valid
         (ok=false,reason="Session preference values are invalid")
     elseif !isopen(session)
@@ -24,6 +25,9 @@ function prepare_terminal_session_preferences(app::App,session::Session)
                 (ok=first.ok && second.ok,reason=first.ok ? second.reason : first.reason)
             end
         end
+    end
+    if result.ok
+        install!(session.kernel,ComponentSpec(:block_images,block_images=="true"))
     end
     session_display_transition!(transcript.display,hide_thinking=="true" ? :hide_thinking : :show_thinking)
     (ok=result.ok,reason=result.reason,transcript)

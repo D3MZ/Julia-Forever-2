@@ -93,16 +93,27 @@ function (transport::APIKeyHTTPTransport)(url,method,body,headers,context::Execu
     end
 end
 
+"""Only a native transport result may supply a trusted transport diagnostic."""
+model_http_failure_outcome(::APIKeyHTTPTransport,state::ModelStreamState,response)=ModelHTTPFailure(response.status,response.reason)
+
+function sanitize_model_stop_reason!(state::ModelStreamState)
+    reason=get(state.message,"rawStopReason",nothing)
+    if !(reason in (nothing,"stop","end","length","function_call","tool_calls","end_turn","max_tokens","tool_use","pause_turn","stop_sequence","refusal","sensitive"))
+        state.message["rawStopReason"]="unrecognized"
+    end
+    nothing
+end
+
 """Do not turn provider error payloads or unknown finish strings into credential-bearing diagnostics."""
 function sanitize_model_failure!(::APIKeyHTTPTransport,state::ModelStreamState)
     if !isempty(state.error)
-        if !startswith(state.error,"Model HTTP request failed (")
-            state.error="API key model stream failed; any partial output is incomplete."
-        end
-        reason=get(state.message,"rawStopReason",nothing)
-        if !(reason in (nothing,"stop","end","length","function_call","tool_calls","end_turn","max_tokens","tool_use","pause_turn","stop_sequence","refusal","sensitive"))
-            state.message["rawStopReason"]="unrecognized"
-        end
+        state.error="API key model stream failed; any partial output is incomplete."
+        sanitize_model_stop_reason!(state)
     end
+    nothing
+end
+function sanitize_model_failure!(::APIKeyHTTPTransport,state::ModelStreamState,outcome::ModelHTTPFailure)
+    state.error=model_http_failure_text(outcome)
+    sanitize_model_stop_reason!(state)
     nothing
 end

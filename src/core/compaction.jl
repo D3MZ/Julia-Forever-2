@@ -111,10 +111,19 @@ kind="answer" and content containing only the summary. Do not run tools or code.
 
 """Capture a model request's setting generation and reject work after cancellation."""
 function configured_model_response(provider, request::ModelRequest, session::Session, context::ExecutionContext)
-    with_component(session.kernel, :http_idle_timeout; fallback=HTTPTransport.DEFAULT_HTTP_IDLE_TIMEOUT_MS) do milliseconds
-        HTTPTransport.with_http_idle_timeout(milliseconds) do
-            cancelled(context) ? Reply(:error, "Request cancelled or timed out.") :
-                Base.invokelatest(respond_model, provider, request, session, context)
+    with_component(session.kernel, :block_images; fallback=false) do blocked
+        with_model_image_policy(blocked) do
+            projected=project_model_images(request)
+            if projected isa ModelImagePolicyFailure
+                Reply(:error,projected.reason)
+            else
+                with_component(session.kernel, :http_idle_timeout; fallback=HTTPTransport.DEFAULT_HTTP_IDLE_TIMEOUT_MS) do milliseconds
+                    HTTPTransport.with_http_idle_timeout(milliseconds) do
+                        cancelled(context) ? Reply(:error, "Request cancelled or timed out.") :
+                            Base.invokelatest(respond_model, provider, projected, session, context)
+                    end
+                end
+            end
         end
     end
 end

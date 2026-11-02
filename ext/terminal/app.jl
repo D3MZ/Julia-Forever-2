@@ -73,7 +73,7 @@ function terminal_app(; settings_dir::AbstractString=config_dir(), registry::Pro
     app = App(Session(kernel; owns_kernel=true); settings_dir, registry)
     restore_default_model!(app)
     maybe_warn_anthropic_subscription!(app)
-    if isnothing(provider)
+    if isnothing(provider) && (isnothing(app.menus.project_trust) || !app.menus.project_trust.pending)
         app.page = :settings
         app.status = "Configured provider is unavailable. Choose a provider."
     end
