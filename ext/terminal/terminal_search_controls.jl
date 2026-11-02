@@ -63,11 +63,11 @@ function terminal_search_packet(packet::AbstractString;kitty::Bool=false)
         action=:previous
     else
         code=0;modifiers=-1;base=0
-        key=match(r"^\e\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$",text)
+        key=native_kitty_packet(text)
         other=match(r"^\e\[27;(\d+);(\d+)~$",text)
         if !isnothing(key)
             code=something(tryparse(Int,something(key.captures[1],"")),0)
-            modifiers=(something(tryparse(Int,something(key.captures[4],"1")),0)-1)&~192
+            modifiers=(native_binding_number(key.captures[4],1)-1)&~192
             released=key.captures[5]=="3"
             base=something(tryparse(Int,something(key.captures[3],"")),0)
         elseif !isnothing(other)
