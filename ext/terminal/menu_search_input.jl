@@ -315,7 +315,7 @@ function menu_search_key_packet(data::AbstractString)
     action=get(MENU_SEARCH_KEYS,String(data),:none);printable=nothing
     arrow=match(r"^\e\[1;(\d+)(?::(\d+))?([CDHF])$",data)
     deletion=match(r"^\e\[3;(\d+)(?::(\d+))?~$",data)
-    kitty=match(r"^\e\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$",data)
+    kitty=native_kitty_packet(data)
     other=match(r"^\e\[27;(\d+);(\d+)~$",data)
     code=0;raw_code=0;modifier=-1;released=false;shifted=nothing
     if !isnothing(arrow) || !isnothing(deletion)
@@ -326,7 +326,7 @@ function menu_search_key_packet(data::AbstractString)
     elseif !isnothing(kitty) || !isnothing(other)
         code=something(tryparse(Int,something(isnothing(kitty) ? other.captures[2] : kitty.captures[1],"")),0)
         raw_code=code
-        modifier=something(tryparse(Int,something(isnothing(kitty) ? other.captures[1] : kitty.captures[4],"1")),0)-1
+        modifier=(isnothing(kitty) ? native_binding_number(other.captures[1],1) : native_binding_number(kitty.captures[4],1))-1
         if !isnothing(kitty)
             modifier &= ~192
             released=kitty.captures[5]=="3"
@@ -367,6 +367,10 @@ function menu_search_key_packet(data::AbstractString)
                 printable=string(Char(effective))
             end
         end
+    end
+    if action==:none && native_kitty_text_modifier(modifier)
+        associated=native_kitty_text(kitty)
+        !isnothing(associated) && (printable=associated)
     end
     (;action,printable)
 end

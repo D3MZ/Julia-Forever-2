@@ -28,6 +28,21 @@ function native_key_id(value::AbstractString)
     keyvalid=rest in NATIVE_BINDING_SPECIAL || length(rest)==1 && (first(rest) in 'a':'z' || first(rest) in '0':'9' || first(rest) in NATIVE_BINDING_SYMBOLS)
     valid && keyvalid ? (key=lowercase(rest),modifier) : nothing
 end
+const NATIVE_KITTY_PACKET = r"^\e\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d*))?(?::(\d+))?(?:;(\d*(?::\d+)*))?u$"
+native_kitty_packet(packet::AbstractString)=match(NATIVE_KITTY_PACKET,packet)
+native_kitty_text(::Nothing)=nothing
+function native_kitty_text(packet::RegexMatch)
+    text=packet.captures[6]
+    if isnothing(text) || isempty(text)
+        nothing
+    else
+        codes=[something(tryparse(Int,part),-1) for part in split(text,':')]
+        valid=all(code->32<=code<=0x10ffff && !(0x7f<=code<=0x9f) && isvalid(Char,code),codes)
+        valid ? join(Char.(codes)) : nothing
+    end
+end
+native_kitty_text_modifier(modifier::Int)=modifier>=0 && (modifier&~7)==0 && ((modifier&4)==0 || (modifier&2)!=0)
+
 native_binding_number(::Nothing,fallback::Int=0)=fallback
 native_binding_number(value::AbstractString,fallback::Int=0)=isempty(value) ? fallback : something(tryparse(Int,value),-10_000_000)
 native_binding_normalize(code::Int)=57399<=code<=57408 ? code-57351 : get(NATIVE_BINDING_KEYPAD,code,code)
@@ -37,7 +52,7 @@ native_binding_code(key::String)=get(NATIVE_BINDING_CODES,key,length(key)==1 ? I
 """Parse one terminal key without interpreting pasted bytes or accepting released keys as actions."""
 function native_binding_sequence_unchecked(packet::AbstractString)
     ncodeunits(packet)>128 && return nothing
-    kitty=match(r"^\e\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$",packet)
+    kitty=native_kitty_packet(packet)
     if !isnothing(kitty)
         (code=native_binding_number(kitty.captures[1]),modifier=native_binding_number(kitty.captures[4],1)-1,
             shifted=native_binding_number(kitty.captures[2],-1),base=native_binding_number(kitty.captures[3],-1),release=kitty.captures[5]=="3",event=native_binding_number(kitty.captures[5],1),kind=:kitty)
