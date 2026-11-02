@@ -148,19 +148,28 @@ Live state wins when the same durable UUID is open and saved. A new live
 session reusing a saved name has a different UUID and remains a separate row.
 An optional store is queried through its replaceable session_summaries method.
 """
-function api_session_inventory(api::SessionAPI, params::AbstractDict)
-    archived = get(params, "archived", false)
-    archived isa Bool || return RpcError(-32602, "Archived filter must be Boolean")
+api_session_inventory(api::SessionAPI, params::AbstractDict) = api_inventory_filter(api, get(params, "archived", false))
+api_inventory_filter(::SessionAPI, archived) = RpcError(-32602, "Archived filter must be Boolean")
+
+function api_inventory_filter(api::SessionAPI, archived::Bool)
     snapshot = lock(api.lock) do
         api.closed ? RpcError(-32000, "Session API is closed") :
             (collect(pairs(api.sessions)), api.store)
     end
-    snapshot isa RpcError && return snapshot
-    live, store = snapshot
+    api_inventory_snapshot(snapshot, archived)
+end
 
-    # A session API without persistence still lists its live sessions.
+api_inventory_snapshot(error::RpcError, ::Bool) = error
+
+function api_inventory_snapshot(snapshot::Tuple, archived::Bool)
+    live, store = snapshot
     saved = isnothing(store) ? Dict{String,Any}[] : saved_summaries(store, archived)
-    saved isa RpcError && return saved
+    api_inventory_rows(live, saved, archived)
+end
+
+api_inventory_rows(live, error::RpcError, ::Bool) = error
+
+function api_inventory_rows(live, saved, archived::Bool)
     records = Dict{String,Dict{String,Any}}()
     for row in saved
         summary = Dict{String,Any}(String(key) => value for (key, value) in pairs(row))
@@ -170,7 +179,6 @@ function api_session_inventory(api::SessionAPI, params::AbstractDict)
         summary["archived"] = archived
         records[identity] = summary
     end
-
     if !archived
         for (name, session) in live
             summary = Dict{String,Any}(api_session_summary(name, session))
@@ -181,7 +189,7 @@ function api_session_inventory(api::SessionAPI, params::AbstractDict)
             records[identity] = summary
         end
     end
-    return sort!(collect(values(records)); by=row -> (String(row["session"]), string(row["id"])))
+    sort!(collect(values(records)); by=row -> (String(row["session"]), string(row["id"])))
 end
 
 """Group cold-safe session summaries by lexical working directory, not process ownership.
@@ -231,6 +239,11 @@ workspace_api_result(result::RpcError) = result
 workspace_api_result(result) = result.ok ? result.value :
     RpcError(result.reason == "Unknown workspace" ? -32004 : -32602, result.reason)
 
+"""Apply registry mutations only after successful registry resolution."""
+api_workspace_apply(f, api::SessionAPI) = api_workspace_apply(f, api_workspace_registry(api))
+api_workspace_apply(f, error::RpcError) = error
+api_workspace_apply(f, registry) = workspace_api_result(f(registry))
+
 function api_workspace_list(api::SessionAPI, params::AbstractDict)
     registry = api_workspace_registry(api)
     registry isa RpcError ? registry : workspace_snapshot(registry)
@@ -239,70 +252,85 @@ end
 function api_workspace_create!(api::SessionAPI, params::AbstractDict)
     path = get(params, "path", nothing)
     title = get(params, "title", nothing)
-    if !(path isa AbstractString) || !(isnothing(title) || title isa AbstractString)
-        return RpcError(-32602, "Expected an absolute directory and optional title")
+    if path isa AbstractString && (isnothing(title) || title isa AbstractString)
+        api_workspace_apply(api) do registry
+            register_workspace!(registry, path; title)
+        end
+    else
+        RpcError(-32602, "Expected an absolute directory and optional title")
     end
-    registry = api_workspace_registry(api)
-    registry isa RpcError ? registry :
-        workspace_api_result(register_workspace!(registry, path; title))
 end
 
 function api_workspace_rename!(api::SessionAPI, params::AbstractDict)
     id = get(params, "workspaceId", nothing)
     title = get(params, "title", nothing)
-    if !(id isa AbstractString && title isa AbstractString)
-        return RpcError(-32602, "Expected a workspace identifier and title")
+    if id isa AbstractString && title isa AbstractString
+        api_workspace_apply(api) do registry
+            rename_workspace!(registry, id, title)
+        end
+    else
+        RpcError(-32602, "Expected a workspace identifier and title")
     end
-    registry = api_workspace_registry(api)
-    registry isa RpcError ? registry :
-        workspace_api_result(rename_workspace!(registry, id, title))
 end
 
 function api_workspace_delete!(api::SessionAPI, params::AbstractDict)
     id = get(params, "workspaceId", nothing)
-    id isa AbstractString || return RpcError(-32602, "Expected a workspace identifier")
-    registry = api_workspace_registry(api)
-    registry isa RpcError ? registry :
-        workspace_api_result(delete_workspace!(registry, id))
+    if id isa AbstractString
+        api_workspace_apply(api) do registry
+            delete_workspace!(registry, id)
+        end
+    else
+        RpcError(-32602, "Expected a workspace identifier")
+    end
 end
 
 function api_workspace_move!(api::SessionAPI, params::AbstractDict)
     id = get(params, "workspaceId", nothing)
     before = get(params, "beforeWorkspaceId", nothing)
-    if !(id isa AbstractString && (isnothing(before) || before isa AbstractString))
-        return RpcError(-32602, "Invalid workspace ordering request")
+    if id isa AbstractString && (isnothing(before) || before isa AbstractString)
+        api_workspace_apply(api) do registry
+            move_workspace!(registry, id, before)
+        end
+    else
+        RpcError(-32602, "Invalid workspace ordering request")
     end
-    registry = api_workspace_registry(api)
-    registry isa RpcError ? registry :
-        workspace_api_result(move_workspace!(registry, id, before))
+end
+
+api_workspace_move_members(registry, error::RpcError, id, session_id, before) = error
+
+function api_workspace_move_members(registry, inventory::AbstractVector, id, session_id, before)
+    groups = registered_workspace_groups(registry, inventory)
+    index = findfirst(group -> get(group, "workspaceId", nothing) == id, groups)
+    if isnothing(index)
+        RpcError(-32004, "Unknown workspace")
+    else
+        members = String[string(row["id"]) for row in groups[index]["sessions"]]
+        move_workspace_session!(registry, id, session_id, before, members)
+    end
 end
 
 function api_workspace_session_move!(api::SessionAPI, params::AbstractDict)
     id = get(params, "workspaceId", nothing)
     session_id = get(params, "sessionId", nothing)
     before = get(params, "beforeSessionId", nothing)
-    if !(id isa AbstractString && session_id isa AbstractString &&
-            (isnothing(before) || before isa AbstractString))
-        return RpcError(-32602, "Invalid workspace session ordering request")
+    if id isa AbstractString && session_id isa AbstractString &&
+            (isnothing(before) || before isa AbstractString)
+        api_workspace_apply(api) do registry
+            api_workspace_move_members(registry, api_session_inventory(api, Dict{String,Any}()), id, session_id, before)
+        end
+    else
+        RpcError(-32602, "Invalid workspace session ordering request")
     end
-    registry = api_workspace_registry(api)
-    registry isa RpcError && return registry
-    inventory = api_session_inventory(api, Dict{String,Any}())
-    inventory isa RpcError && return inventory
-    groups = registered_workspace_groups(registry, inventory)
-    index = findfirst(group -> get(group, "workspaceId", nothing) == id, groups)
-    isnothing(index) && return RpcError(-32004, "Unknown workspace")
-    members = String[string(row["id"]) for row in groups[index]["sessions"]]
-    workspace_api_result(move_workspace_session!(registry, id, session_id, before, members))
 end
 
 function api_workspace_feed(api::SessionAPI, params::AbstractDict)
     since = get(params, "since", nothing)
-    if !(isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0))
-        return RpcError(-32602, "Workspace cursor must be a nonnegative integer")
+    if isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0)
+        registry = api_workspace_registry(api)
+        registry isa RpcError ? registry : workspace_changes(registry; since)
+    else
+        RpcError(-32602, "Workspace cursor must be a nonnegative integer")
     end
-    registry = api_workspace_registry(api)
-    registry isa RpcError ? registry : workspace_changes(registry; since)
 end
 
 saved_summary(error::RpcError, name) = error
