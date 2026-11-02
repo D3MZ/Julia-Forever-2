@@ -234,8 +234,8 @@ function timeline_from_rows(rows::AbstractVector; leaf=missing)
         error("Session JSONL is empty")
     end
     rows = timeline_migrate_rows(rows)
-    identity = TimelineIdentity(timeline_object(first(rows)))
-    entries = timeline_object.(rows[2:end])
+    identity = TimelineIdentity(first(rows))
+    entries = Dict{String,Any}[rows[index] for index in 2:length(rows)]
     indices = timeline_index(entries)
     selected = ismissing(leaf) ? (isempty(entries) ? nothing : String(last(entries)["id"])) : leaf
     if !(isnothing(selected) || selected isa AbstractString && haskey(indices, selected))
