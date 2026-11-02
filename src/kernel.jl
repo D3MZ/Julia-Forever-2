@@ -107,21 +107,19 @@ function clean_entries!(kernel::Kernel, pending)
     return nothing
 end
 
-conflict(::Missing, ::Kernel, ::Symbol) = ""
-conflict(expected, kernel::Kernel, name::Symbol) = get(kernel.entries, name, nothing) === expected ? "" : "Component changed during composition"
-
 function conflict(kernel::Kernel, spec::ComponentSpec, expected)
+    absent = filter(name -> !haskey(kernel.entries, name), spec.requires)
+    previous = get(kernel.entries, spec.name, nothing)
     if kernel.closed
         "Kernel is closed"
+    elseif !isempty(absent)
+        "Missing dependencies: $(join(absent, ", "))"
+    elseif cyclic(kernel, spec)
+        "Cyclic dependencies"
+    elseif !ismissing(expected) && previous !== expected
+        "Component changed during composition"
     else
-        absent = filter(name -> !haskey(kernel.entries, name), spec.requires)
-        if !isempty(absent)
-            "Missing dependencies: $(join(absent, ", "))"
-        elseif cyclic(kernel, spec)
-            "Cyclic dependencies"
-        else
-            conflict(expected, kernel, spec.name)
-        end
+        ""
     end
 end
 
