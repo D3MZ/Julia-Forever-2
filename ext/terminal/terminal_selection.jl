@@ -17,6 +17,7 @@ Base.@kwdef struct TerminalSelectionView
     area::Tachikoma.Rect=Tachikoma.Rect(1,1,0,0)
     document_area::Tachikoma.Rect=Tachikoma.Rect(1,1,0,0)
     top::Int=0
+    document_press::Bool=true
 end
 """Keep selection ownership, multi-click timing and drag intent independent of model history."""
 Base.@kwdef mutable struct TerminalSelectionState
@@ -189,7 +190,7 @@ function terminal_selection_mouse!(state::TerminalSelectionState,view::TerminalS
             state.revision+=1;handled=true
         elseif action==:press && button==:left
             selection_stop_scroll!(state)
-            document=selection_inside(view.document_area,x,y) && !isempty(view.document)
+            document=view.document_press && selection_inside(view.document_area,x,y) && !isempty(view.document)
             point=selection_point(view,x,y,document)
             word=selection_word(view,point);count=selection_click!(state,word,Float64(now))
             range=count==2 ? word : count==3 ? selection_line(view,point) : nothing

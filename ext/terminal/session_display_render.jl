@@ -14,6 +14,13 @@ end
 
 const SessionDisplayRows = Vector{Vector{Tachikoma.Span}}
 
+"""Opt into actual transcript row offsets without changing legacy two-argument extras callbacks."""
+struct SessionAfterRecordLayout{F}
+    render::F
+end
+session_after_record_rows(render,anchor,width::Int,offset::Int)=render(anchor,width)
+session_after_record_rows(render::SessionAfterRecordLayout,anchor,width::Int,offset::Int)=render.render(anchor,width,offset)
+
 """Apply an explicit display transition without invoking tools, models or archive writes."""
 function session_display_transition!(state::SessionDisplayState, action::Symbol, identity::AbstractString="")
     id = String(identity)
@@ -378,17 +385,17 @@ end
 
 """Render typed archival contributions without using their context-projected or edited replacements."""
 function session_display_lines(projection::JuliaForever2.TimelineDisplayProjection,width::Int;
-        state=SessionDisplayState(),custom_entry_renderer=nothing,tool_renderers=nothing,tool_layout=nothing,after_record=nothing)
+        state=SessionDisplayState(),custom_entry_renderer=nothing,tool_renderers=nothing,tool_layout=nothing,after_record=nothing,on_component=nothing)
     if width<1 || state.output_padding<0 || state.output_padding>3
         error("Invalid transcript width or padding")
     end
     view=JuliaForever2.timeline_display_records(projection;show_usage=state.show_usage,
-        custom_entry_visible=Returns(!isnothing(custom_entry_renderer)),retry_attempt=state.retry_attempt)
+        custom_entry_visible=entry->is_interrupted_response_entry(entry) || !isnothing(custom_entry_renderer),retry_attempt=state.retry_attempt)
     overlays=JuliaForever2.timeline_display_overlays(projection)
     rows=SessionDisplayRows()
     hascomponent=false
     if !isnothing(after_record)
-        append!(rows,after_record(nothing,width))
+        append!(rows,session_after_record_rows(after_record,nothing,width,length(rows)))
         hascomponent=!isempty(rows)
     end
     for (record_index,record) in enumerate(view.records)
@@ -403,9 +410,13 @@ function session_display_lines(projection::JuliaForever2.TimelineDisplayProjecti
         if record.visible || imageonly
             if kind==:user
                 hascomponent && push!(rows,session_display_blank(width))
-                append!(rows,session_display_user(message,width,state))
+                rendered=session_display_user(message,width,state)
+                isnothing(on_component) || on_component(kind,message,length(rows),length(rendered))
+                append!(rows,rendered)
             elseif kind==:assistant
-                append!(rows,session_display_assistant(message,width,state))
+                rendered=session_display_assistant(message,width,state)
+                isnothing(on_component) || on_component(kind,message,length(rows),length(rendered))
+                append!(rows,rendered)
                 for tool in view.tools
                     if tool.source_entry_id==item.source_entry_id
                         rendered = isnothing(tool_layout) ? session_display_tool(tool,width,state,tool_renderers) : tool_layout(tool,width,state,tool_renderers,length(rows))
@@ -432,6 +443,13 @@ function session_display_lines(projection::JuliaForever2.TimelineDisplayProjecti
                 append!(rows,session_display_bash(message,item.source_entry_id,width,state))
             elseif kind in (:usage,:compaction_cost)
                 append!(rows,session_display_usage(item,width,state))
+            elseif item.kind==:custom && is_interrupted_response_entry(message)
+                rendered=interrupted_response_rows(message,width,state)
+                display=interrupted_display_message(message)
+                if !isnothing(on_component) && !isnothing(display)
+                    on_component(:assistant,display,length(rows),length(rendered))
+                end
+                append!(rows,rendered)
             elseif item.kind==:custom && !isnothing(custom_entry_renderer)
                 rendered=custom_entry_renderer(deepcopy(item),width,state)
                 if !(rendered isa SessionDisplayRows)
@@ -445,7 +463,7 @@ function session_display_lines(projection::JuliaForever2.TimelineDisplayProjecti
             kind==:toolResult || (hascomponent=true)
         end
         if !isnothing(after_record) && (record_index==length(view.records) || view.records[record_index+1].item.source_entry_id!=item.source_entry_id)
-            extra=after_record(item.source_entry_id,width)
+            extra=session_after_record_rows(after_record,item.source_entry_id,width,length(rows))
             append!(rows,extra)
             hascomponent=hascomponent||!isempty(extra)
         end

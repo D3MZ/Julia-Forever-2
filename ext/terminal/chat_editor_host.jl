@@ -5,7 +5,7 @@ function chat_editor_state!(app::App)
         state=ChatEditorState(app.input)
         app.menus.chat_editor=state
     end
-    state.focused=app.page==:chat
+    state.focused=app.page==:chat && !terminal_search_host_focused(app)
     state
 end
 

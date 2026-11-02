@@ -44,6 +44,7 @@ function terminal_scroll_host_scene!(host::TerminalScrollHost,app::App,document:
     clip=Tachikoma.Rect(Int(x),Int(y),max(0,Int(width)),max(0,min(Int(height),shape.document_height)))
     snapshot=terminal_scroll_control_layout!(host.control,document,rectangle;owner,revision,clip,presentation,
         legacy_distance=app.scroll,now)
+    snapshot=terminal_search_host_refresh!(app,host)
     terminal_scroll_host_publish!(host,app)
     scene=startup_scene(document,parts,height;scroll=snapshot.distance_from_end)
     (;scene...,viewport=snapshot)

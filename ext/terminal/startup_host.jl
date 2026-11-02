@@ -87,13 +87,24 @@ end
 
 """Preserve real streaming preview layout after archived rows without inventing committed messages."""
 function startup_preview_rows(app::App,width::Int)
-    padding=terminal_integer(app,"output-padding",1,0,1)
-    preview=preview_lines!(app,width+2-2padding)
-    buffer=Tachikoma.Buffer(Tachikoma.Rect(1,1,width,length(preview)))
-    for (row,(content,style)) in enumerate(preview)
-        draw_conversation_line!(buffer,1,row,width,content,style;padding)
+    progress=app.transcript.preview
+    if !isnothing(progress) && !active_operation(app,app.transcript.preview_operation_id)
+        clear_preview!(app)
+        progress=nothing
     end
-    startup_buffer_rows(buffer,width,length(preview))
+    padding=terminal_integer(app,"output-padding",1,0,1)
+    if !isnothing(progress) && progress.kind==:answer
+        state=app.transcript.display
+        state.output_padding=padding
+        session_display_assistant(Dict{String,Any}("role"=>"assistant","content"=>[Dict("type"=>"text","text"=>progress.text)]),width,state)
+    else
+        preview=preview_lines!(app,width+2-2padding)
+        buffer=Tachikoma.Buffer(Tachikoma.Rect(1,1,width,length(preview)))
+        for (row,(content,style)) in enumerate(preview)
+            draw_conversation_line!(buffer,1,row,width,content,style;padding)
+        end
+        startup_buffer_rows(buffer,width,length(preview))
+    end
 end
 
 startup_menu_cursor(lines) = findfirst(line->any(span->span.style.fg isa MenuSearchInverseColor,line),lines)
@@ -199,8 +210,9 @@ function startup_fullscreen_scene(app::App,width::Int,height::Int;editor=nothing
     document_width=terminal_scroll_control_width(viewport.scroll.control,width)
     controls=app.menus.startup
     prefix=isnothing(controls) ? Vector{Tachikoma.Span}[] : startup_document_lines(controls.document,app.menus.theme_runtime,document_width)
+    live_preview=startup_preview_rows(app,document_width)
+    preview=[live_preview;frontend_preview_notice_rows(app,document_width)]
     archived=archive_transcript_lines!(app,document_width)
-    preview=[startup_preview_rows(app,document_width);frontend_preview_notice_rows(app,document_width)]
     selected=isnothing(editor) ? startup_selected_editor(app,Val(app.page),width,height) : editor
     parts=[StartupDockPart(;name=:pending,lines=[pending_input_lines(app,width);user_shell_lines(app,width;pending=true)]),
         StartupDockPart(;name=:status,lines=Vector{Tachikoma.Span}[]),
@@ -210,6 +222,7 @@ function startup_fullscreen_scene(app::App,width::Int,height::Int;editor=nothing
         StartupDockPart(;name=:footer,lines=footer_control_lines(app,width))]
     document=[prefix;archived;preview;user_shell_lines(app,document_width)]
     scene=terminal_scroll_host_scene!(viewport.scroll,app,document,parts,width,height)
+    terminal_prompt_document!(app,length(prefix),length(archived),length(live_preview))
     first_document_row=scene.viewport.first_row
     last_document_row=min(length(document),first_document_row+scene.document_height-1)
     archive_first=max(first_document_row,length(prefix)+1)
@@ -241,10 +254,11 @@ function startup_host_view!(app::App,frame::Frame;editor=nothing)
     plan=app.transcript.display_plan
     terminal_presentation_publish!(app,area.width,area.height;scene=natural)
     scene=terminal_visible_scene(app,natural,area.height)
-    cursor=startup_host_cursor(app,scene)
+    search_focused=terminal_search_host_focused(app)
+    cursor=search_focused ? terminal_search_host_cursor(app) : startup_host_cursor(app,scene)
     terminal_output_cursor!(app,terminal_presentation_mode(app)==:regular ? nothing : cursor)
     rows=scene.lines
-    if menu_preference(app,"show-hardware-cursor","false")=="true" && !isnothing(cursor)
+    if !search_focused && menu_preference(app,"show-hardware-cursor","false")=="true" && !isnothing(cursor)
         rows=copy(rows)
         index=cursor[2]-area.y+1
         rows[index]=[Tachikoma.Span(span.content,span.style.fg isa MenuSearchInverseColor ? Tachikoma.Style() : span.style) for span in rows[index]]

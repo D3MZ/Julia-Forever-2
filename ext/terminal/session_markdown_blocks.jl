@@ -179,6 +179,8 @@ function session_markdown_block(node::CommonMark.Node,context::SessionMarkdownBl
         session_markdown_quote(node,context,terminal)
     elseif node.t isa CommonMark.List
         session_markdown_list(node,context,terminal)
+    elseif node.t isa CommonMark.Table
+        session_markdown_table(node,context)
     elseif node.t isa CommonMark.ReferenceDefinition
         SessionDisplayRows()
     elseif node.t isa CommonMark.Heading
@@ -217,7 +219,9 @@ function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:def
     CommonMark.enable!(parser,SessionMarkdownReferenceRule(String.(split(text,'\n';keepempty=true))))
     CommonMark.enable!(parser,SessionMarkdownLabelRule())
     CommonMark.enable!(parser,CommonMark.StrikethroughRule())
-    CommonMark.enable!(parser,CommonMark.TableRule())
+    table_rule=SessionMarkdownTableRule(text)
+    CommonMark.enable!(parser,table_rule)
+    CommonMark.enable!(parser,SessionMarkdownTableBodyRule(table_rule))
     CommonMark.enable!(parser,CommonMark.TaskListRule())
     ast=parser(text)
     session_markdown_resolve_references!(ast)
