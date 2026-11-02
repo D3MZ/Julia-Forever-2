@@ -40,6 +40,25 @@ function refresh_footer_controls!(app::App,state::FooterHostState=footer_control
     state
 end
 
+"""Prepare replacement-only footer facts under supervision, never retain the previous account or archive cache."""
+function prepare_footer_controls(app::App, session::Session)
+    operation = Task() do
+        state = FooterHostState(; home=homedir())
+        workspace = working_directory(session)
+        refresh_footer_controls!(app, state; models=menu_model_snapshot(app; kernel=session.kernel),
+            branch=startup_host_branch(workspace))
+        (; state, directory=directory_label(workspace; branch=state.branch))
+    end
+    schedule(operation)
+    wait(operation; throw=false)
+    if istaskfailed(operation)
+        state = FooterHostState(; home=homedir(), statuses=["jf2.footer"=>"Session footer unavailable"])
+        (; state, directory=directory_label(working_directory(session); branch=nothing))
+    else
+        fetch(operation)
+    end
+end
+
 footer_control_field(value,key,default=nothing)=default
 footer_control_field(value::AbstractDict,key,default=nothing)=get(value,key,default)
 footer_control_chars(value)=0

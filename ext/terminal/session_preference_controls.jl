@@ -32,5 +32,7 @@ function prepare_terminal_session_preferences(app::App,session::Session)
     end
     transcript.display.mermaid_mode=mermaid in ("off","final","streaming") ? Symbol(mermaid) : :off
     session_display_transition!(transcript.display,hide_thinking=="true" ? :hide_thinking : :show_thinking)
-    (ok=result.ok,reason=result.reason,transcript)
+    footer = result.ok ? prepare_footer_controls(app, session) : nothing
+    isnothing(footer) || (transcript.footer = footer.state)
+    (ok=result.ok,reason=result.reason,transcript,directory=isnothing(footer) ? app.directory : footer.directory)
 end
