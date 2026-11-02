@@ -10,7 +10,7 @@
     workspaceUp: $("workspace-up"), workspaceDown: $("workspace-down"), workspaceSessionUp: $("workspace-session-up"), workspaceSessionDown: $("workspace-session-down"),
     savedSessions: $("saved-sessions"), sessionPin: $("session-pin"), sessionUnpin: $("session-unpin"), sessionArchive: $("session-archive"), sessionUnarchive: $("session-unarchive")
   };
-  let workspaceRecords = [], workspaceGroups = [], workspaceRevision = null, savedRecords = [], pinnedNames = new Set();
+  let workspaceRecords = [], workspaceGroups = [], workspaceRevision = null, workspaceVersion = null, workspacePollPending = false, savedRecords = [], pinnedNames = new Set();
   function synchronizeWorkspaceControls() {
     const unavailable = busy || !!operation || !authorized;
     const registered = workspaceRecords.some(row => row.id === fields.workspaceList.value);
@@ -303,13 +303,37 @@
     synchronizeWorkspaceControls();
   }
 
-  async function refreshWorkspaces(preferred = fields.workspaceList.value,
-      preferredMember = fields.workspaceMember.value) {
-    const snapshot = await rpc("workspace/list");
+
+  function renderSavedSessions(preferred = fields.savedSessions.value) {
+    fields.savedSessions.replaceChildren(new Option("Select a saved session", ""));
+    for (const row of savedRecords) {
+      const indicator = row.archived ? " (archived)" : pinnedNames.has(row.session) ? " (pinned)" : "";
+      fields.savedSessions.append(new Option(row.session + indicator, row.session));
+    }
+    fields.savedSessions.value = savedRecords.some(row => row.session === preferred) ? preferred : "";
+    synchronizeWorkspaceControls();
+  }
+
+  function installWorkspaceState(snapshot, version, preferred = fields.workspaceList.value,
+      preferredMember = fields.workspaceMember.value, preferredSaved = fields.savedSessions.value) {
     workspaceRecords = snapshot.workspaces;
     workspaceRevision = snapshot.revision;
-    workspaceGroups = await rpc("session/list/workspaces");
+    workspaceVersion = version;
+    workspaceGroups = snapshot.groups;
+    savedRecords = [
+      ...snapshot.saved.map(row => ({ ...row, archived: false })),
+      ...snapshot.archived.map(row => ({ ...row, archived: true })),
+    ];
+    pinnedNames = new Set(snapshot.pinned);
     renderWorkspaces(preferred, preferredMember);
+    renderSavedSessions(preferredSaved);
+  }
+
+  async function refreshWorkspaces(preferred = fields.workspaceList.value,
+      preferredMember = fields.workspaceMember.value) {
+    const state = await rpc("workspace/state");
+    if (state.type !== "replace") throw new Error("Workspace state was not returned");
+    installWorkspaceState(state.snapshot, state.version, preferred, preferredMember);
   }
 
   async function refreshSavedSessions(preferred = fields.savedSessions.value) {
@@ -322,13 +346,7 @@
       ...archived.map(row => ({ ...row, archived: true })),
     ];
     pinnedNames = new Set(pinned);
-    fields.savedSessions.replaceChildren(new Option("Select a saved session", ""));
-    for (const row of savedRecords) {
-      const indicator = row.archived ? " (archived)" : pinnedNames.has(row.session) ? " (pinned)" : "";
-      fields.savedSessions.append(new Option(row.session + indicator, row.session));
-    }
-    fields.savedSessions.value = savedRecords.some(row => row.session === preferred) ? preferred : "";
-    synchronizeWorkspaceControls();
+    renderSavedSessions(preferred);
   }
 
   function workspaceMoveAnchor(direction) {
@@ -423,13 +441,20 @@
     $("workspace-controls").hidden = !capabilities.workspaces;
     $("saved-controls").hidden = !capabilities.persistent;
     if (capabilities.workspaces) await refreshWorkspaces();
-    if (capabilities.persistent) await refreshSavedSessions();
+    else if (capabilities.persistent) await refreshSavedSessions();
   }
 
   async function pollWorkspaceChanges() {
-    if (busy || operation || !authorized || workspaceRevision === null) return;
-    const change = await rpc("workspace/feed", { since: workspaceRevision });
-    if (change.type === "reset" || change.events.length) await refreshWorkspaces();
+    if (busy || operation || !authorized || workspaceVersion === null || workspacePollPending) return;
+    workspacePollPending = true;
+    const requested = workspaceVersion;
+    try {
+      const change = await rpc("workspace/state", { ifVersion: requested, waitMs: 5000 });
+      if (change.type === "replace" && !busy && !operation && authorized &&
+          workspaceVersion === requested) installWorkspaceState(change.snapshot, change.version);
+    } finally {
+      workspacePollPending = false;
+    }
   }
 
   action(async () => {
