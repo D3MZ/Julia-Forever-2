@@ -272,7 +272,6 @@ menu_page_items(app::App, ::Val{:logout}) =
 
 """Keep declared but missing command families visible without opening an empty success-shaped menu."""
 menu_unavailable_reason(::Val)=""
-menu_unavailable_reason(::Val{:trust})=setting_unavailable_reason(Val(Symbol("default-project-trust")))
 menu_unavailable_reason(::Val{:share})=setting_unavailable_reason(Val(Symbol("share-destination")))
 
 function open_menu!(app::App,name::AbstractString;refresh=true,query="",login_reference="",auth_login=auth_menu_start_login!)
@@ -308,6 +307,7 @@ function open_supported_menu!(app::App, name::AbstractString;refresh=true,query=
     if name=="login" && !isempty(login_reference)
         auth_menu_reference!(app,app.menus.auth_menu_control,login_reference)
     end
+    name == "trust" && open_project_trust!(app)
     name == "theme" && open_theme_control!(app; standalone=true)
     name == "tree" && open_tree_control!(app)
     name in ("resume", "fork") && open_session_selector!(app, name)
@@ -372,7 +372,9 @@ end
 function page_input!(app::App, ::Val{:pi_menu}, event::KeyEvent, raw::AbstractVector{UInt8}=UInt8[])
     items = menu_page_items(app)
     control=app.menus.auth_menu_control
-    if control isa AuthMenuControl && auth_menu_active(app,control)
+    if app.menus.path == ["trust"]
+        project_trust_input!(app,event,raw)
+    elseif control isa AuthMenuControl && auth_menu_active(app,control)
         auth_menu_input!(app,control,event,raw)
     elseif selector_active(app)
         session_selector_input!(app, event, raw)
@@ -407,7 +409,9 @@ function page_view!(app::App, ::Val{:pi_menu}, frame::Frame)
 end
 
 function page_mouse!(app::App, ::Val{:pi_menu}, event::MouseEvent)
-    handled=if selector_active(app)
+    handled=if app.menus.path == ["trust"]
+        false
+    elseif selector_active(app)
         session_selector_mouse!(app, event)
     elseif app.menus.path == ["tree"]
         false
@@ -441,49 +445,23 @@ end
 
 """Read skill/prompt metadata from Pi-compatible project and user directories."""
 function resource_metadata(path::AbstractString, key::AbstractString, default::AbstractString="")
-    lines = readlines(path)
+    resource_metadata_text(read(path,String),key,default)
+end
+
+function resource_metadata_text(text::AbstractString,key::AbstractString,default::AbstractString="")
+    lines = split(text,'\n')
     index = findfirst(line -> startswith(strip(line), key * ":"), lines)
     isnothing(index) ? String(default) : strip(split(lines[index], ":"; limit=2)[2], [' ', '\t', '"', '\''])
 end
 
 function discover_disk_resources!(app::App; directory::AbstractString=app.settings.workspace,
         agent_dir::AbstractString=joinpath(homedir(), ".pi", "agent"))
-    empty!(app.menus.resource_warnings)
-    for skill_dir in (joinpath(agent_dir, "skills"), joinpath(directory, ".pi", "skills"))
-        if isdir(skill_dir)
-            for (root, child_dirs, filenames) in walkdir(skill_dir; follow_symlinks=false)
-                if "SKILL.md" in filenames
-                    skill_file = joinpath(root, "SKILL.md")
-                    name = resource_metadata(skill_file, "name", basename(root))
-                    description = resource_metadata(skill_file, "description")
-                    register_skill!(app, name, skill_file; description)
-                    empty!(child_dirs)
-                elseif root == skill_dir
-                    for file in filter(name -> endswith(name, ".md"), filenames)
-                        path = joinpath(root, file)
-                        name = resource_metadata(path, "name", splitext(file)[1])
-                        register_skill!(app, name, path; description=resource_metadata(path, "description"))
-                    end
-                end
-            end
-        end
+    controls=app.menus.startup
+    if isnothing(controls)
+        controls=startup_controls(app;bindings=startup_host_bindings(app))
+        app.menus.startup=controls
     end
-    for prompt_dir in (joinpath(agent_dir, "prompts"), joinpath(directory, ".pi", "prompts"))
-        if isdir(prompt_dir)
-            for filename in filter(name -> endswith(name, ".md"), readdir(prompt_dir))
-                path = joinpath(prompt_dir, filename)
-                if isfile(path)
-                    outcome = prompt_load_result(path)
-                    if outcome.ok
-                        template = outcome.value
-                        register_prompt!(app, template.name, template.description; content=template.content, path=template.file_path, argument_hint=template.argument_hint)
-                    else
-                        push!(app.menus.resource_warnings, outcome.reason)
-                    end
-                end
-            end
-        end
-    end
+    startup_discover_resources!(controls,app;directory,agent_dir)
     return app
 end
 

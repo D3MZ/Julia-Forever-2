@@ -1,4 +1,5 @@
 struct AnthropicMessagesProtocol end
+model_image_payload(::AnthropicMessagesProtocol,payload,policy::ModelImagePolicy=model_image_policy())=model_image_payload(Val(:anthropic),payload,policy)
 model_endpoint(::AnthropicMessagesProtocol, endpoint, model) = endpoint * "/v1/messages?beta=true"
 model_protocol_headers(::AnthropicMessagesProtocol) = ["anthropic-version" => "2023-06-01"]
 

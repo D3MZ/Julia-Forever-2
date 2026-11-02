@@ -37,7 +37,7 @@ function prompt_registered_template(item)
 end
 function expand_registered_resources(app,text::AbstractString)::NamedTuple{(:ok,:reason,:text),Tuple{Bool,String,String}}
     prompt_expansion_result(text) do
-        expanded=skill_expand_command(text,app.menus.skills)
+        expanded=skill_expand_command(text,app.menus.skills;reader=path->project_skill_read(app,path))
         command=prompt_command_parts(expanded)
         index=isnothing(command) ? nothing : findfirst(item->item.name==command.name,app.menus.prompts)
         if isnothing(index)

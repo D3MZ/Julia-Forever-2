@@ -13,7 +13,7 @@ const TERMINAL_SETTINGS = SettingSpec[
     SettingSpec("show-images", "Show images", "Render images inline in terminal", "true", String["true", "false"]),
     SettingSpec("image-width-cells", "Image width", "Preferred inline image width in terminal cells", "60", String["60", "80", "120"]),
     SettingSpec("auto-resize-images", "Auto-resize images", "Resize large images to 2000x2000 max for better model compatibility", "true", String["true", "false"]),
-    SettingSpec("block-images", "Block images", "Prevent images from being sent to LLM providers", "false", String["true", "false"]),
+    SettingSpec("block-images", "Block images", "Replace supported user and tool images before native model requests; opaque custom providers must honor the image policy", "false", String["true", "false"]),
     SettingSpec("skill-commands", "Skill commands", "Register skills as /skill:name commands", "true", String["true", "false"]),
     SettingSpec("show-hardware-cursor", "Show hardware cursor", "Use the terminal cursor instead of Pi's drawn cursor", "false", String["true", "false"]),
     SettingSpec("editor-padding", "Editor padding", "Horizontal padding for input editor (0-3)", "0", String["0", "1", "2", "3"]),
@@ -33,7 +33,7 @@ const TERMINAL_SETTINGS = SettingSpec[
     SettingSpec("collapse-changelog", "Collapse changelog", "Show condensed changelog after updates", "false", String["true", "false"]),
     SettingSpec("quiet-startup", "Quiet startup", "Disable verbose printing at startup (header: keep only the startup header)", "false", String["true", "header", "false"]),
     SettingSpec("install-telemetry", "Install telemetry", "Unavailable: Julia Forever 2 has no approved telemetry destination or privacy contract. No installation or update ping is sent.", "false", String["true", "false"]),
-    SettingSpec("default-project-trust", "Default project trust", "Fallback behavior when no extension or saved trust decision decides project trust", "Ask", String["Ask", "Always trust", "Never trust"]),
+    SettingSpec("default-project-trust", "Default project trust", "Fallback for project skills and prompts without a saved trust decision; applies on the next project admission, never changes host permissions", "Ask", String["Ask", "Always trust", "Never trust"]),
     SettingSpec("double-escape-action", "Double-escape action", "Action when pressing Escape twice with empty editor", "tree", String["tree", "fork", "none"]),
     SettingSpec("tree-filter-mode", "Tree filter mode", "Default filter when opening /tree", "default", String["default", "no-tools", "user-only", "labeled-only", "all"]),
     SettingSpec("warnings", "Warnings", "Enable or disable individual warnings", "configure", String[]),
@@ -55,8 +55,6 @@ setting_unavailable_reason(::Val{Symbol("install-telemetry")}) = "Install teleme
 setting_unavailable_reason(::Val{Symbol("transport")}) = "Transport selection is unavailable: native providers currently use HTTP/SSE. WebSocket and cached WebSocket transports are not implemented."
 setting_unavailable_reason(::Val{Symbol("cache-warming-mode")}) = "Cache warming is unavailable: no native background warming service is installed. No warming requests are sent."
 setting_unavailable_reason(::Val{Symbol("auto-resize-images")}) = "Input image resizing is unavailable: terminal image sizing only changes display, not images sent to a provider."
-setting_unavailable_reason(::Val{Symbol("block-images")}) = "Outbound image blocking is unavailable: this build has no request-wide image policy. This switch does not guarantee that custom provider requests exclude images."
-setting_unavailable_reason(::Val{Symbol("default-project-trust")}) = "Project trust decisions are unavailable: this build has no native project trust store or resource-loading gate. Existing security permissions remain in force."
 setting_unavailable_reason(::Val{Symbol("share-destination")}) = "Session sharing is unavailable: no native Radius or GitHub Gist publisher is installed. No session is uploaded."
 setting_unavailable_reason(::Val{Symbol("mermaid-rendering")}) = "Mermaid diagrams are unavailable: diagram fences remain source text. No native diagram renderer is installed."
 
@@ -340,6 +338,14 @@ end
 
 """Terminal integrations can specialize setting effects independently of rendering."""
 apply_setting_effect!(app::App, ::Val, value::AbstractString) = nothing
+function apply_setting_effect!(app::App, ::Val{Symbol("block-images")}, value::AbstractString)
+    if value in ("true","false")
+        install!(app.session.kernel,ComponentSpec(:block_images,value=="true"))
+        nothing
+    else
+        (ok=false,reason="Invalid image-blocking value")
+    end
+end
 apply_setting_effect!(app::App, ::Val{Symbol("skill-commands")}, value::AbstractString) = set_skill_commands!(app, value == "true")
 function apply_setting_effect!(app::App, ::Val{:autocompact}, value::AbstractString)
     policy = JuliaForever2.session_compaction_settings(app.session)

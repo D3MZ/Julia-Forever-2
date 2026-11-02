@@ -8,6 +8,7 @@ export Answer, ActionDecision, RunJulia, Failure
 
 public respond, execute!, initialize_executor!, fork_executor, close_executor!, JuliaExecutor
 public PendingInput, PendingInputs, queue_input!, set_input_queue_mode!, pending_input_snapshot, peek_pending_inputs, clear_pending_inputs!, submit_queued_turn!
+public ModelImagePolicy, ModelImagePolicyFailure, model_image_policy, with_model_image_policy, project_model_images, model_image_payload
 public response_reply, response_usage, emit!, cancelled, remaining_time, cancellation_event
 public register_cancellation!, unregister_cancellation!
 public current_execution_context

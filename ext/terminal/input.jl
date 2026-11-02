@@ -252,6 +252,8 @@ function default_input!(app::App, event::KeyEvent)
     raw = captured_key_bytes()
     if event.action == Tachikoma.key_release
         nothing
+    elseif app.page==:pi_menu && app.menus.path==["trust"]
+        project_trust_input!(app,event,raw)
     elseif terminal_search_host_pasting(app,menu_packet(event,raw))
         terminal_search_host_key!(app,event,raw)
     elseif !terminal_search_host_focused(app) && app.page == :pi_menu && app.menus.path in (["settings"], ["settings", "warnings"]) && menu_search_pasting(app.menus.search, raw)

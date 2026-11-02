@@ -3,6 +3,7 @@ struct OpenAIChatProtocol{C}
 end
 """Configure OpenAI Chat Completions without assigning provider-specific policy to the core."""
 OpenAIChatProtocol(; compatibility=Dict{String,Any}()) = OpenAIChatProtocol(compatibility)
+model_image_payload(::OpenAIChatProtocol,payload,policy::ModelImagePolicy=model_image_policy())=model_image_payload(Val(:openai_chat),payload,policy)
 model_endpoint(::OpenAIChatProtocol, endpoint, model) = endpoint * "/chat/completions"
 
 function openai_wire_message(message::Message)

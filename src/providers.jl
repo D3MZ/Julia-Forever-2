@@ -1,3 +1,5 @@
+include("providers/image_wire_projection.jl")
+include("providers/image_policy.jl")
 include("providers/conversation.jl")
 include("providers/compatibility.jl")
 include("providers/demo/provider.jl")

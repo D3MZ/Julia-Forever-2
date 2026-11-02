@@ -58,17 +58,26 @@ end
 """Discover and register real skill/prompt files while retaining their exact loader provenance."""
 function startup_discover_resources!(controls::StartupControls,app;directory::AbstractString=app.settings.workspace,
         agent_dir::AbstractString=joinpath(homedir(),".pi","agent"))
+    project_trust_prepare_discovery!(app,directory)
     startup_remove_disk_registrations!(controls,app)
     collector=StartupControls(;document=StartupDocument())
     for (scope,rootdir) in ((:user,String(agent_dir)),(:project,joinpath(directory,".pi")))
-        skill_dir=joinpath(rootdir,"skills")
-        if isdir(skill_dir)
+        requested=joinpath(rootdir,"skills")
+        skill_dir=scope==:project && isdir(requested) ? project_resource_path(app,requested;directory) : requested
+        if !isnothing(skill_dir) && isdir(skill_dir)
             for (root,children,files) in walkdir(skill_dir;follow_symlinks=false)
                 paths="SKILL.md" in files ? [joinpath(root,"SKILL.md")] : root==skill_dir ?
                     [joinpath(root,file) for file in files if endswith(file,".md")] : String[]
                 for path in paths
+                    path=scope==:project ? project_resource_path(app,path;directory) : path
+                    isnothing(path) && continue
+                    content=preference_attempt(()->scope==:project ? project_resource_read(app,path;directory) : read(path,String))
+                    if !content.ok
+                        push!(collector.document.diagnostics,StartupDiagnostic(;section=:skill,severity=:error,path,message=content.reason))
+                        continue
+                    end
                     fallback=basename(path)=="SKILL.md" ? basename(root) : splitext(basename(path))[1]
-                    name=resource_metadata(path,"name",fallback);description=resource_metadata(path,"description")
+                    name=resource_metadata_text(content.value,"name",fallback);description=resource_metadata_text(content.value,"description")
                     registered=register_skill!(app,name,path;description)
                     controls.disk_registrations[(:skill,registered.name)]=(resource_registration_revision(app,:skill,registered.name),registered)
                     startup_registered_resource!(collector,StartupResource(;kind=:skill,name=registered.name,path=registered.path,source="local",scope))
@@ -77,12 +86,21 @@ function startup_discover_resources!(controls::StartupControls,app;directory::Ab
             end
         end
     end
-    for (scope,prompt_dir) in ((:user,joinpath(agent_dir,"prompts")),(:project,joinpath(directory,".pi","prompts")))
-        if isdir(prompt_dir)
+    for (scope,requested) in ((:user,joinpath(agent_dir,"prompts")),(:project,joinpath(directory,".pi","prompts")))
+        prompt_dir=scope==:project && isdir(requested) ? project_resource_path(app,requested;directory) : requested
+        if !isnothing(prompt_dir) && isdir(prompt_dir)
             for filename in filter(name->endswith(name,".md"),readdir(prompt_dir))
                 path=joinpath(prompt_dir,filename)
-                if isfile(path)
-                    result=prompt_load_result(path)
+                path=scope==:project && isfile(path) ? project_resource_path(app,path;directory) : path
+                if !isnothing(path) && isfile(path)
+                    result=if scope==:project
+                        preference_attempt() do
+                            raw=project_resource_read(app,path;directory)
+                            JuliaForever2.prompt_template_from_text(splitext(basename(path))[1],raw;file_path=path)
+                        end
+                    else
+                        prompt_load_result(path)
+                    end
                     if result.ok
                         prompt=result.value
                         registered=register_prompt!(app,prompt.name,prompt.description;content=prompt.content,path=prompt.file_path,argument_hint=prompt.argument_hint)
