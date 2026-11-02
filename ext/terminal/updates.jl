@@ -11,15 +11,26 @@ function start_update_check!(app::App; root::AbstractString=installation_root(),
 end
 
 """Install the revision already discovered by the updater."""
-function start_update_install!(app::App; installer=apply_update!)
+function start_update_install!(app::App; installer=apply_update!, automatic=false)
     check = app.updates.latest
     if !isnothing(check) && update_available(check) && !app.updates.installing && !app.operations.closing[]
+        generation = app.updates.permission_generation[]
         app.updates.installing = true
         app.status = "Installing update..."
-        task = Threads.@spawn installer(check)
+        task = Threads.@spawn run_update_install!(app, check, installer, automatic, generation)
         notify_completion!(app, :update_installed, task, task)
     end
     return nothing
+end
+
+"""Distinguish an unstarted installation from any installer-returned value."""
+struct UpdateAdmissionCancelled end
+
+"""Recheck automatic permission at worker admission without claiming atomic revocation."""
+function run_update_install!(app::App, check::UpdateCheck, installer, automatic::Bool, generation::UInt64)
+    admitted = !app.operations.closing[] && (!automatic ||
+        (app.updates.monitor_enabled[] && app.updates.permission_generation[] == generation))
+    admitted ? installer(check) : UpdateAdmissionCancelled()
 end
 
 """Publish an update notification, or automatically install when opted in."""
@@ -31,7 +42,7 @@ function update_checked!(app::App, check::UpdateCheck; installer=apply_update!)
     app.updates.latest = check
     if update_available(check)
         if app.updates.automatic || app.updates.requested_install
-            start_update_install!(app; installer)
+            start_update_install!(app; installer, automatic=!app.updates.requested_install)
         else
             app.status = "Update available (" * first(check.latest, 7) * "). /update install"
         end
@@ -68,19 +79,23 @@ update_check_finished!(app::App, result::BackgroundUpdateResult) = update_checke
 function update_installed!(app::App, task::Task)
     result = fetch(task)
     app.updates.installing = false
-    if result == :installed
+    if result === :installed
         app.updates.latest = nothing
         app.status = "Update installed. Restart to use it."
-    elseif result == :compile_failed
+    elseif result === :compile_failed
         app.status = "Checkout advanced, but Julia precompilation failed. Resolve it before restarting."
-    elseif result == :merge_failed
+    elseif result === :merge_failed
         app.status = "Git could not safely fast-forward the installation."
-    elseif result == :dirty
+    elseif result === :dirty
         app.status = "Local changes prevent an update; preserve them before retrying."
-    elseif result == :changed
+    elseif result === :changed
         app.status = "The installation changed after the update check; check again."
-    else
+    elseif result isa UpdateAdmissionCancelled
+        app.status = "Update installation was not admitted."
+    elseif result === :current
         app.status = "Already up to date."
+    else
+        app.status = "Update outcome is unknown. Verify the installation before restarting."
     end
     return nothing
 end
@@ -92,7 +107,7 @@ function toggle_auto_updates!(app::App; installer=apply_update!)
     app.updates.monitor_enabled[] = app.updates.automatic
     app.status = app.updates.automatic ? "Automatic updates enabled." : "Automatic updates disabled."
     if app.updates.automatic
-        start_update_install!(app; installer)
+        start_update_install!(app; installer, automatic=true)
     end
     return nothing
 end
