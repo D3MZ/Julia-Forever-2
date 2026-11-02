@@ -29,10 +29,17 @@ function draw_footer!(buffer, x, y, width, app::App)
 end
 
 function pi_style(style::Symbol)
-    color = style == :accent ? Tachikoma.ColorRGB(167, 152, 215) :
+    runtime = ACTIVE_NATIVE_THEME[]
+    if !isnothing(runtime)
+        theme_style(runtime, style)
+    else
+    color = style == :menu_border ? Tachikoma.ColorRGB(95, 168, 204) :
+        style == :muted ? Tachikoma.ColorRGB(157, 165, 169) :
+        style == :accent ? Tachikoma.ColorRGB(167, 152, 215) :
         style == :border ? Tachikoma.ColorRGB(151, 118, 229) :
         style == :text_dim ? Tachikoma.ColorRGB(126, 136, 142) : Tachikoma.ColorRGB(222, 224, 225)
-    return Tachikoma.Style(; fg=color)
+    style == :terminal_default ? Tachikoma.Style() : Tachikoma.Style(; fg=color)
+    end
 end
 
 function drawline!(buffer, x, y, width, text, style=:text)
@@ -64,56 +71,41 @@ function draw_input_border!(buffer, x, y, width, app::App; ticks::Integer=time_n
     return nothing
 end
 
-function draw_conversation_line!(buffer, x, y, width, line::AbstractString, style)
+function draw_conversation_line!(buffer, x, y, width, line::AbstractString, style; padding::Int=1)
     if style in (:user_message, :code_result)
         color = style == :user_message ? Tachikoma.ColorRGB(33, 59, 73) : Tachikoma.ColorRGB(37, 65, 49)
         bg = Tachikoma.Style(; fg=pi_style(:text).fg, bg=color)
         Tachikoma.set_string!(buffer, x, y, repeat(" ", width), bg; max_x=x + width - 1)
-        Tachikoma.set_string!(buffer, x + 1, y, line, bg; max_x=x + width - 2)
+        Tachikoma.set_string!(buffer, x + padding, y, line, bg; max_x=x + width - padding - 1)
     else
-        drawline!(buffer, x + 1, y, width - 2, line, style)
+        drawline!(buffer, x + padding, y, width - 2padding, line, style)
     end
 end
 
-function draw_conversation_line!(buffer, x, y, width, spans::Vector{Tachikoma.Span}, style)
-    column = x + 1
+function draw_conversation_line!(buffer, x, y, width, spans::Vector{Tachikoma.Span}, style; padding::Int=1)
+    if style == :archive
+        draw_session_display_line!(buffer, x, y, width, spans)
+    elseif style == :markdown
+        rendered=session_display_wrap(spans,width,padding;boundary_styles=true)
+        draw_session_display_line!(buffer,x,y,width,first(rendered))
+    else
+    column = x + padding
     for span in spans
-        column = Tachikoma.set_string!(buffer, column, y, span.content, span.style; max_x=x + width - 2)
+        column = Tachikoma.set_string!(buffer, column, y, span.content, span.style; max_x=x + width - padding - 1)
+    end
     end
 end
 
 function default_view!(app::App, frame::Frame)
-    app.area = frame.area
     if frame.area.width >= 5 && frame.area.height >= 5
         page_view!(app, Val(app.page), frame)
+    else
+        terminal_output_cursor!(app,nothing)
     end
-    return nothing
+    nothing
 end
 
 function page_view!(app::App, page::Val, frame::Frame)
-    area, buf = frame.area, frame.buffer
-    x, y, w, h = area.x, area.y, area.width, area.height
-    lines = transcript_lines!(app, w)
-    preview = preview_lines!(app, w)
-    matches, first, count = command_menu(app, h)
-    border = y + h - 5 - count
-    maxlines = max(0, border - y)
-    lastline = max(0, length(lines) + length(preview) - app.scroll)
-    firstline = max(1, lastline - maxlines + 1)
-    for (i, index) in enumerate(firstline:lastline)
-        line, style = index <= length(lines) ? lines[index] : preview[index - length(lines)]
-        draw_conversation_line!(buf, x, y + i - 1, w, line, style)
-    end
-    draw_input_border!(buf, x, border, w, app)
-    Tachikoma.render(app.input, Rect(x, border + 1, w, 1), buf)
-    drawline!(buf, x, border + 2, w, repeat("─", w), :border)
-    for offset in 0:(count - 1)
-        index = first + offset
-        name, description = matches[index]
-        selected = app.selected == index
-        label = (selected ? "→ " : "  ") * rpad(name, 15) * description
-        drawline!(buf, x, border + 3 + offset, w, label, selected ? :accent : :text_dim)
-    end
-    drawline!(buf, x, y + h - 2, w, app.directory, :text_dim)
-    draw_footer!(buf, x, y + h - 1, w, app)
+    startup_host_view!(app,frame)
+    nothing
 end

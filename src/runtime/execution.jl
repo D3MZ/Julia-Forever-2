@@ -22,13 +22,7 @@ end
 function default_loop!(session::Session, prompt::AbstractString, max_steps::Integer)
     context = current_execution_context()
     append_message!(session, Message(:user, prompt))
-    outcome = nothing
-    step = 0
-    while step < max_steps && isnothing(outcome)
-        outcome = advance!(session, context)
-        step += 1
-    end
-    finish(outcome)
+    pending_turn_loop!(session, max_steps, context)
 end
 
 finish(::Nothing) = ExecutionResult(false, "Agent reached the step limit.")
@@ -36,10 +30,11 @@ finish(outcome) = outcome
 advance!(session::Session, context::ExecutionContext) = cancelled(context) ? stopped_result() : consume!(session, request(session, context), context)
 
 function request(session::Session, context::ExecutionContext)
-    messages = history_snapshot(session).messages
     with_component(session.kernel, :provider) do provider
+        maybe_compact!(session, provider, context)
+        refresh_prepared_inputs!(session, context)
         protocol = operation_protocol(session.definition, provider)
-        Base.invokelatest(respond_model, provider, model_request(protocol, messages, session), session, context)
+        Base.invokelatest(request_with_compaction, session, provider, protocol, context)
     end
 end
 
@@ -55,16 +50,24 @@ end
 
 function commit!(session::Session, response, context::ExecutionContext)
     reply = response_reply(response)
-    commit!(session, Base.invokelatest(agent_decision, reply), reply, context)
+    task_local_storage(:JuliaForever2_provider_response, response) do
+        commit!(session, Base.invokelatest(agent_decision, reply), reply, context)
+    end
 end
 
 commit!(session::Session, decision::Failure, reply, context::ExecutionContext) = Base.invokelatest(apply_decision!, session, decision, context)
 
 function commit!(session::Session, decision, reply, context::ExecutionContext)
-    append_message!(session, Base.invokelatest(decision_message, decision))
-    emit!(context, HarnessEvent(:response_committed, (operation_id=operation_id(context),)))
-    emit!(context, HarnessEvent(:reply, reply))
-    Base.invokelatest(apply_decision!, session, decision, context)
+    response = get(task_local_storage(), :JuliaForever2_provider_response, nothing)
+    task_local_storage(:JuliaForever2_provider_response, nothing) do
+        task_local_storage(:JuliaForever2_provider_response, response) do
+            message=Base.invokelatest(decision_message, decision)
+            append_message!(session, Base.invokelatest(response_context_message,message,response))
+        end
+        emit!(context, HarnessEvent(:response_committed, (operation_id=operation_id(context),)))
+        emit!(context, HarnessEvent(:reply, reply))
+        Base.invokelatest(apply_decision!, session, decision, context)
+    end
 end
 function use_component(fallback, session::Session, name::Symbol, args...)
     with_component(session.kernel, name; fallback) do implementation
@@ -165,13 +168,14 @@ function record!(session::Session, action, context::ExecutionContext)
     append_message!(session, Message(:code_result, result.text; metadata=result))
     result
 end
-child_session(session::Session, definition::AgentDefinition, isolated) = Session(definition; messages=empty(session.conversation.messages), working_directory=working_directory(session), parent_id=session.runtime.id, root_id=session.runtime.root_id)
+child_session(session::Session, definition::AgentDefinition, isolated) = Session(definition; messages=empty(session.conversation.messages), working_directory=working_directory(session), parent_id=session.runtime.id, root_id=session.runtime.root_id, compaction=session.runtime.compaction_settings)
 
 function child_session(session::Session, ::Nothing, isolated::Bool)
     kernel = isolated ? fork_kernel(session.kernel) : session.kernel
     return Session(kernel; executor=fork_executor(session.runtime.executor), messages=empty(session.conversation.messages),
         definition=session.definition, owns_kernel=isolated, working_directory=working_directory(session),
-        parent_id=session.runtime.id, root_id=session.runtime.root_id)
+        parent_id=session.runtime.id, root_id=session.runtime.root_id,
+        compaction=session.runtime.compaction_settings)
 end
 
 """Spawn a child; isolated=true snapshots composition, while an explicit definition replaces it."""

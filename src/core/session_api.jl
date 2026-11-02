@@ -1,16 +1,30 @@
 """An owned, replaceable interface to independent Julia sessions and their durable state."""
-mutable struct SessionAPI{F,S,Q}
+mutable struct SessionAPI{F,S,Q,T,W}
     factory::F
     store::S
     query::Q
+    titles::T
+    workspaces::W
     lock::ReentrantLock
     sessions::Dict{String,Session}
     handles::Dict{String,TaskHandle}
+    closing::Set{String}
     closed::Bool
 end
 
 """Construct a native session API; factories return a Kernel or AgentDefinition."""
-SessionAPI(; factory=Kernel, store=nothing, query=nothing) = SessionAPI(factory, store, query, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), false)
+SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing,
+    workspaces=store isa SessionStore ? WorkspaceRegistry(store) : nothing) =
+    SessionAPI(factory, store, query, titles, workspaces, ReentrantLock(),
+        Dict{String,Session}(), Dict{String,TaskHandle}(), Set{String}(), false)
+
+"""Preserve the existing positional SessionAPI constructor for callers not using workspaces."""
+SessionAPI(factory, store, query, titles, lock::ReentrantLock,
+    sessions::Dict{String,Session}, handles::Dict{String,TaskHandle},
+    closing::Set{String}, closed::Bool) =
+    SessionAPI(factory, store, query, titles,
+        store isa SessionStore ? WorkspaceRegistry(store) : nothing,
+        lock, sessions, handles, closing, closed)
 
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
@@ -59,7 +73,7 @@ function create!(api::SessionAPI, name::AbstractString, directory::AbstractStrin
     lock(api.lock) do
         if api.closed
             RpcError(-32000, "Session API is closed")
-        elseif haskey(api.sessions, String(name))
+        elseif haskey(api.sessions, String(name)) || String(name) in api.closing
             RpcError(-32000, "Session is already open: $name")
         else
             restore!(api, name, directory, resume)
@@ -68,31 +82,348 @@ function create!(api::SessionAPI, name::AbstractString, directory::AbstractStrin
 end
 
 function restore!(api::SessionAPI, name, directory, resume)
-    record = resume && !isnothing(api.store) ? saved_session_record(api.store, name) : nothing
-    if resume && isnothing(record)
-        RpcError(-32004, "Session was not saved: $name")
+    if !isnothing(api.store) && session_archived(api.store, name)
+        RpcError(-32000, "Session is archived: $name")
     else
-        session = restore(Base.invokelatest(api.factory), record, directory)
-        api.sessions[String(name)] = session
-        api_session_summary(name, session)
+        record = resume && !isnothing(api.store) ? saved_session_record(api.store, name) : nothing
+        if resume && isnothing(record)
+            RpcError(-32004, "Session was not saved: $name")
+        else
+            session = restore(Base.invokelatest(api.factory), record, directory)
+            api.sessions[String(name)] = session
+            api_session_summary(name, session)
+        end
     end
 end
 
 restore(target::Union{Kernel,AgentDefinition}, ::Nothing, directory) = api_create_session(target; working_directory=directory)
-restore(target::Union{Kernel,AgentDefinition}, record, directory) = api_create_session(target; messages=record.messages, working_directory=record.directory, id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id)
+restore(target::Union{Kernel,AgentDefinition}, record, directory) = api_create_session(target; messages=record.messages, compaction_entry=record.compaction,
+    working_directory=record.directory, id=record.lineage.id,
+    parent_id=record.lineage.parent_id, root_id=record.lineage.root_id)
 function api_close_session!(api::SessionAPI, params::AbstractDict)
     apply(api_session(api, params)) do session
         name = String(params["session"])
         lock(api.lock) do
             pop!(api.sessions, name, nothing)
             pop!(api.handles, name, nothing)
+            push!(api.closing, name)
         end
         close(session)
+        lock(api.lock) do
+            delete!(api.closing, name)
+        end
         Dict("closed" => true)
     end
 end
 api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(params["session"], session), api_session(api, params))
 api_session_messages(api::SessionAPI, params::AbstractDict) = apply(session -> api_message.(history_snapshot(session).messages), api_session(api, params))
+
+"""Resolve a replaceable durable store without holding the API lock during I/O."""
+function api_saved_store(api::SessionAPI)
+    lock(api.lock) do
+        api.closed ? RpcError(-32000, "Session API is closed") :
+            isnothing(api.store) ? RpcError(-32601, "No persistent session store is configured") : api.store
+    end
+end
+
+saved_summaries(error::RpcError) = error
+saved_summaries(store) = session_summaries(store)
+saved_summaries(error::RpcError, ::Nothing) = error
+saved_summaries(error::RpcError, ::Bool) = error
+saved_summaries(store, ::Nothing) = session_summaries(store)
+saved_summaries(store, archived::Bool) = archived ?
+    RpcError(-32601, "Session archive service is not configured") : session_summaries(store)
+saved_summaries(store::SessionStore, archived::Bool) = session_summaries(store; archived)
+
+function api_saved_session_list(api::SessionAPI, params::AbstractDict)
+    archived = get(params, "archived", nothing)
+    isnothing(archived) || archived isa Bool ?
+        saved_summaries(api_saved_store(api), archived) :
+        RpcError(-32602, "Archived filter must be Boolean")
+end
+
+"""List live and saved Julia sessions as one identity-aware, cold-safe projection.
+
+Live state wins when the same durable UUID is open and saved. A new live
+session reusing a saved name has a different UUID and remains a separate row.
+An optional store is queried through its replaceable session_summaries method.
+"""
+api_session_inventory(api::SessionAPI, params::AbstractDict) = api_inventory_filter(api, get(params, "archived", false))
+api_inventory_filter(::SessionAPI, archived) = RpcError(-32602, "Archived filter must be Boolean")
+
+function api_inventory_filter(api::SessionAPI, archived::Bool)
+    snapshot = lock(api.lock) do
+        api.closed ? RpcError(-32000, "Session API is closed") :
+            (collect(pairs(api.sessions)), api.store)
+    end
+    api_inventory_snapshot(snapshot, archived)
+end
+
+api_inventory_snapshot(error::RpcError, ::Bool) = error
+
+function api_inventory_snapshot(snapshot::Tuple, archived::Bool)
+    live, store = snapshot
+    saved = isnothing(store) ? Dict{String,Any}[] : saved_summaries(store, archived)
+    api_inventory_rows(live, saved, archived)
+end
+
+api_inventory_rows(live, error::RpcError, ::Bool) = error
+
+function api_inventory_rows(live, saved, archived::Bool)
+    records = Dict{String,Dict{String,Any}}()
+    for row in saved
+        summary = Dict{String,Any}(String(key) => value for (key, value) in pairs(row))
+        identity = string(summary["id"])
+        summary["live"] = false
+        summary["persisted"] = true
+        summary["archived"] = archived
+        records[identity] = summary
+    end
+    if !archived
+        for (name, session) in live
+            summary = Dict{String,Any}(api_session_summary(name, session))
+            identity = string(summary["id"])
+            summary["persisted"] = haskey(records, identity)
+            summary["live"] = true
+            summary["archived"] = false
+            records[identity] = summary
+        end
+    end
+    sort!(collect(values(records)); by=row -> (String(row["session"]), string(row["id"])))
+end
+
+"""Group cold-safe session summaries by lexical working directory, not process ownership.
+
+This is a derived view, not a persistent Workspace registry or authorization boundary.
+The caller retains ownership of all session state and may replace the API service.
+"""
+function session_workspace_groups(summaries::AbstractVector)
+    groups = Dict{String,Vector{Dict{String,Any}}}()
+    for row in summaries
+        directory = normpath(String(row["workingDirectory"]))
+        summary = Dict{String,Any}(String(key) => value for (key, value) in pairs(row))
+        push!(get!(groups, directory, Dict{String,Any}[]), summary)
+    end
+    result = Dict{String,Any}[]
+    for (directory, sessions) in groups
+        sort!(sessions; by=row -> (String(row["session"]), String(row["id"])))
+        push!(result, Dict{String,Any}(
+            "workingDirectory" => directory, "sessions" => sessions,
+            "sessionCount" => length(sessions)))
+    end
+    sort!(result; by=row -> String(row["workingDirectory"]))
+end
+
+"""Project live and persisted Julia sessions into independent directory groups."""
+function api_session_workspace_groups(api::SessionAPI, params::AbstractDict)
+    sessions = api_session_inventory(api, params)
+    if sessions isa RpcError
+        sessions
+    elseif isnothing(api.workspaces)
+        session_workspace_groups(sessions)
+    else
+        registered_workspace_groups(api.workspaces, sessions)
+    end
+end
+
+"""Resolve the optional, replaceable registry without trusting browser-supplied identity."""
+function api_workspace_registry(api::SessionAPI)
+    lock(api.lock) do
+        api.closed ? RpcError(-32000, "Session API is closed") :
+            isnothing(api.workspaces) ? RpcError(-32601, "Workspace registry is not configured") :
+            api.workspaces
+    end
+end
+
+workspace_api_result(result::RpcError) = result
+workspace_api_result(result) = result.ok ? result.value :
+    RpcError(result.reason == "Unknown workspace" ? -32004 : -32602, result.reason)
+
+"""Apply registry mutations only after successful registry resolution."""
+api_workspace_apply(f, api::SessionAPI) = api_workspace_apply(f, api_workspace_registry(api))
+api_workspace_apply(f, error::RpcError) = error
+api_workspace_apply(f, registry) = workspace_api_result(f(registry))
+
+function api_workspace_list(api::SessionAPI, params::AbstractDict)
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry : workspace_snapshot(registry)
+end
+
+function api_workspace_create!(api::SessionAPI, params::AbstractDict)
+    path = get(params, "path", nothing)
+    title = get(params, "title", nothing)
+    if path isa AbstractString && (isnothing(title) || title isa AbstractString)
+        api_workspace_apply(api) do registry
+            register_workspace!(registry, path; title)
+        end
+    else
+        RpcError(-32602, "Expected an absolute directory and optional title")
+    end
+end
+
+function api_workspace_rename!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    title = get(params, "title", nothing)
+    if id isa AbstractString && title isa AbstractString
+        api_workspace_apply(api) do registry
+            rename_workspace!(registry, id, title)
+        end
+    else
+        RpcError(-32602, "Expected a workspace identifier and title")
+    end
+end
+
+function api_workspace_delete!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    if id isa AbstractString
+        api_workspace_apply(api) do registry
+            delete_workspace!(registry, id)
+        end
+    else
+        RpcError(-32602, "Expected a workspace identifier")
+    end
+end
+
+function api_workspace_move!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    before = get(params, "beforeWorkspaceId", nothing)
+    if id isa AbstractString && (isnothing(before) || before isa AbstractString)
+        api_workspace_apply(api) do registry
+            move_workspace!(registry, id, before)
+        end
+    else
+        RpcError(-32602, "Invalid workspace ordering request")
+    end
+end
+
+api_workspace_move_members(registry, error::RpcError, id, session_id, before) = error
+
+function api_workspace_move_members(registry, inventory::AbstractVector, id, session_id, before)
+    groups = registered_workspace_groups(registry, inventory)
+    index = findfirst(group -> get(group, "workspaceId", nothing) == id, groups)
+    if isnothing(index)
+        RpcError(-32004, "Unknown workspace")
+    else
+        members = String[string(row["id"]) for row in groups[index]["sessions"]]
+        move_workspace_session!(registry, id, session_id, before, members)
+    end
+end
+
+function api_workspace_session_move!(api::SessionAPI, params::AbstractDict)
+    id = get(params, "workspaceId", nothing)
+    session_id = get(params, "sessionId", nothing)
+    before = get(params, "beforeSessionId", nothing)
+    if id isa AbstractString && session_id isa AbstractString &&
+            (isnothing(before) || before isa AbstractString)
+        api_workspace_apply(api) do registry
+            api_workspace_move_members(registry, api_session_inventory(api, Dict{String,Any}()), id, session_id, before)
+        end
+    else
+        RpcError(-32602, "Invalid workspace session ordering request")
+    end
+end
+
+function api_workspace_feed(api::SessionAPI, params::AbstractDict)
+    since = get(params, "since", nothing)
+    if isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0)
+        registry = api_workspace_registry(api)
+        registry isa RpcError ? registry : workspace_changes(registry; since)
+    else
+        RpcError(-32602, "Workspace cursor must be a nonnegative integer")
+    end
+end
+
+saved_summary(error::RpcError, name) = error
+saved_summary(error::RpcError, ::AbstractString) = error
+saved_summary(store, name) = RpcError(-32602, "Expected a session identifier")
+saved_summary(store, name::AbstractString) = isempty(name) ?
+    RpcError(-32602, "Expected a session identifier") : saved_summary_lookup(store, name)
+saved_summary_lookup(store, name) = something(session_summary(store, name),
+    RpcError(-32004, "Session was not saved: $name"))
+api_saved_session_detail(api::SessionAPI, params::AbstractDict) =
+    saved_summary(api_saved_store(api), api_parameter(params, "session"))
+
+"""Set the durable archive status only after the live Julia session has closed."""
+function api_set_saved_archive!(api::SessionAPI, params::AbstractDict, archived::Bool)
+    name = api_parameter(params, "session")
+    if !(name isa AbstractString && !isempty(name))
+        RpcError(-32602, "Expected a session identifier")
+    elseif archived && get(params, "stopActivity", false) !== false
+        RpcError(-32602, "Stopping an active session during archive is not supported")
+    else
+        identity = String(name)
+        lock(api.lock) do
+            if api.closed
+                RpcError(-32000, "Session API is closed")
+            elseif isnothing(api.store)
+                RpcError(-32601, "No persistent session store is configured")
+            elseif archived && (haskey(api.sessions, identity) || identity in api.closing)
+                RpcError(-32000, "Close the live session before archiving: $name")
+            else
+                result = archived ? archive_session!(api.store, identity) :
+                    unarchive_session!(api.store, identity)
+                if result.ok
+                    Dict("archived" => archived)
+                elseif startswith(result.reason, "Session was not saved:")
+                    RpcError(-32004, result.reason)
+                elseif result.reason == "Session archive service is not configured"
+                    RpcError(-32601, result.reason)
+                else
+                    RpcError(-32602, result.reason)
+                end
+            end
+        end
+    end
+end
+
+"""List ordered native pin identities without loading or resuming any session."""
+pinned_saved_sessions(error::RpcError) = error
+function pinned_saved_sessions(store)
+    names = pinned_sessions(store)
+    isnothing(names) ? RpcError(-32601, "Session pin service is not configured") : names
+end
+
+"""Adapt optional pin mutations to the Julia-native, replaceable session RPC."""
+pin_saved_session!(error::RpcError, name::AbstractString, pinned::Bool) = error
+function pin_saved_session!(store, name::AbstractString, pinned::Bool)
+    result = pinned ? pin_session!(store, name) : unpin_session!(store, name)
+    if result.ok
+        Dict("pinned" => pinned)
+    elseif result.reason == "Session pin service is not configured"
+        RpcError(-32601, result.reason)
+    elseif startswith(result.reason, "Session was not saved:")
+        RpcError(-32004, result.reason)
+    elseif startswith(result.reason, "Session is archived:")
+        RpcError(-32000, result.reason)
+    else
+        RpcError(-32602, result.reason)
+    end
+end
+
+function api_set_saved_pin!(api::SessionAPI, params::AbstractDict, pinned::Bool)
+    name = api_parameter(params, "session")
+    name isa AbstractString && !isempty(name) ?
+        pin_saved_session!(api_saved_store(api), String(name), pinned) :
+        RpcError(-32602, "Expected a session identifier")
+end
+
+api_pinned_session_list(api::SessionAPI, params::AbstractDict) =
+    pinned_saved_sessions(api_saved_store(api))
+
+"""Export public session text through a Julia-owned, replaceable Markdown renderer."""
+function api_session_markdown(api::SessionAPI, params::AbstractDict)
+    title = get(params, "title", nothing)
+    source_path = get(params, "sourcePath", nothing)
+    if !(isnothing(title) || title isa AbstractString) ||
+            !(isnothing(source_path) || source_path isa AbstractString)
+        RpcError(-32602, "Invalid Markdown export options")
+    else
+        apply(api_session(api, params)) do session
+            Dict("markdown" => session_markdown(session; title, source_path))
+        end
+    end
+end
+
 """Validate external predicates before constructing a native history query."""
 function api_search_parameters(params::AbstractDict)
     text = api_parameter(params, "text")
@@ -177,6 +508,8 @@ function api_session_turn!(api::SessionAPI, params::AbstractDict)
                 previous = get(api.handles, name, nothing)
                 if api.closed || get(api.sessions, name, nothing) !== session
                     RpcError(-32000, "Session is not available: $name")
+                elseif !isnothing(api.store) && session_archived(api.store, name)
+                    RpcError(-32000, "Session is archived: $name")
                 elseif !isnothing(previous) && !istaskdone(previous)
                     RpcError(-32000, "Session already has an active turn: $name")
                 else
@@ -274,8 +607,10 @@ function api_fork_locked!(api::SessionAPI, source::String, destination::String, 
         RpcError(-32000, "Session API is closed")
     elseif !haskey(api.sessions, source)
         RpcError(-32004, "Unknown session: $source")
-    elseif haskey(api.sessions, destination)
+    elseif haskey(api.sessions, destination) || destination in api.closing
         RpcError(-32000, "Session is already open: $destination")
+    elseif !isnothing(api.store) && session_archived(api.store, destination)
+        RpcError(-32000, "Session is archived: $destination")
     else
         original = api.sessions[source]
         handle = get(api.handles, source, nothing)
@@ -298,7 +633,46 @@ function api_fork_snapshot!(api::SessionAPI, source::Session, destination::Strin
         inherited = messages[1:Int(last)]
         child = Base.invokelatest(fork_session, source, inherited)
         api.sessions[destination] = child
+        isnothing(api.titles) || inherit_session_title!(api.titles, source, child)
         api_session_summary(destination, child)
+    end
+end
+
+"""Read the optional title service without projecting title state into model messages."""
+function api_session_title(api::SessionAPI, params::AbstractDict)
+    if isnothing(api.titles)
+        RpcError(-32601, "No session title service is configured")
+    else
+        apply(api_session(api, params)) do session
+            Dict("title" => session_title(api.titles, session))
+        end
+    end
+end
+
+"""Accept an explicit human rename, preserving the original session identity."""
+function api_session_rename_title!(api::SessionAPI, params::AbstractDict)
+    input = api_parameter(params, "title")
+    if isnothing(api.titles)
+        RpcError(-32601, "No session title service is configured")
+    elseif !(input isa AbstractString)
+        RpcError(-32602, "Expected a session title")
+    else
+        apply(api_session(api, params)) do session
+            accepted = rename_session_title!(api.titles, session, input)
+            isnothing(accepted) ? RpcError(-32602, "Invalid session title") :
+                Dict("title" => accepted)
+        end
+    end
+end
+
+"""Explicitly reset a pinned title to the current first-eligible-message fallback."""
+function api_session_refresh_title!(api::SessionAPI, params::AbstractDict)
+    if isnothing(api.titles)
+        RpcError(-32601, "No session title service is configured")
+    else
+        apply(api_session(api, params)) do session
+            Dict("title" => refresh_session_title!(api.titles, session))
+        end
     end
 end
 
@@ -313,8 +687,28 @@ const SESSION_OPERATIONS = Dict(
     "session/open" => api_open_session!,
     "session/resume" => (api, params) -> api_open_session!(api, params; resume=true),
     "session/list" => (api, params) -> lock(() -> sort!(collect(keys(api.sessions))), api.lock),
+    "session/list/saved" => api_saved_session_list,
+    "session/list/all" => api_session_inventory,
+    "session/list/workspaces" => api_session_workspace_groups,
+    "workspace/list" => api_workspace_list,
+    "workspace/create" => api_workspace_create!,
+    "workspace/rename" => api_workspace_rename!,
+    "workspace/delete" => api_workspace_delete!,
+    "workspace/move" => api_workspace_move!,
+    "workspace/session/move" => api_workspace_session_move!,
+    "workspace/feed" => api_workspace_feed,
+    "session/archive" => (api, params) -> api_set_saved_archive!(api, params, true),
+    "session/unarchive" => (api, params) -> api_set_saved_archive!(api, params, false),
+    "session/pin" => (api, params) -> api_set_saved_pin!(api, params, true),
+    "session/unpin" => (api, params) -> api_set_saved_pin!(api, params, false),
+    "session/list/pinned" => api_pinned_session_list,
+    "session/describe/saved" => api_saved_session_detail,
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,
+    "session/markdown" => api_session_markdown,
+    "session/title/get" => api_session_title,
+    "session/title/rename" => api_session_rename_title!,
+    "session/title/refresh" => api_session_refresh_title!,
     "session/search" => api_session_search,
     "session/search/all" => api_persisted_search,
     "session/workspace/get" => api_session_workspace,
@@ -344,6 +738,7 @@ function Base.close(api::SessionAPI)
             snapshot = collect(values(api.sessions))
             empty!(api.sessions)
             empty!(api.handles)
+            empty!(api.closing)
             snapshot
         end
     end
@@ -351,13 +746,21 @@ function Base.close(api::SessionAPI)
     nothing
 end
 """Install the replaceable Julia session API service under a profile."""
-function session_api_plugin(; name=:session_api, service_name=:session_api, store_service=nothing, query_service=nothing, factory=Kernel)
+function session_api_plugin(; name=:session_api, service_name=:session_api,
+        store_service=nothing, query_service=nothing, title_service=nothing,
+        workspace_service=nothing, factory=Kernel)
     contract = Symbol(service_name)
-    dependencies = unique(Symbol[Symbol(name) for name in (store_service, query_service) if !isnothing(name)])
+    dependencies = unique(Symbol[Symbol(dependency) for dependency in
+        (store_service, query_service, title_service, workspace_service) if !isnothing(dependency)])
     setup = context -> begin
         store = isnothing(store_service) ? nothing : service(context, Symbol(store_service))
         query = isnothing(query_service) ? nothing : service(context, Symbol(query_service))
-        provide!(context, contract, SessionAPI(; factory, store, query); requires=dependencies, cleanup=close)
+        titles = isnothing(title_service) ? nothing : service(context, Symbol(title_service))
+        workspaces = isnothing(workspace_service) ?
+            (store isa SessionStore ? WorkspaceRegistry(store) : nothing) :
+            service(context, Symbol(workspace_service))
+        provide!(context, contract, SessionAPI(; factory, store, query, titles, workspaces);
+            requires=dependencies, cleanup=close)
     end
     PluginSpec(name, setup; requires=dependencies, provides=[contract])
 end

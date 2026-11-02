@@ -20,13 +20,11 @@ function wrap_printable_ascii_line(line::Union{String,SubString{String}}, width:
     return lines
 end
 
-function wrap_conversation_line(line::AbstractString, width::Int)
-    if line isa Union{String,SubString{String}} && all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
-        wrap_printable_ascii_line(line, width)
-    else
-        wrapgraphemes(line, width)
-    end
-end
+printable_ascii(::AbstractString) = false
+printable_ascii(line::Union{String,SubString{String}}) = all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
+
+wrap_conversation_line(line::AbstractString, width::Int) = wrapgraphemes(line, width)
+wrap_conversation_line(line::Union{String,SubString{String}}, width::Int) = printable_ascii(line) ? wrap_printable_ascii_line(line, width) : wrapgraphemes(line, width)
 
 function wrapgraphemes(line::AbstractString, width)
     graphemes = Base.Unicode.graphemes(line)
@@ -74,8 +72,7 @@ function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     columns = 0
     for span in spans
         content = span.content
-        if content isa Union{String,SubString{String}} &&
-                all(byte -> 0x20 <= byte <= 0x7e, codeunits(content))
+        if printable_ascii(content)
             # Printable ASCII graphemes each occupy one byte and one column.
             # Preserve boundaries and styles when a span crosses display lines.
             index = 1
@@ -111,17 +108,8 @@ function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     return lines
 end
 
-function markdown_lines(content::AbstractString, width::Int)
-    heading = Tachikoma.Style(; fg=Tachikoma.ColorRGB(205, 154, 34), bold=true)
-    bold = Tachikoma.Style(; fg=pi_style(:text).fg, bold=true)
-    emph = Tachikoma.Style(; fg=pi_style(:text).fg, italic=true)
-    code = Tachikoma.Style(; fg=Tachikoma.ColorRGB(104, 183, 141))
-    link = Tachikoma.Style(; fg=Tachikoma.ColorRGB(105, 173, 208), underline=true)
-    spans = Tachikoma.markdown_to_spans(content, width; h1_style=heading, h2_style=heading, h3_style=heading,
-        bold_style=bold, emph_style=emph, code_style=code, link_style=link,
-        quote_style=pi_style(:text_dim), text_style=pi_style(:text), hr_style=pi_style(:text_dim))
-    return [wrapped for line in spans for wrapped in wrap_markdown_spans(line, width)]
-end
+"""Use the same native block renderer for streaming previews and committed assistant messages."""
+markdown_lines(content::AbstractString,width::Int)=session_markdown_spans(content,width)
 
 function message_layout_key(messages, index)
     message = messages[index]
@@ -206,8 +194,11 @@ function layout!(transcript::TranscriptState, layout::TranscriptLayout)
 end
 """Discard transient output without changing committed conversation history."""
 function clear_preview!(app::App)
+    capture_cancelled_preview!(app)
+    frontend_notice_commit_preview!(app)
     transcript = app.transcript
     transcript.preview = nothing
+    transcript.preview_owner = nothing
     transcript.preview_operation_id = UInt64(0)
     transcript.preview_dirty = false
     empty!(transcript.preview_lines)
@@ -224,6 +215,7 @@ response_progress_received!(app::App, value) = nothing
 
 function response_progress_received!(app::App, value::NamedTuple{(:operation_id, :progress),Tuple{UInt64,ResponseProgress}})
     if active_operation(app, value.operation_id) && value.progress.kind in (:answer, :code)
+        remember_preview_ownership!(app,value.operation_id)
         preview!(app.transcript, value.progress, value.operation_id)
     end
     nothing

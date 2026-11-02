@@ -7,7 +7,7 @@ Tachikoma = "468859d6-42d8-48b7-8ad9-1d312e0e3b0a"
 JuliaForever2 = {path = ".."}
 
 [compat]
-CommonMark = "0.8, 1"
+CommonMark = "1.0.4"
 JuliaForever2 = "0.3"
 Tachikoma = "2.8"
 julia = "1.13"

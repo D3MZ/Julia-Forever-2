@@ -3,33 +3,40 @@ module JuliaForever2HTTPExt
 using HTTP
 using JSON
 using UUIDs: uuid4
+using Random: RandomDevice, rand
+using SHA: sha256
 using JuliaForever2
 
-mutable struct WebAccess
-    token::String
-    cookie::String
-    lock::ReentrantLock
-    redeemed::Bool
+include("web/access.jl")
+include("web/controller.jl")
+include("web/chat_only.jl")
 
-    WebAccess(token::String) = isempty(token) ? error("Web token must not be empty") : new(token, string(uuid4(), uuid4()), ReentrantLock(), false)
-end
-
-WebAccess(token::AbstractString) = WebAccess(String(token))
-
-struct WebServer{S}
+struct WebServer{S,C}
     backend::S
     host::String
     port::Int
     token::String
+    access::WebAccess
+    controller::C
+    expiry::Timer
 end
 
-Base.close(server::WebServer) = HTTP.forceclose(server.backend)
-JuliaForever2.web_url(server::WebServer) = "http://$(server.host):$(server.port)"
-JuliaForever2.web_launch_url(server::WebServer) = JuliaForever2.web_url(server) * "/?access=" * HTTP.URIs.escapeuri(server.token)
+Base.show(io::IO, server::WebServer) = print(io, "WebServer(host=", server.host, ", port=", server.port, ", capability=<redacted>)")
+Base.show(io::IO, ::MIME"text/plain", server::WebServer) = show(io, server)
+
+function Base.close(server::WebServer)
+    close(server.expiry)
+    revoke_web_access!(server.access)
+    cancel_web_turns!(server.controller)
+    wait_settled_web_saves!(server.controller)
+    HTTP.forceclose(server.backend)
+end
+JuliaForever2.web_url(server::WebServer) = isempty(server.access.origin) ? "http://$(server.host):$(server.port)" : server.access.origin
+JuliaForever2.web_launch_url(server::WebServer) = JuliaForever2.web_url(server) * "/join#invite=" * HTTP.URIs.escapeuri(server.token)
 
 response(status::Integer, body::AbstractString, mime::AbstractString="application/json") = HTTP.Response(status; headers=["Content-Type" => mime, "Cache-Control" => "no-store", "X-Content-Type-Options" => "nosniff", "Referrer-Policy" => "no-referrer"], body)
 
-rpc_response(api::JuliaForever2.SessionAPI, request::HTTP.Request) = length(request.body) <= 1_048_576 ? dispatch(api, JSON.parse(String(request.body))) : response(413, "{\"error\":\"Payload too large\"}")
+rpc_response(api::JuliaForever2.SessionAPI, request::HTTP.Request) = length(request.body) <= 1_048_576 ? dispatch(api, JuliaForever2.parse_json(String(request.body))) : response(413, "{\"error\":\"Payload too large\"}")
 
 dispatch(api::JuliaForever2.SessionAPI, frame) = response(400, "{\"error\":\"Invalid JSON-RPC request\"}")
 
@@ -152,49 +159,6 @@ function trusted_web_request(request::HTTP.Request)
     end
 end
 
-"""Redeem a browser launch credential once while retaining the existing bearer handler."""
-function redeem_web_access!(access::WebAccess, credential::AbstractString)
-    lock(access.lock) do
-        accepted = !access.redeemed && credential == access.token
-        access.redeemed |= accepted
-        accepted
-    end
-end
-
-web_session_cookie(access::WebAccess, request::HTTP.Request) = any(part -> strip(part) == "juliaforever2_session=$(access.cookie)", split(HTTP.header(request, "Cookie"), ';'))
-
-function authorize_web_request(api, access::WebAccess, handler, request::HTTP.Request, request_trust)
-    if Base.invokelatest(request_trust, request)
-        authorize_trusted_web_request(api, access, handler, request)
-    else
-        response(403, JSON.json(Dict("error" => "Untrusted request authority or origin")))
-    end
-end
-
-function authorize_trusted_web_request(api, access::WebAccess, handler, request::HTTP.Request)
-    uri = HTTP.URI(String(request.target))
-    query = HTTP.queryparams(uri)
-    if request.method == "GET" && uri.path == "/" && haskey(query, "access")
-        redeem_web_access!(access, query["access"]) ? redirect(access) : response(401, "{\"error\":\"Invalid or redeemed launch token\"}")
-    else
-        authorize(api, access, handler, request)
-    end
-end
-
-redirect(access::WebAccess) = HTTP.Response(303; headers=["Location" => "/", "Set-Cookie" => "juliaforever2_session=$(access.cookie); HttpOnly; SameSite=Strict; Path=/", "Cache-Control" => "no-store", "Referrer-Policy" => "no-referrer", "X-Content-Type-Options" => "nosniff"], body="")
-
-function authorize(api, access::WebAccess, handler, request::HTTP.Request)
-    browser = web_session_cookie(access, request) && HTTP.header(request, "Authorization") != "Bearer $(access.token)"
-    if browser && request.method in ("POST", "PUT", "PATCH", "DELETE") && HTTP.header(request, "X-JuliaForever2-Request") != "1"
-        response(403, "{\"error\":\"Browser request token required\"}")
-    else
-        if browser
-            HTTP.setheader(request, "Authorization" => "Bearer $(access.token)")
-        end
-        Base.invokelatest(handler, api, access.token, request)
-    end
-end
-
 struct WebAddress
     host::String
     port::Int
@@ -212,23 +176,36 @@ end
 
 WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(port))
 """Start a token-authenticated loopback Web server backed only by Julia-native sessions."""
-JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request, request_trust=trusted_web_request) =
-    serve(api, WebAddress(host, port), token, handler, request_trust)
+JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0,
+        token=web_secret(), handler=web_request, request_trust=trusted_web_request,
+        public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin)) =
+    serve(api, WebAddress(host, port), token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
 
-function serve(api, address::WebAddress, token, handler, request_trust)
-    access = WebAccess(String(token))
-    server = HTTP.serve!(request -> authorize_web_request(api, access, handler, request, request_trust), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
-    WebServer(server, address.host, Int(HTTP.port(server)), String(token))
+function serve(api, address::WebAddress, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
+    remote_web_api_allowed(api, public_origin, workspace) || error("Public Web requires a dedicated chat-only API; pass a native OpenAIProvider instead of an ambient SessionAPI")
+    access = WebAccess(String(token); public_origin, lifetime, session_lifetime, browser_only)
+    controller = WebController(api; workspace, access)
+    server = HTTP.serve!(request -> authorize_web_request(controller, access, handler, request, request_trust),
+        address.host, address.port; verbose=false, max_body_bytes=1_048_576)
+    interval = min(1.0, Float64(lifetime), Float64(session_lifetime))
+    expiry = Timer(interval; interval) do timer
+        if expire_web_access!(access)
+            cancel_web_turns!(controller)
+            close(timer)
+        end
+    end
+    WebServer(server, address.host, Int(HTTP.port(server)), String(token), access, controller, expiry)
 end
-"""An optional HTTP extension publishes an independently replaceable native Web service."""
+"""Publish a replaceable native Web service with optional pinned HTTPS origin and bounded lifetime."""
 function JuliaForever2.web_server_plugin(; name=:web_server, service_name=:web_server,
-        api_service=:session_api, host="127.0.0.1", port=0, token=string(uuid4()), handler=web_request, request_trust=trusted_web_request)
+        api_service=:session_api, host="127.0.0.1", port=0, token=web_secret(), handler=web_request,
+        request_trust=trusted_web_request, public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin))
     contract = Symbol(service_name)
     dependency = Symbol(api_service)
     setup = context -> JuliaForever2.provide!(context, contract,
         JuliaForever2.start_web_server(JuliaForever2.service(context, dependency);
-            host, port, token, handler, request_trust); cleanup=close)
-    return JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
+            host, port, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only); cleanup=close)
+    JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
 end
 
 end
