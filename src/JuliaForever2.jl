@@ -38,6 +38,7 @@ public AbstractRuntimeBackend, JsonRpcRuntime, runtime_request!, runtime_notify!
 public ProcessFeature, launch_feature, apply_entry_patches, compose_entry_layers
 public runtime_transport_plugin, process_launcher_plugin
 public SessionStore, save_session!, load_session, session_store_plugin, session_lineage, session_descendants, fork_session, session_summary, session_summaries
+public archive_session!, unarchive_session!, session_archived
 public SessionQuery, SessionSearchIndex, refresh_index!, session_query_plugin, search_history, session_names
 public SessionTitleService, session_title, rename_session_title!, refresh_session_title!, session_title_plugin
 public normalize_session_title, fallback_session_title

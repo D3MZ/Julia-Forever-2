@@ -15,10 +15,11 @@ function session_query_plugin(; name=:session_query, store_service=:session_stor
 end
 
 """Enumerate saved session identifiers without restoring or executing sessions."""
-function session_names(store::SessionStore)
+function session_names(store::SessionStore; archived::Union{Nothing,Bool}=false)
     files = isdir(store.directory) ? readdir(store.directory) : String[]
     names = String[chop(file; tail=5) for file in files if endswith(file, ".json")]
-    sort!(filter(name -> is_saved_profile_file(session_file(store, name)), names))
+    sort!(filter(name -> is_saved_profile_file(session_file(store, name)) &&
+        (isnothing(archived) || session_archived(store, name) == archived), names))
 end
 const SessionSearchHit = NamedTuple{(:session, :index, :role, :kind, :content),
     Tuple{Union{Nothing,String},Int,Symbol,Symbol,String}}
