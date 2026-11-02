@@ -8,9 +8,13 @@
     workspaceMember: $("workspace-member"), workspaceGroups: $("workspace-groups"),
     workspaceCreate: $("workspace-create"), workspaceRename: $("workspace-rename"), workspaceDelete: $("workspace-delete"),
     workspaceUp: $("workspace-up"), workspaceDown: $("workspace-down"), workspaceSessionUp: $("workspace-session-up"), workspaceSessionDown: $("workspace-session-down"),
-    savedSessions: $("saved-sessions"), sessionPin: $("session-pin"), sessionUnpin: $("session-unpin"), sessionArchive: $("session-archive"), sessionUnarchive: $("session-unarchive")
+    savedSessions: $("saved-sessions"), sessionPin: $("session-pin"), sessionUnpin: $("session-unpin"), sessionArchive: $("session-archive"), sessionUnarchive: $("session-unarchive"),
+    filePath: $("workspace-file-path"), fileEntries: $("workspace-file-entries"), filePreview: $("workspace-file-preview"),
+    fileStatus: $("workspace-file-status"), fileUp: $("workspace-file-up"), fileList: $("workspace-file-list"),
+    fileRead: $("workspace-file-read"), fileMore: $("workspace-file-more")
   };
   let workspaceRecords = [], workspaceGroups = [], workspaceRevision = null, savedRecords = [], pinnedNames = new Set();
+  let filePage = null, fileObservation = null, filePollInFlight = false;
   function synchronizeWorkspaceControls() {
     const unavailable = busy || !!operation || !authorized;
     const registered = workspaceRecords.some(row => row.id === fields.workspaceList.value);
@@ -18,6 +22,9 @@
     fields.workspaceCreate.disabled = unavailable || workspaceRevision === null;
     for (const field of [fields.workspaceRename,fields.workspaceDelete,fields.workspaceUp,fields.workspaceDown]) field.disabled = unavailable || !registered;
     for (const field of [fields.workspaceSessionUp,fields.workspaceSessionDown]) field.disabled = unavailable || !registered || !fields.workspaceMember.value;
+    for (const field of [fields.filePath, fields.fileUp, fields.fileList, fields.fileRead])
+      field.disabled = unavailable || !registered || !capabilities.files;
+    fields.fileMore.disabled = unavailable || !registered || !capabilities.files || !filePage || filePage.eof;
     const saved = savedRecords.find(row => row.session === fields.savedSessions.value);
     fields.savedSessions.disabled = unavailable || savedRecords.length === 0;
     fields.sessionPin.disabled = unavailable || !saved || saved.archived || pinnedNames.has(saved.session);
@@ -352,6 +359,13 @@
     renderWorkspaces(fields.workspaceList.value, "");
     const selected = selectedWorkspace();
     if (selected) fields.workspace.value = selected.path;
+    fields.filePath.value = "";
+    fields.fileEntries.replaceChildren();
+    fields.filePreview.textContent = "";
+    fields.fileStatus.textContent = "";
+    filePage = null;
+    fileObservation = null;
+    synchronizeWorkspaceControls();
   });
 
   fields.workspaceCreate.addEventListener("click", () => action(async () => {
@@ -404,6 +418,80 @@
   }
   fields.workspaceSessionUp.addEventListener("click", () => moveWorkspaceSession(-1));
   fields.workspaceSessionDown.addEventListener("click", () => moveWorkspaceSession(1));
+  function workspaceFileParameters() {
+    const selected = selectedWorkspace();
+    if (!capabilities.files || !selected) throw new Error("Select a registered workspace with file access.");
+    return {workspaceId:selected.id,path:fields.filePath.value.trim()};
+  }
+
+  async function listWorkspaceFiles() {
+    const params = workspaceFileParameters();
+    const result = await rpc("workspace/file/list",params);
+    fields.fileEntries.replaceChildren();
+    fields.filePreview.textContent = "";
+    filePage = null;
+    fileObservation = {...params, version:result.version, kind:"directory"};
+    fields.fileStatus.textContent = result.entries.length + " item(s)" + (result.truncated ? " (listing truncated)" : "");
+    for (const entry of result.entries) {
+      const item = document.createElement("li"), button = document.createElement("button");
+      button.type = "button";
+      button.textContent = entry.name + (entry.type === "directory" ? "/" : "");
+      button.disabled = entry.type === "other";
+      button.addEventListener("click",() => action(async () => {
+        fields.filePath.value = [result.path,entry.name].filter(Boolean).join("/");
+        if (entry.type === "directory") await listWorkspaceFiles();
+        else await readWorkspaceFile();
+      }));
+      item.append(button);
+      fields.fileEntries.append(item);
+    }
+    synchronizeWorkspaceControls();
+  }
+
+  async function readWorkspaceFile(more = false) {
+    const params = workspaceFileParameters();
+    if (!params.path) throw new Error("Enter a relative file path or select a file.");
+    const continued = more && filePage && filePage.path === params.path && filePage.workspaceId === params.workspaceId;
+    const offset = continued ? filePage.nextOffset : 1;
+    const expectedVersion = continued ? filePage.version : null;
+    const request = {...params,offset,limit:200};
+    if (continued) request.version = expectedVersion;
+    let page;
+    try { page = await rpc("workspace/file/read",request); }
+    catch (error) {
+      if (continued) {
+        filePage = null; fileObservation = null;
+        fields.fileStatus.textContent = "File preview changed or became unavailable. Read it again.";
+        synchronizeWorkspaceControls();
+      }
+      throw error;
+    }
+    if (continued && page.version !== expectedVersion) {
+      filePage = null; fileObservation = null;
+      throw new Error("File changed between pages; restart the preview.");
+    }
+    if (!continued) fields.filePreview.textContent = page.text;
+    else fields.filePreview.textContent += page.lines ? "\n" + page.text : "";
+    filePage = {...params,nextOffset:offset + page.lines,eof:page.eof,version:page.version};
+    fileObservation = {...params,version:page.version,kind:"file"};
+    fields.fileStatus.textContent = page.lines + " line(s) read at " + offset +
+      (page.eof ? " (end of file)" : " (more available)");
+    synchronizeWorkspaceControls();
+  }
+
+  fields.filePath.addEventListener("input",() => {
+    filePage = null; fileObservation = null;
+    fields.fileStatus.textContent = "";
+    synchronizeWorkspaceControls();
+  });
+  fields.fileList.addEventListener("click",() => action(listWorkspaceFiles));
+  fields.fileRead.addEventListener("click",() => action(() => readWorkspaceFile()));
+  fields.fileMore.addEventListener("click",() => action(() => readWorkspaceFile(true)));
+  fields.fileUp.addEventListener("click",() => action(async () => {
+    const path = fields.filePath.value.trim(), slash = path.lastIndexOf("/");
+    fields.filePath.value = slash < 0 ? "" : path.slice(0,slash);
+    await listWorkspaceFiles();
+  }));
   fields.workspaceMember.addEventListener("change", synchronizeWorkspaceControls);
   fields.savedSessions.addEventListener("change", synchronizeWorkspaceControls);
 
@@ -421,6 +509,7 @@
 
   async function refreshOptionalControls() {
     $("workspace-controls").hidden = !capabilities.workspaces;
+    $("workspace-file-controls").hidden = !capabilities.files;
     $("saved-controls").hidden = !capabilities.persistent;
     if (capabilities.workspaces) await refreshWorkspaces();
     if (capabilities.persistent) await refreshSavedSessions();
@@ -430,6 +519,40 @@
     if (busy || operation || !authorized || workspaceRevision === null) return;
     const change = await rpc("workspace/feed", { since: workspaceRevision });
     if (change.type === "reset" || change.events.length) await refreshWorkspaces();
+  }
+
+  async function pollWorkspaceFiles() {
+    const observation = fileObservation;
+    if (!observation || filePollInFlight || busy || operation || !authorized || !capabilities.files ||
+        $("settings").hidden || $("workspace-file-controls").hidden) return;
+    const selected = selectedWorkspace();
+    if (!selected || selected.id !== observation.workspaceId ||
+        fields.filePath.value.trim() !== observation.path) {
+      fileObservation = null;
+      filePage = null;
+      synchronizeWorkspaceControls();
+      return;
+    }
+    filePollInFlight = true;
+    try {
+      const state = await rpc("workspace/file/observe",{
+        workspaceId:observation.workspaceId,path:observation.path,version:observation.version
+      });
+      if (fileObservation !== observation || (!state.absent && !state.changed)) return;
+      fileObservation = null;
+      filePage = null;
+      fields.fileStatus.textContent = state.absent ?
+        "The selected file or directory was removed. Refresh the view." :
+        "The selected file or directory changed. Refresh before continuing.";
+    } catch (error) {
+      if (fileObservation !== observation) return;
+      fileObservation = null;
+      filePage = null;
+      fields.fileStatus.textContent = "File observation stopped: " + (error.message || String(error));
+    } finally {
+      filePollInFlight = false;
+    }
+    synchronizeWorkspaceControls();
   }
 
   action(async () => {
@@ -442,5 +565,8 @@
     if (response.ok) { const access = await response.json(); const expiry = new Date(access.expiresAt*1000).toLocaleString(); $("access-expiry").textContent = "Access ends " + new Date(access.expiresAt*1000).toLocaleDateString(); $("security-detail").textContent = "Access ends " + expiry + ". The invitation works once. Anyone with a copy of the session cookie can use it."; }
     settings(location.hash === "#settings",false,false);
   });
-  window.setInterval(() => { pollWorkspaceChanges().catch(error => notice(error.message || String(error),true)); },5000);
+  window.setInterval(() => {
+    pollWorkspaceChanges().catch(error => notice(error.message || String(error),true));
+    pollWorkspaceFiles();
+  },5000);
 })();

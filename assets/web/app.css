@@ -14,3 +14,13 @@ svg{display:block;width:22px;height:22px;fill:none;stroke:currentColor;stroke-wi
 .chat.empty footer{position:absolute;left:0;bottom:calc(10px + env(safe-area-inset-bottom,0px));width:100%}
 .retry{display:inline-block;margin-top:12px;padding:8px 14px;border:1px solid currentColor;border-radius:18px;font-size:0.8667rem;font-weight:600}.topbar>.brand,.sidebar-head .brand{min-width:0;overflow:hidden;text-overflow:ellipsis}@media(max-width:380px){.settings-card>label{flex-wrap:wrap}.settings-card>label>span{flex:1 1 9rem;overflow-wrap:anywhere}}
 @media(max-height:550px){.chat.empty footer{position:static}}
+
+.workspace-files{border-top:1px solid var(--line);margin-top:18px;padding-top:12px}
+.workspace-files h3{margin:6px 0 0;font-size:1rem}
+.workspace-files p{color:var(--muted)}
+#workspace-file-entries{list-style:none;padding:0;max-height:220px;overflow:auto}
+#workspace-file-entries li{border-bottom:1px solid var(--line)}
+#workspace-file-entries button{text-align:left;width:100%;padding:7px 0;overflow-wrap:anywhere}
+#workspace-file-entries button:disabled{cursor:default}
+#workspace-file-preview{white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;max-height:380px;
+  background:var(--soft);padding:12px;border-radius:12px;font:0.85rem/1.5 ui-monospace,monospace}

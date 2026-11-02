@@ -9,8 +9,9 @@ Base.@kwdef mutable struct WebTurn
     persistence::Union{Nothing,Task} = nothing
 end
 
-Base.@kwdef mutable struct WebController{A}
+Base.@kwdef mutable struct WebController{A,F}
     api::A
+    files::F = nothing
     workspace::String = pwd()
     access::Union{Nothing,WebAccess} = nothing
     lock::ReentrantLock = ReentrantLock()
@@ -18,7 +19,7 @@ Base.@kwdef mutable struct WebController{A}
     turns::Dict{String,WebTurn} = Dict{String,WebTurn}()
     requests::Dict{Tuple{String,String},WebTurn} = Dict{Tuple{String,String},WebTurn}()
 end
-WebController(api; workspace=pwd(), access=nothing) = WebController(; api, workspace=realpath(workspace), access)
+WebController(api; workspace=pwd(), access=nothing, files=nothing) = WebController(; api, files, workspace=realpath(workspace), access)
 
 const BROWSER_SESSION_METHODS = Set(("session/list", "session/list/all", "session/list/saved",
     "session/messages", "session/describe", "session/title/get", "session/title/rename", "session/save",
@@ -30,6 +31,10 @@ const LOCAL_WORKSPACE_METHODS = Set(("workspace/list", "workspace/create", "work
 
 web_local_workspaces(controller::WebController) = !isnothing(controller.api.workspaces) &&
     !isnothing(controller.access) && isempty(controller.access.origin) && !controller.access.browser_only
+
+const LOCAL_WORKSPACE_FILE_METHODS = Set(("workspace/file/list", "workspace/file/stat",
+    "workspace/file/read", "workspace/file/bytes", "workspace/file/observe"))
+web_local_files(controller::WebController) = web_local_workspaces(controller) && !isnothing(controller.files)
 
 function browser_route(controller::WebController, request::HTTP.Request, path)
     if request.method == "POST" && path == "/api/rpc"
@@ -66,6 +71,8 @@ function browser_command!(controller::WebController, method::AbstractString, par
         JuliaForever2.session_api_request!(controller.api, method, params)
     elseif method in LOCAL_WORKSPACE_METHODS && web_local_workspaces(controller)
         JuliaForever2.session_api_request!(controller.api, method, params)
+    elseif method in LOCAL_WORKSPACE_FILE_METHODS && web_local_files(controller)
+        browser_workspace_files(controller.files, method, params)
     elseif method in ("session/open", "session/resume")
         # Public browser callers cannot select a host directory or inject factory settings; local registry controls retain their native scope.
         directory = web_local_workspaces(controller) ? get(params, "workingDirectory", controller.workspace) : controller.workspace
@@ -85,7 +92,8 @@ function browser_command!(controller::WebController, method::AbstractString, par
     elseif method == "web/info"
         Dict("persistent" => !isnothing(controller.api.store), "titles" => !isnothing(controller.api.titles),
             "transport" => "Julia-native", "streaming" => "operation-scoped polling",
-            "chatOnly" => controller.api.factory isa WebChatFactory, "workspaces" => web_local_workspaces(controller))
+            "chatOnly" => controller.api.factory isa WebChatFactory, "workspaces" => web_local_workspaces(controller),
+            "files" => web_local_files(controller))
     else
         JuliaForever2.RpcError(-32601, "Method is not available to the browser")
     end

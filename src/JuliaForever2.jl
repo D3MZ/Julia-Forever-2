@@ -59,6 +59,7 @@ public session_markdown, session_markdown_entry
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer, session_workspace_groups
 public WorkspaceRegistry, workspace_registry_plugin, workspace_snapshot, workspace_changes
 public register_workspace!, rename_workspace!, delete_workspace!, move_workspace!, move_workspace_session!, registered_workspace_groups
+public WorkspaceFileService, workspace_files_plugin, workspace_file_list, workspace_file_stat, workspace_file_read, workspace_file_bytes, workspace_file_observe
 public start_web_server, web_server_plugin, web_url, web_launch_url
 
 include("files/search_tool.jl")
@@ -87,6 +88,7 @@ include("infrastructure/terminal_jobs.jl")
 include("infrastructure/user_shell_output.jl")
 include("infrastructure/user_shell_process.jl")
 include("infrastructure/jsonrpc.jl")
+include("core/workspace_files.jl")
 include("core/session_markdown.jl")
 include("core/session_api.jl")
 include("core/tool_schemas.jl")
