@@ -1,7 +1,8 @@
 function draw_footer!(buffer, x, y, width, app::App)
     right = provider_selection_snapshot(app.session.kernel).detail
     left = usage_label(app.session)
-    notice = !isnothing(app.updates.latest) && update_available(app.updates.latest) && !app.updates.installing ?
+    latest = app.updates.latest
+    notice = !isnothing(latest) && update_available(latest) && !app.updates.installing ?
         "Update available: /update install" : app.status
     notice == "Ready" || (left = isempty(left) ? notice : left * " · " * notice)
     drawline!(buffer, x, y, width, left, :text_dim)
