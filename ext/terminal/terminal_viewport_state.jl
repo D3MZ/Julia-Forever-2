@@ -14,6 +14,7 @@ Base.@kwdef mutable struct TerminalViewport
     moved::Bool=false
     wheel_delta::Int=0
     indicator::Union{Nothing,TerminalScrollIndicator}=nothing
+    search::TerminalTranscriptSearch=TerminalTranscriptSearch()
     tracking::Symbol=:none
     tracking_sink::Union{Nothing,IO}=nothing
 end

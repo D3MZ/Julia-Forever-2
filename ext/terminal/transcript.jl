@@ -194,9 +194,11 @@ function layout!(transcript::TranscriptState, layout::TranscriptLayout)
 end
 """Discard transient output without changing committed conversation history."""
 function clear_preview!(app::App)
+    capture_cancelled_preview!(app)
     frontend_notice_commit_preview!(app)
     transcript = app.transcript
     transcript.preview = nothing
+    transcript.preview_owner = nothing
     transcript.preview_operation_id = UInt64(0)
     transcript.preview_dirty = false
     empty!(transcript.preview_lines)
@@ -213,6 +215,7 @@ response_progress_received!(app::App, value) = nothing
 
 function response_progress_received!(app::App, value::NamedTuple{(:operation_id, :progress),Tuple{UInt64,ResponseProgress}})
     if active_operation(app, value.operation_id) && value.progress.kind in (:answer, :code)
+        remember_preview_ownership!(app,value.operation_id)
         preview!(app.transcript, value.progress, value.operation_id)
     end
     nothing

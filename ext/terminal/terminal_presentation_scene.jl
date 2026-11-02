@@ -7,8 +7,8 @@ end
 function terminal_regular_scene(app::App,width::Int,height::Int;editor=nothing)
     controls=app.menus.startup
     prefix=isnothing(controls) ? Vector{Tachikoma.Span}[] : startup_document_lines(controls.document,app.menus.theme_runtime,width)
-    archived=archive_transcript_lines!(app,width)
     preview=[startup_preview_rows(app,width);frontend_preview_notice_rows(app,width)]
+    archived=archive_transcript_lines!(app,width)
     selected=isnothing(editor) ? startup_selected_editor(app,Val(app.page),width,height) : editor
     document=[prefix;archived;preview;user_shell_lines(app,width)]
     parts=[StartupDockPart(;name=:pending,lines=[pending_input_lines(app,width);user_shell_lines(app,width;pending=true)]),

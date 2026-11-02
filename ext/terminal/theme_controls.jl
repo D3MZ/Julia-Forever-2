@@ -146,6 +146,7 @@ function archive_transcript_lines!(app::App, width::Int)
         max_width_cells=terminal_integer(app, "image-width-cells", 60, 1, 240))
     protocol, cell = session_image_protocol(), Tachikoma.cell_pixels()
     if isnothing(timeline)
+        empty!(app.transcript.prompts.archived)
         app.transcript.display_plan = nothing
         app.transcript.display_rows = SessionDisplayRows()
         app.transcript.display_key = nothing
@@ -160,11 +161,15 @@ function archive_transcript_lines!(app::App, width::Int)
         end
         projection = snapshot.projection
         if !isnothing(projection)
+            prompt_rows=Int[]
             plan = session_display_plan(projection, width; state, options, protocol, cell_pixels=cell,
-                after_record=(anchor,w)->cache_miss_after_record_rows(app,timeline.identity.id,anchor,w,snapshot.misses),
+                after_record=SessionAfterRecordLayout((anchor,w,offset)->cache_miss_after_record_rows(app,timeline.identity.id,anchor,w,snapshot.misses;projection,
+                    on_component=(kind,message,start,count)->terminal_prompt_record!(prompt_rows,kind,message,offset+start,count))),
+                on_component=(kind,message,start,count)->terminal_prompt_record!(prompt_rows,kind,message,start,count),
                 tool_renderers=SessionBuiltinToolRenderers(; cwd=app.settings.workspace, home=homedir(), syntax_renderer=SessionParserSyntaxRenderer()))
             app.transcript.display_plan = plan
             app.transcript.display_rows = plan.rows
+            app.transcript.prompts.archived = prompt_rows
             app.transcript.display_key = snapshot.key
         end
     end

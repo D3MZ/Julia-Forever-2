@@ -27,7 +27,7 @@ end
 function terminal_viewport_selection_view(app::App,screen)
     viewport=terminal_viewport!(app);snapshot=viewport.scroll.control.snapshot
     TerminalSelectionView(;document=snapshot.document,screen,area=app.area,
-        document_area=snapshot.clip,top=snapshot.top)
+        document_area=snapshot.clip,top=snapshot.top,document_press=!viewport.search.active)
 end
 
 """Overlay scrollbar and selection on native cells while leaving archived text and image ownership unchanged."""
@@ -39,9 +39,11 @@ function terminal_viewport_draw!(app::App,frame::Frame,scene)
         terminal_scroll_control_draw!(viewport.scroll.control,frame.buffer;
             style=token->isnothing(runtime) ? pi_style(token) : theme_style(runtime,token),
             image_rows=image_rows.document)
+        terminal_search_host_highlight!(app,frame;image_rows=image_rows.screen)
         viewport.indicator=isnothing(runtime) ? nothing : terminal_scroll_indicator(viewport.scroll.control,frame.buffer;
             theme=runtime,bindings=["ctrl+end"],image_rows=image_rows.screen)
         terminal_scroll_indicator_draw!(viewport.indicator,frame.buffer)
+        terminal_search_host_overlay!(app,frame)
     else
         viewport.indicator=nothing
     end
@@ -63,7 +65,7 @@ function terminal_viewport_selection_scroll!(app::App,direction::Int)
     snapshot=terminal_scroll_host_publish!(viewport.scroll,app)
     previous=viewport.selection.view
     next=TerminalSelectionView(;document=snapshot.document,screen=previous.screen,area=previous.area,
-        document_area=snapshot.clip,top=snapshot.top)
+        document_area=snapshot.clip,top=snapshot.top,document_press=!viewport.search.active)
     viewport.selection.view=next
     next
 end
@@ -85,6 +87,7 @@ function close_terminal_viewport!(app::App)
     viewport=app.menus.viewport
     if !isnothing(viewport)
         terminal_viewport_tracking!(app,:off)
+        terminal_search_close!(viewport.search)
         terminal_selection_close!(viewport.selection)
         terminal_scroll_control_close!(viewport.scroll.control)
         viewport.component=nothing;viewport.press=nothing
@@ -129,6 +132,7 @@ end
 function terminal_viewport_focus_out!(app::App)
     viewport=app.menus.viewport
     if !isnothing(viewport)
+        viewport.search.hovered=0
         terminal_selection_focus_lost!(viewport.selection.state)
         terminal_selection_schedule!(viewport.selection)
         terminal_scroll_control_focus_out!(viewport.scroll.control)
@@ -141,7 +145,9 @@ end
 """Respect original component viewport capture rather than stealing open completion/menu navigation."""
 function terminal_viewport_defers(app::App)
     tree=app.menus.tree_menu;resume=app.menus.resume_menu
-    if app.page==:chat
+    if terminal_search_host_focused(app)
+        false
+    elseif app.page==:chat
         chat_host_completion_open(app)
     elseif app.page==:pi_menu
         if app.menus.path==["thinking"]
@@ -164,6 +170,10 @@ function terminal_viewport_key!(app::App,event::KeyEvent,raw::AbstractVector{UIn
     handled=false
     if packet in ("\e[O","\e[I")
         packet=="\e[O" && terminal_viewport_focus_out!(app)
+        handled=true
+    elseif terminal_search_host_key!(app,event,raw;viewport_owned=terminal_prompt_packet(packet).direction!=0)
+        handled=true
+    elseif terminal_prompt_key!(app,packet)
         handled=true
     elseif terminal_presentation_mode(app)==:fullscreen && !terminal_viewport_defers(app)
         viewport=terminal_viewport!(app);control=viewport.scroll.control
@@ -215,23 +225,26 @@ function terminal_viewport_mouse!(app::App,event::MouseEvent)
         end
         handled=true
     else
-        indicator=!wheel && terminal_scroll_indicator_mouse!(viewport.indicator,viewport.scroll.control,event)
-        bar=wheel || indicator ? (handled=false,) : terminal_scroll_control_mouse!(viewport.scroll.control,event)
-        handled=indicator || bar.handled
+        search=wheel ? (handled=false,changed=false,inside=terminal_search_host_inside(app,event.x,event.y)) : terminal_search_host_mouse!(app,event)
+        indicator=!search.inside && !wheel && !search.handled && terminal_scroll_indicator_mouse!(viewport.indicator,viewport.scroll.control,event)
+        blocked=search.inside || viewport.search.active && isnothing(viewport.scroll.control.scroll.grab)
+        bar=wheel || indicator || search.handled ? (handled=false,) : terminal_scroll_control_mouse!(viewport.scroll.control,event;blocked)
+        handled=search.handled || indicator || bar.handled
         if bar.handled && event.action==Tachikoma.mouse_press
             terminal_selection_component_press!(viewport.selection)
         end
         if !handled
             component=terminal_viewport_component(app)
-            handled=terminal_viewport_component_mouse!(app,event)
+            handled=!search.inside && terminal_viewport_component_mouse!(app,event)
             if handled && !wheel && event.action==Tachikoma.mouse_press
                 terminal_selection_component_press!(viewport.selection)
                 viewport.component=component;viewport.press=(event.x,event.y);viewport.moved=false
             elseif !handled && wheel
                 handled=terminal_scroll_control_wheel!(viewport.scroll.control,event,viewport.wheel_delta).handled
+                viewport.search.active && terminal_scroll_control_mouse!(viewport.scroll.control,event;blocked=true)
             elseif !handled && (viewport.selection.state.active || selection_inside(app.area,event.x,event.y))
                 click=terminal_viewport_selection_click(viewport.selection,event)
-                if click && terminal_viewport_component_mouse!(app,event;click=true)
+                if click && !search.inside && terminal_viewport_component_mouse!(app,event;click=true)
                     terminal_selection_component_press!(viewport.selection)
                     handled=true
                 else
@@ -274,6 +287,7 @@ function terminal_viewport_mode!(app::App,mode::Symbol)
     viewport=app.menus.viewport
     if !isnothing(viewport)
         snapshot=viewport.scroll.control.snapshot
+        mode==:fullscreen || terminal_search_close!(viewport.search)
         terminal_scroll_control_layout!(viewport.scroll.control,snapshot.document,snapshot.rect;
             owner=snapshot.owner,revision=snapshot.revision,clip=snapshot.clip,presentation=mode)
         terminal_selection_publish!(viewport.selection,viewport.selection.view;owner=string(app.session.runtime.id),
@@ -286,7 +300,9 @@ end
 """A raw release is not a synthesized click, and must not terminate another component's selection."""
 function terminal_viewport_component_mouse!(app::App,event::MouseEvent;click::Bool=false)
     result=app.page==:chat ? page_mouse!(app,Val(:chat),event;click) : page_mouse!(app,Val(app.page),event)
-    result===true
+    handled=result===true
+    handled && terminal_search_host_component_focus!(app,event;click)
+    handled
 end
 function terminal_viewport_selection_click(control::TerminalSelectionControl,event::MouseEvent)
     state=control.state;anchor=state.anchor

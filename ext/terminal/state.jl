@@ -100,6 +100,7 @@ end
 SettingsState(directory::AbstractString, registry::ProviderRegistry) = SettingsState(; directory=String(directory), registry)
 
 Base.@kwdef mutable struct TranscriptState
+    prompts::TerminalPromptRows = TerminalPromptRows()
     notices::FrontendNoticeState = FrontendNoticeState()
     documents::CommandDocumentState = CommandDocumentState()
     footer::Any=nothing
@@ -110,6 +111,8 @@ Base.@kwdef mutable struct TranscriptState
     offsets::Vector{Int} = Int[]
     lines::Vector{TranscriptLine} = TranscriptLine[]
     preview::Union{ResponseProgress,Nothing} = nothing
+    preview_owner::Union{PreviewOwnership,Nothing} = nothing
+    interrupted_responses::Vector{InterruptedResponseView} = InterruptedResponseView[]
     preview_operation_id::UInt64 = UInt64(0)
     preview_width::Int = 0
     preview_dirty::Bool = false

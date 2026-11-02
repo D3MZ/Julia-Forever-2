@@ -254,10 +254,12 @@ function default_input!(app::App, event::KeyEvent)
     raw = captured_key_bytes()
     if event.action == Tachikoma.key_release
         nothing
-    elseif app.page == :pi_menu && app.menus.path in (["settings"], ["settings", "warnings"]) && menu_search_pasting(app.menus.search, raw)
+    elseif terminal_search_host_pasting(app,menu_packet(event,raw))
+        terminal_search_host_key!(app,event,raw)
+    elseif !terminal_search_host_focused(app) && app.page == :pi_menu && app.menus.path in (["settings"], ["settings", "warnings"]) && menu_search_pasting(app.menus.search, raw)
         menu_search_input!(app.menus.search, event, raw)
         app.menus.cursor = 1
-    elseif app.page==:chat && chat_host_pasting(app,menu_packet(event,raw))
+    elseif !terminal_search_host_focused(app) && app.page==:chat && chat_host_pasting(app,menu_packet(event,raw))
         page_input!(app,Val(:chat),event,raw)
     elseif terminal_viewport_key!(app,event,raw)
         nothing
