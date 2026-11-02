@@ -11,7 +11,12 @@ Base.@kwdef mutable struct MenuSearchInput
     rendered_start_column::Int = 0
     pasting::Bool = false
     paste_buffer::String = ""
+    kills::Vector{String} = String[]
+    undo::Vector{Tuple{String,Int}} = Tuple{String,Int}[]
+    last_action::Symbol = :none
 end
+MenuSearchInput(value,cursor,prompt,rendered_start_column,pasting,paste_buffer) =
+    MenuSearchInput(;value,cursor,prompt,rendered_start_column,pasting,paste_buffer)
 
 Base.@kwdef struct MenuSearchRun
     text::String = ""
@@ -38,6 +43,7 @@ function menu_search_clear!(input::MenuSearchInput)
     input.rendered_start_column = 0
     input.pasting = false
     input.paste_buffer = ""
+    empty!(input.kills);empty!(input.undo);input.last_action=:none
     nothing
 end
 
@@ -191,68 +197,182 @@ end
 """Emit the native search runs as terminal ANSI, without assuming a color palette."""
 menu_search_ansi(runs::Vector{MenuSearchRun}) = join(run.inverse ? "\e[7m" * run.text * "\e[27m" : run.text for run in runs)
 
-"""Insert one packet, merging combining characters into their neighboring graphemes."""
-function menu_search_insert!(input::MenuSearchInput, text::AbstractString)
+"""Snapshot owned immutable text and its public grapheme cursor, not the kill ring."""
+menu_search_push_undo!(input::MenuSearchInput) = push!(input.undo,(input.value,input.cursor))
+
+"""Insert one packet with word-typing undo coalescing and native grapheme boundaries."""
+function menu_search_insert!(input::MenuSearchInput, text::AbstractString;snapshot::Bool=true,typed::Bool=true)
+    if snapshot && (!typed || editor_input_space(text) || input.last_action!=:type_word)
+        menu_search_push_undo!(input)
+    end
     graphemes = menu_search_graphemes(input.value)
     before = join(graphemes[1:input.cursor]) * text
     input.value = before * join(graphemes[input.cursor + 1:end])
-    input.cursor = length(menu_search_graphemes(before))
+    input.cursor = min(length(menu_search_graphemes(before)),length(menu_search_graphemes(input.value)))
+    input.last_action=typed ? :type_word : :none
     nothing
 end
 
-"""Remove a half-open range of graphemes and leave the cursor at its beginning."""
-function menu_search_delete!(input::MenuSearchInput, start::Int, stop::Int)
-    graphemes = menu_search_graphemes(input.value)
-    input.value = join(graphemes[1:start]) * join(graphemes[stop + 1:end])
-    input.cursor = start
+"""Remove a half-open grapheme interval, preserving kill direction and reversible text."""
+function menu_search_delete!(input::MenuSearchInput,start::Int,stop::Int;kill::Bool=false,backward::Bool=false)
+    if stop>start
+        menu_search_push_undo!(input)
+        graphemes=menu_search_graphemes(input.value)
+        if kill
+            editor_kill_push!(input.kills,join(graphemes[start+1:stop]);prepend=backward,accumulate=input.last_action==:kill)
+        end
+        input.value=join(graphemes[1:start])*join(graphemes[stop+1:end])
+        input.cursor=min(start,length(menu_search_graphemes(input.value)))
+        input.last_action=kill ? :kill : :none
+    elseif !kill
+        input.last_action=:none
+    end
+    nothing
+end
+
+"""Resolve ordinary input words through the same native dictionary reducer as the chat editor."""
+function menu_search_word_boundary(input::MenuSearchInput,direction::Int)
+    if isvalid(input.value)
+        graphemes=menu_search_graphemes(input.value)
+        before=join(graphemes[1:input.cursor])
+        part=direction<0 ? before : join(graphemes[input.cursor+1:end])
+        segments=[(;segment...,atomic=false) for segment in JuliaForever2.WordSegmentation.segments(part)]
+        distance=editor_word_distance(segments,direction,editor_input_space)
+        position=clamp(length(before)+direction*distance,0,length(input.value))
+        min(length(menu_search_graphemes(first(input.value,position))),length(graphemes))
+    else
+        input.cursor
+    end
+end
+
+"""Yank or rotate killed text without removing neighboring combining characters."""
+function menu_search_yank!(input::MenuSearchInput;rotate::Bool=false)
+    if !isempty(input.kills) && (!rotate || input.last_action==:yank && length(input.kills)>1)
+        menu_search_push_undo!(input)
+        if rotate
+            before=menu_search_prefix(input)
+            after=join(menu_search_graphemes(input.value)[input.cursor+1:end])
+            prefix=first(before,max(0,length(before)-length(last(input.kills))))
+            editor_kill_rotate!(input.kills)
+            inserted=prefix*last(input.kills)
+            input.value=inserted*after
+            input.cursor=min(length(menu_search_graphemes(inserted)),length(menu_search_graphemes(input.value)))
+        else
+            menu_search_insert!(input,last(input.kills);snapshot=false,typed=false)
+        end
+        input.last_action=:yank
+    end
     nothing
 end
 
 const MENU_SEARCH_KEYS = Dict(
     "\x1b" => :cancel, "\x03" => :cancel, "\r" => :submit, "\n" => :submit,
     "\x7f" => :backspace, "\x08" => :backspace, "\e[3~" => :delete, "\x04" => :delete,
-    "\e[D" => :left, "\x02" => :left, "\e[C" => :right, "\x06" => :right,
-    "\e[H" => :home, "\eOH" => :home, "\e[1~" => :home, "\x01" => :home,
-    "\e[F" => :end, "\eOF" => :end, "\e[4~" => :end, "\x05" => :end,
-    "\x15" => :delete_start, "\x0b" => :delete_end,
+    "\e[D" => :left, "\eOD" => :left, "\x02" => :left, "\e[C" => :right, "\eOC" => :right, "\x06" => :right,
+    "\e[H" => :home, "\eOH" => :home, "\e[1~" => :home, "\e[7~" => :home, "\x01" => :home,
+    "\e[F" => :end, "\eOF" => :end, "\e[4~" => :end, "\e[8~" => :end, "\x05" => :end,
+    "\eb"=>:word_left,"\e[1;3D"=>:word_left,"\e[1;5D"=>:word_left,
+    "\ef"=>:word_right,"\e[1;3C"=>:word_right,"\e[1;5C"=>:word_right,
+    "\x17"=>:delete_word_backward,"\e\x7f"=>:delete_word_backward,"\e\x08"=>:delete_word_backward,"\ed"=>:delete_word_forward,"\e[3;3~"=>:delete_word_forward,
+    "\x15"=>:delete_start,"\x0b"=>:delete_end,"\x19"=>:yank,"\ey"=>:yank_pop,"\x1f"=>:undo,
 )
 
-"""Apply one normalized search editing command without leaking terminal key types."""
-function menu_search_edit!(input::MenuSearchInput, operation::Symbol)
-    count = length(menu_search_graphemes(input.value))
-    if operation == :left
-        input.cursor = max(0, input.cursor - 1)
-    elseif operation == :right
-        input.cursor = min(count, input.cursor + 1)
-    elseif operation == :home
-        input.cursor = 0
-    elseif operation == :end
-        input.cursor = count
-    elseif operation == :backspace && input.cursor > 0
-        menu_search_delete!(input, input.cursor - 1, input.cursor)
-    elseif operation == :delete && input.cursor < count
-        menu_search_delete!(input, input.cursor, input.cursor + 1)
-    elseif operation == :delete_start
-        menu_search_delete!(input, 0, input.cursor)
-    elseif operation == :delete_end
-        menu_search_delete!(input, input.cursor, count)
+"""Apply one shared single-line command without adopting multiline editor ownership."""
+function menu_search_edit!(input::MenuSearchInput,operation::Symbol)
+    count=length(menu_search_graphemes(input.value))
+    if operation in (:left,:right,:home,:end)
+        input.last_action=:none
+        input.cursor=operation==:left ? max(0,input.cursor-1) : operation==:right ? min(count,input.cursor+1) : operation==:home ? 0 : count
+    elseif operation in (:word_left,:word_right)
+        direction=operation==:word_left ? -1 : 1
+        if direction<0 ? input.cursor>0 : input.cursor<count
+            input.last_action=:none
+            input.cursor=menu_search_word_boundary(input,direction)
+        end
+    elseif operation in (:backspace,:delete)
+        input.last_action=:none
+        menu_search_delete!(input,operation==:backspace ? max(0,input.cursor-1) : input.cursor,
+            operation==:backspace ? input.cursor : min(count,input.cursor+1))
+    elseif operation in (:delete_start,:delete_end,:delete_word_backward,:delete_word_forward)
+        backward=operation in (:delete_start,:delete_word_backward)
+        if backward ? input.cursor>0 : input.cursor<count
+            boundary=operation==:delete_start ? 0 : operation==:delete_end ? count : menu_search_word_boundary(input,backward ? -1 : 1)
+            menu_search_delete!(input,min(input.cursor,boundary),max(input.cursor,boundary);kill=true,backward)
+        end
+    elseif operation in (:yank,:yank_pop)
+        menu_search_yank!(input;rotate=operation==:yank_pop)
+    elseif operation==:undo && !isempty(input.undo)
+        input.value,input.cursor=pop!(input.undo);input.last_action=:none
     end
-    operation in (:cancel, :submit) ? operation : :handled
+    operation in (:cancel,:submit) ? operation : :handled
 end
 
-"""Decode printable Kitty key packets while leaving modified controls to the caller."""
-function menu_search_printable(data::AbstractString)
-    matched = match(r"^\e\[([0-9]+)(?:;([0-9]+))?u$", data)
-    result = nothing
-    if !isnothing(matched)
-        code = tryparse(Int, something(matched.captures[1], ""))
-        modifier = tryparse(Int, something(matched.captures[2], "1"))
-        if !isnothing(code) && modifier in (1, 2) && 32 <= code <= 0x10ffff && !(0x7f <= code <= 0x9f) && !(0xd800 <= code <= 0xdfff)
-            result = string(Char(code))
+const MENU_SEARCH_KEYPAD = Dict(57409=>46,57410=>47,57411=>42,57412=>45,57413=>43,57414=>13,57415=>61,57416=>44,
+    57417=>-4,57418=>-3,57423=>-14,57424=>-15,57426=>-10)
+
+"""Decode default single-line shortcuts while preserving modifier and release ownership."""
+function menu_search_key_packet(data::AbstractString)
+    action=get(MENU_SEARCH_KEYS,String(data),:none);printable=nothing
+    arrow=match(r"^\e\[1;(\d+)(?::(\d+))?([CDHF])$",data)
+    deletion=match(r"^\e\[3;(\d+)(?::(\d+))?~$",data)
+    kitty=match(r"^\e\[(\d+)(?::(\d*))?(?::(\d+))?(?:;(\d+))?(?::(\d+))?u$",data)
+    other=match(r"^\e\[27;(\d+);(\d+)~$",data)
+    code=0;raw_code=0;modifier=-1;released=false;shifted=nothing
+    if !isnothing(arrow) || !isnothing(deletion)
+        matched=isnothing(arrow) ? deletion::RegexMatch : arrow
+        modifier=(something(tryparse(Int,something(matched.captures[1],"")),0)-1)&~192
+        released=matched.captures[2]=="3"
+        code=isnothing(arrow) ? -10 : arrow.captures[3]=="C" ? -3 : arrow.captures[3]=="D" ? -4 : arrow.captures[3]=="H" ? -14 : -15
+    elseif !isnothing(kitty) || !isnothing(other)
+        code=something(tryparse(Int,something(isnothing(kitty) ? other.captures[2] : kitty.captures[1],"")),0)
+        raw_code=code
+        modifier=something(tryparse(Int,something(isnothing(kitty) ? other.captures[1] : kitty.captures[4],"1")),0)-1
+        if !isnothing(kitty)
+            modifier &= ~192
+            released=kitty.captures[5]=="3"
+            shifted=tryparse(Int,something(kitty.captures[2],""))
+            base=something(tryparse(Int,something(kitty.captures[3],"")),0)
+            code=(modifier & 1)!=0 && 65<=code<=90 ? code+32 : code
+            if !(97<=code<=122) && !(code in (96,45,61,91,93,92,59,39,44,46,47,33,64,35,36,37,94,38,42,40,41,95,43,124,126,123,125,58,34,60,62,63)) && base>0
+                code=base
+            end
+        end
+        code=57399<=code<=57408 ? code-57351 : get(MENU_SEARCH_KEYPAD,code,code)
+    end
+    if released
+        action=:release
+    elseif modifier>=0
+        if code in (-4,-3) && modifier in (0,2,4)
+            action=code==-4 ? (modifier==0 ? :left : :word_left) : (modifier==0 ? :right : :word_right)
+        elseif code in (-14,-15) && modifier==0
+            action=code==-14 ? :home : :end
+        elseif code==-10 && modifier in (0,2)
+            action=modifier==0 ? :delete : :delete_word_forward
+        elseif code==127 && modifier in (0,2)
+            action=modifier==0 ? :backspace : :delete_word_backward
+        elseif code==13 && modifier==0
+            action=:submit
+        elseif code==27 && modifier==0
+            action=:cancel
+        elseif modifier==4 && (97<=code<=122 || 65<=code<=90)
+            action=get(MENU_SEARCH_KEYS,string(Char(code-(code<=90 ? 64 : 96))),:none)
+        elseif modifier==4 && code==45
+            action=:undo
+        elseif modifier==2 && 32<=code<=126
+            action=get(MENU_SEARCH_KEYS,"\e"*string(Char(code)),:none)
+        elseif !isnothing(kitty) && modifier in (0,1)
+            effective=modifier==1 ? something(shifted,raw_code) : raw_code
+            effective=57399<=effective<=57408 ? effective-57351 : get(MENU_SEARCH_KEYPAD,effective,effective)
+            if 32<=effective<=0x10ffff && !(0x7f<=effective<=0x9f) && !(0xd800<=effective<=0xdfff) && !(57344<=effective<=63743)
+                printable=string(Char(effective))
+            end
         end
     end
-    result
+    (;action,printable)
 end
+
+"""Expose safe printable decoding without interpreting modified packets as literal text."""
+menu_search_printable(data::AbstractString) = menu_search_key_packet(data).printable
 
 """Consume raw input including split paste endings; report submit/cancel to the owner."""
 function menu_search_input!(input::MenuSearchInput, packet::AbstractString)
@@ -270,20 +390,22 @@ function menu_search_input!(input::MenuSearchInput, packet::AbstractString)
             content = input.paste_buffer[1:prevind(input.paste_buffer, first(ending))]
             remaining = input.paste_buffer[nextind(input.paste_buffer, last(ending)):end]
             clean = replace(content, "\r\n" => "", "\r" => "", "\n" => "", "\t" => "    ")
-            menu_search_insert!(input, clean)
+            menu_search_insert!(input, clean;typed=false)
             input.pasting = false
             input.paste_buffer = ""
             if !isempty(remaining)
                 action = menu_search_input!(input, remaining)
             end
         end
-    elseif haskey(MENU_SEARCH_KEYS, data)
-        action = menu_search_edit!(input, MENU_SEARCH_KEYS[data])
     else
-        printable = menu_search_printable(data)
-        if !isnothing(printable)
-            menu_search_insert!(input, printable)
-        elseif all(character -> !(Int(character) < 32 || 0x7f <= Int(character) <= 0x9f), data)
+        decoded=menu_search_key_packet(data)
+        if decoded.action==:release
+            action=:ignored
+        elseif decoded.action!=:none
+            action=menu_search_edit!(input,decoded.action)
+        elseif !isnothing(decoded.printable)
+            menu_search_insert!(input,decoded.printable)
+        elseif isvalid(data) && all(character -> !(Int(character) < 32 || 0x7f <= Int(character) <= 0x9f), data)
             menu_search_insert!(input, data)
         else
             action = :ignored
@@ -310,6 +432,7 @@ function menu_search_click!(input::MenuSearchInput, x::Integer, y::Integer=0; bu
             column = next_column
         end
         input.cursor = cursor
+        input.last_action=:none
     end
     handled
 end
