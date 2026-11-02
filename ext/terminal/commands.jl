@@ -46,6 +46,41 @@ function providers_command!(app::App, arguments)
 end
 components_command!(app::App, arguments) = (app.page = :components; nothing)
 
+"""Inspect user-visible Julia skill services without injecting instructions into model history."""
+function skills_command!(app::App, arguments::AbstractString)
+    name = strip(arguments)
+    observation = JuliaForever2.skill_catalog_snapshot(app.session; audience=:user)
+    if isempty(name)
+        entries = observation.skills
+        lines = isempty(entries) ? ["No user-visible Julia skills are currently available."] :
+            ["- **$(entry.name)**: $(entry.description)" for entry in first(entries, 100)]
+        if length(entries) > 100
+            push!(lines, "Showing 100 of $(length(entries)) skills.")
+        end
+        if !observation.complete
+            push!(lines, "Discovery was incomplete; additional skills may be unavailable.")
+        end
+        append_command_document!(app, "Julia Skills", join(lines, "\n"))
+    elseif occursin(r"\s", name)
+        app.status = "Use /skills <name> to inspect one skill."
+    elseif !any(entry -> String(entry.name) == name, observation.skills)
+        app.status = observation.complete ?
+            "Unknown or non-user-visible Julia skill: $name" :
+            "Skill $name could not be confirmed (discovery incomplete)."
+    else
+        loaded = JuliaForever2.load_skill(app.session, name; audience=:user)
+        if loaded.ok
+            preview = first(loaded.instructions, 16_384)
+            suffix = length(preview) < length(loaded.instructions) ?
+                "\n\n*Preview truncated to 16,384 characters.*" : ""
+            append_command_document!(app, "Julia Skill: $name", preview * suffix)
+        else
+            app.status = loaded.reason
+        end
+    end
+    nothing
+end
+
 """Compact earlier session context without blocking terminal input or losing archival history."""
 function compact_command!(app::App, instructions::AbstractString)
     if app.busy || app.operations.closing[]
@@ -219,6 +254,8 @@ function register_default_commands!(app::App)
     register_command!(app, CommandSpec("providers", "Choose a configured provider", providers_command!))
     register_command!(app, CommandSpec("components", "Inspect installed components",
         components_command!))
+    register_command!(app, CommandSpec("skills", "List or preview Julia plugin skills (no model call)",
+        skills_command!))
     register_command!(app, CommandSpec("julia", "Run a Julia expression",
         julia_command!))
     register_command!(app, CommandSpec("clear", "Clear conversation",
