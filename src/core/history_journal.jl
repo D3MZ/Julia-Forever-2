@@ -36,15 +36,14 @@ function bind_history_journal!(session::Session, observer)
 end
 
 """Remove only the retiring session's archive binding."""
-function unbind_history_journal!(session::Session)
-    journals = component(session.kernel, :history_journals)
-    if journals isa HistoryJournals
-        lock(journals.lock) do
-            delete!(journals.observers, session.runtime.id)
-        end
+unbind_history_journal!(::Any, ::UUID) = nothing
+function unbind_history_journal!(journals::HistoryJournals, id::UUID)
+    lock(journals.lock) do
+        delete!(journals.observers, id)
     end
     nothing
 end
+unbind_history_journal!(session::Session) = unbind_history_journal!(component(session.kernel, :history_journals), session.runtime.id)
 
 """Optionally supply an archive-owned model context without changing legacy session history."""
 history_journal_context(observer, session::Session) = nothing
