@@ -103,3 +103,15 @@ jobs:
           name: branch-audit-ledger
           path: branch-audit.tsv
           retention-days: 14
+      - name: Archive exact audited source snapshot
+        shell: bash
+        run: |
+          paths=(src ext plugins scripts AGENTS.md Project.toml)
+          if [ -d bin ]; then paths+=(bin); fi
+          tar -czf audited-production-source.tar.gz "${paths[@]}"
+      - name: Retain source for trace analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: audited-production-source
+          path: audited-production-source.tar.gz
+          retention-days: 14
