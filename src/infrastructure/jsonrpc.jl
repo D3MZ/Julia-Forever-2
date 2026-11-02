@@ -111,10 +111,9 @@ function receive_response!(peer::JsonRpcPeer, id, frame)
     nothing
 end
 
-function response(frame::AbstractDict)
-    error = get(frame, "error", nothing)
-    error isa AbstractDict || error isa AbstractVector ? RpcResult(RpcError(object_params(error))) : RpcResult(get(frame, "result", nothing))
-end
+reply(error, frame::AbstractDict) = RpcResult(get(frame, "result", nothing))
+reply(error::Union{AbstractDict,AbstractVector}, frame::AbstractDict) = RpcResult(RpcError(object_params(error)))
+response(frame::AbstractDict) = reply(get(frame, "error", nothing), frame)
 
 function RpcError(detail::AbstractDict)
     code = get(detail, "code", nothing)
