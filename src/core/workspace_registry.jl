@@ -11,7 +11,7 @@ workspace_registry_directory(registry::WorkspaceRegistry) = joinpath(registry.di
 workspace_registry_file(registry::WorkspaceRegistry) = joinpath(workspace_registry_directory(registry), "registry.json")
 
 """Serialize registry reads and writes across Julia processes using an operating-system file lock."""
-function with_workspace_registry(operation, registry::WorkspaceRegistry)
+function with_workspace_registry(operation, registry::WorkspaceRegistry; mutation=false)
     lock(registry.lock) do
         directory = workspace_registry_directory(registry)
         islink(registry.directory) && error("Refusing a symbolic-link workspace store")
@@ -23,9 +23,12 @@ function with_workspace_registry(operation, registry::WorkspaceRegistry)
         end
         open(lockpath, "a+") do stream
             chmod(lockpath, 0o600)
-            Sys.isunix() || error("Cross-process workspace registry locking requires Unix")
-            ccall(:flock, Cint, (Cint, Cint), Base.fd(stream), 2) == 0 ||
-                error("Cannot acquire workspace registry lock")
+            if Sys.isunix()
+                ccall(:flock, Cint, (Cint, Cint), Base.fd(stream), 2) == 0 ||
+                    error("Cannot acquire workspace registry lock")
+            elseif mutation
+                error("Cross-process workspace registry writes are not supported on this platform")
+            end
             operation()
         end
     end
@@ -115,7 +118,7 @@ workspace_success(value, event=nothing) = (ok=true, reason="", changed=!isnothin
 
 """Apply a transaction with a bounded replay journal and monotonically increasing revision."""
 function workspace_mutate!(mutation, registry::WorkspaceRegistry)
-    with_workspace_registry(registry) do
+    with_workspace_registry(registry; mutation=true) do
         state = read_workspace_state(registry)
         result = mutation(state["items"])
         if result.changed
