@@ -6,4 +6,8 @@ using PrecompileTools: @compile_workload
     precompile(Tuple{typeof(terminal_app)})
     precompile(Tuple{typeof(JuliaForever2.main)})
     precompile(Tuple{typeof(Tachikoma.app),App})
+    # Infer real first-key entry points without executing tasks, timers, hooks or I/O.
+    precompile(Tuple{typeof(default_input!),App,KeyEvent})
+    precompile(Tuple{typeof(chat_host_packet!),App,String})
+    precompile(Tuple{typeof(chat_editor_input!),ChatEditorState,String})
 end
