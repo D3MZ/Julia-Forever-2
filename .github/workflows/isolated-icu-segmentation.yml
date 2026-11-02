@@ -1,0 +1,66 @@
+name: Isolated ICU segmentation BenchmarkTools experiment
+
+on:
+  push:
+    branches:
+      - perf-experiment-icu-segment-slicing-20261102-0345
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isolated-icu-segment-experiment
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      JULIA_NUM_THREADS: '2'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Check out exact current main as baseline worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/jf2-baseline" b534b18caac44e377700b3939b48ddff04185143
+          mkdir -p "$RUNNER_TEMP/benchmark-evidence"
+          git rev-parse HEAD > "$RUNNER_TEMP/benchmark-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/jf2-baseline" rev-parse HEAD > "$RUNNER_TEMP/benchmark-evidence/baseline-sha.txt"
+          julia --version > "$RUNNER_TEMP/benchmark-evidence/julia-version.txt"
+          uname -a > "$RUNNER_TEMP/benchmark-evidence/runner.txt"
+      - name: Install all source dependencies in the shared benchmark environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          julia --project=benchmarks -e '
+            using Pkg
+            Pkg.instantiate()
+            root = Pkg.TOML.parsefile("Project.toml")["deps"]
+            benchmark = Pkg.TOML.parsefile("benchmarks/Project.toml")["deps"]
+            missing = sort!(collect(setdiff(keys(root), keys(benchmark))))
+            isempty(missing) || Pkg.add(missing)
+          '
+      - name: BenchmarkTools semantics, alternating trials, CPU and allocation profiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          julia --project=benchmarks benchmarks/experiments/icu_word_segments.jl \
+            "$RUNNER_TEMP/jf2-baseline" "$RUNNER_TEMP/benchmark-evidence" \
+            2>&1 | tee "$RUNNER_TEMP/benchmark-evidence/run.log"
+      - name: Upload raw benchmark evidence even on gate failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: icu-segment-benchmark-evidence
+          path: ${{ runner.temp }}/benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30
