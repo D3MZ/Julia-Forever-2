@@ -56,7 +56,6 @@ setting_unavailable_reason(::Val{Symbol("transport")}) = "Transport selection is
 setting_unavailable_reason(::Val{Symbol("cache-warming-mode")}) = "Cache warming is unavailable: no native background warming service is installed. No warming requests are sent."
 setting_unavailable_reason(::Val{Symbol("auto-resize-images")}) = "Input image resizing is unavailable: terminal image sizing only changes display, not images sent to a provider."
 setting_unavailable_reason(::Val{Symbol("share-destination")}) = "Session sharing is unavailable: no native Radius or GitHub Gist publisher is installed. No session is uploaded."
-setting_unavailable_reason(::Val{Symbol("mermaid-rendering")}) = "Mermaid diagrams are unavailable: diagram fences remain source text. No native diagram renderer is installed."
 
 """Show availability first; supported settings retain their persisted or declared value."""
 function setting_value(app::App, item::SettingSpec)

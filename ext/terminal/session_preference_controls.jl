@@ -9,7 +9,8 @@ function prepare_terminal_session_preferences(app::App,session::Session)
     follow_up=menu_preference(app,"follow-up-mode","one-at-a-time")
     hide_thinking=menu_preference(app,"hide-thinking","false")
     block_images=menu_preference(app,"block-images","false")
-    valid=steering in ("one-at-a-time","all") && follow_up in ("one-at-a-time","all") && hide_thinking in ("false","true") && block_images in ("false","true")
+    mermaid=menu_preference(app,"mermaid-rendering","streaming")
+    valid=steering in ("one-at-a-time","all") && follow_up in ("one-at-a-time","all") && hide_thinking in ("false","true") && block_images in ("false","true") && mermaid in ("off","final","streaming")
     result=if !valid
         (ok=false,reason="Session preference values are invalid")
     elseif !isopen(session)
@@ -29,6 +30,7 @@ function prepare_terminal_session_preferences(app::App,session::Session)
     if result.ok
         install!(session.kernel,ComponentSpec(:block_images,block_images=="true"))
     end
+    transcript.display.mermaid_mode=mermaid in ("off","final","streaming") ? Symbol(mermaid) : :off
     session_display_transition!(transcript.display,hide_thinking=="true" ? :hide_thinking : :show_thinking)
     (ok=result.ok,reason=result.reason,transcript)
 end

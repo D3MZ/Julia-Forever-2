@@ -97,7 +97,7 @@ function startup_preview_rows(app::App,width::Int)
     if !isnothing(progress) && progress.kind==:answer
         state=app.transcript.display
         state.output_padding=padding
-        session_display_assistant(Dict{String,Any}("role"=>"assistant","content"=>[Dict("type"=>"text","text"=>progress.text)]),width,state)
+        session_display_assistant(Dict{String,Any}("role"=>"assistant","content"=>[Dict("type"=>"text","text"=>progress.text)]),width,state;is_streaming=true)
     else
         preview=preview_lines!(app,width+2-2padding)
         buffer=Tachikoma.Buffer(Tachikoma.Rect(1,1,width,length(preview)))
