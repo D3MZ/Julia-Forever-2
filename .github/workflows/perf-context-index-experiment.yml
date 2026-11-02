@@ -1,0 +1,43 @@
+name: Isolated BenchmarkTools context-index experiment
+on:
+  push:
+    branches:
+      - automation/perf-context-index-benchtools-20261102
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      JULIA_NUM_THREADS: '2'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: 6fc98e6e267548720be90cc0d88d282c725cbbf4
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Julia 1.13.3
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13.3'
+      - name: Exact baseline worktree and evidence metadata
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/jf2-baseline" "$BASELINE_SHA"
+          mkdir -p "$RUNNER_TEMP/jf2-evidence"
+          git rev-parse HEAD > "$RUNNER_TEMP/jf2-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/jf2-baseline" rev-parse HEAD > "$RUNNER_TEMP/jf2-evidence/baseline-sha.txt"
+          julia --version > "$RUNNER_TEMP/jf2-evidence/julia-version.txt"
+          env | sort | grep -E '^(JULIA_|RUNNER_|GITHUB_SHA=)' > "$RUNNER_TEMP/jf2-evidence/runner-env.txt"
+      - name: Install benchmark dependency environment
+        run: julia --project=benchmarks -e 'using Pkg; Pkg.instantiate(); Pkg.status()'
+      - name: BenchmarkTools paired runs and semantic consistency
+        run: julia --threads=2 --project=benchmarks benchmarks/experiments/context_index_copy.jl "$RUNNER_TEMP/jf2-baseline" "$RUNNER_TEMP/jf2-evidence"
+      - name: Preserve evidence even when experiment fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-index-benchmarktools-evidence
+          path: ${{ runner.temp }}/jf2-evidence
+          if-no-files-found: warn
+          retention-days: 14
