@@ -42,8 +42,8 @@ empty_workspace_state() = Dict{String,Any}(
 function validate_workspace_state(state)
     if !(state isa AbstractDict) ||
             get(state, "format", nothing) != "JuliaForever2.workspaces" ||
-            get(state, "version", nothing) != 1 ||
-            !(get(state, "revision", nothing) isa Integer) ||
+            !metadata_version(get(state, "version", nothing), (1,)) ||
+            !(get(state, "revision", nothing) isa Integer && metadata_number(state["revision"])) ||
             state["revision"] < 0 ||
             !(get(state, "items", nothing) isa AbstractVector) ||
             !(get(state, "events", nothing) isa AbstractVector)
@@ -57,8 +57,8 @@ function validate_workspace_state(state)
                 !(get(item, "path", nothing) isa String) ||
                 !(get(item, "title", nothing) isa String) ||
                 !(get(item, "sessionOrder", nothing) isa AbstractVector) ||
-                !(get(item, "createdAt", nothing) isa Real) ||
-                !(get(item, "updatedAt", nothing) isa Real)
+                !metadata_number(get(item, "createdAt", nothing)) ||
+                !metadata_number(get(item, "updatedAt", nothing))
             error("Invalid native workspace entry")
         end
         UUID(item["id"])
@@ -78,7 +78,7 @@ function validate_workspace_state(state)
     end
     for event in state["events"]
         if !(event isa AbstractDict) ||
-                !(get(event, "revision", nothing) isa Integer) ||
+                !(get(event, "revision", nothing) isa Integer && metadata_number(event["revision"])) ||
                 !(get(event, "type", nothing) isa String)
             error("Invalid native workspace change")
         end
