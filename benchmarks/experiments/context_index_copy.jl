@@ -28,7 +28,7 @@ function fixture(count::Int, active::Int; null_at::Int=0)
         push!(entries, Dict{String,Any}(
             "type"=>"message","id"=>"entry-" * string(index),
             "parentId"=>parent,"timestamp"=>"2026-11-01T20:00:00.000Z",
-            "message"=>Dict("role"=>isodd(index) ? "user" : "assistant",
+            "message"=>Dict{String,Any}("role"=>isodd(index) ? "user" : "assistant",
                 "content"=>blocks),"metadata"=>metadata))
     end
     (; entries, count, active, leaf="entry-" * string(active),
