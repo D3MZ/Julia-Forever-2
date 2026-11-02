@@ -4,9 +4,9 @@ function project_trust_text_lines(text::AbstractString,width::Int,style::Symbol=
 end
 
 """Render source-equivalent saved/current decisions and explicit choices, with native scope disclosed at admission."""
-function project_trust_lines(app::App,width::Int)
-    state=app.menus.project_trust
-    isnothing(state) && return Vector{Tachikoma.Span}[]
+project_trust_lines(app::App,width::Int) = project_trust_lines(app.menus.project_trust,width)
+project_trust_lines(::Nothing,width::Int) = Vector{Tachikoma.Span}[]
+function project_trust_lines(state::ProjectTrustState,width::Int)
     lines=Vector{Tachikoma.Span}[menu_line(repeat("─",max(0,width)),:menu_border),menu_line()]
     heading=state.startup_prompt ? "Trust project folder?" : "Project trust"
     push!(lines,[menu_span(" "),Tachikoma.Span(heading,Tachikoma.Style(;fg=pi_style(:accent).fg,bold=true))])
@@ -17,7 +17,8 @@ function project_trust_lines(app::App,width::Int)
         append!(lines,project_trust_text_lines(explanation,width))
         push!(lines,menu_line())
     else
-        decision=isnothing(state.saved_decision) ? "none" : (state.saved_decision ? "trusted" : "untrusted")*
+        saved=state.saved_decision
+        decision=isnothing(saved) ? "none" : (saved ? "trusted" : "untrusted")*
             (state.saved_path==state.canonical ? " ($(state.saved_path))" : " (inherited from $(state.saved_path))")
         append!(lines,project_trust_text_lines("Saved decision: "*decision,width))
         append!(lines,project_trust_text_lines("Current session: "*(state.trusted ? "trusted" : "untrusted"),width))

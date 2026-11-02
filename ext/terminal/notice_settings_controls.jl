@@ -30,7 +30,17 @@ function maybe_warn_anthropic_subscription!(app::App)
 end
 
 """Load genuine local update notes only; never fetch releases or send install telemetry during startup."""
-function initialize_notice_settings!(app::App;installed::VersionNumber=pkgversion(JuliaForever2))
+initialize_notice_settings!(app::App;installed::Union{Nothing,VersionNumber}=pkgversion(JuliaForever2)) = initialize_notice_settings!(app,installed)
+
+function initialize_notice_settings!(app::App,::Nothing)
+    controls=app.menus.startup
+    if !isnothing(controls)
+        startup_status!(controls.document,"Installed version unavailable; local release notes were not checked.";kind=:warning)
+    end
+    nothing
+end
+
+function initialize_notice_settings!(app::App,installed::VersionNumber)
     controls=app.menus.startup
     if !isnothing(controls)
         if isempty(JuliaForever2.history_snapshot(app.session).messages)
@@ -38,11 +48,12 @@ function initialize_notice_settings!(app::App;installed::VersionNumber=pkgversio
                 path=joinpath(app.settings.directory,"startup-release.json")
                 previous=JuliaForever2.startup_release_state(path)
                 notice=StartupUpdateNotice(;acknowledgement_path=path,expected=previous.digest,installed)
-                if isnothing(previous.version)
+                version=previous.version
+                if isnothing(version)
                     notice.pending=true
-                elseif previous.version<installed
+                elseif version<installed
                     snapshot=JuliaForever2.read_release_changelog(joinpath(app.settings.directory,"release-changelog.json"))
-                    notes=JuliaForever2.startup_release_notes(snapshot,previous.version,installed)
+                    notes=JuliaForever2.startup_release_notes(snapshot,version,installed)
                     if !isempty(notes)
                         notice.markdown=join(["## "*note.tag*"\n\n"*note.body for note in notes],"\n\n")
                         notice.version=string(JuliaForever2.startup_release_version(first(notes).tag))

@@ -16,8 +16,8 @@ function startup_release_state(path::AbstractString)
         (;version,digest=timeline_digest(text))
     end
 end
-function startup_release_version(value::AbstractString)
-    text=String(value)
+startup_release_version(value::AbstractString) = startup_release_version(String(value))
+function startup_release_version(text::String)
     sizeof(text)<=100 && occursin(r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$",text) ? tryparse(VersionNumber,text) : nothing
 end
 startup_release_version(value)=nothing

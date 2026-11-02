@@ -36,8 +36,12 @@ function session_math_parse!(parser::SessionMathParser)
     parser.supported&&parser.position==length(parser.source)+1 ? session_math_normalize(rendered) : nothing
 end
 
+session_math_text(value::String) = value
+session_math_text(value::AbstractString) = String(value)::String
+session_math_text(value) = error("Invalid terminal math text")
+
 function session_math_sequence!(parser::SessionMathParser,ending::Char='\0')
-    result="";done=false;closed=false
+    result::String="";done=false;closed=false
     parser.depth+=1
     if parser.depth>parser.max_depth
         parser.supported=false;done=true;parser.position=length(parser.source)+1
@@ -49,16 +53,16 @@ function session_math_sequence!(parser::SessionMathParser,ending::Char='\0')
         elseif character=='}'
             parser.supported=false;done=true
         elseif character=='{'
-            parser.position+=1;result*=session_math_sequence!(parser,'}')
+            parser.position+=1;result*=session_math_text(session_math_sequence!(parser,'}'))
         elseif character=='\\'
-            command=session_math_command!(parser)
+            command=session_math_text(session_math_command!(parser))
             if command=="\0"
                 result=String(rstrip(result));result=String(chopsuffix(result,SESSION_MATH_OPERATOR_END))
             else
                 result*=command
             end
         elseif character in ('^','_')
-            parser.position+=1;result=String(rstrip(result));script=session_math_scripts!(parser,character)
+            parser.position+=1;result=String(rstrip(result));script=session_math_text(session_math_scripts!(parser,character))
             result=endswith(result,SESSION_MATH_OPERATOR_END) ? String(chopsuffix(result,SESSION_MATH_OPERATOR_END))*script*SESSION_MATH_OPERATOR_END : result*script
         elseif session_math_space(character)
             session_math_skip!(parser);result*=" "

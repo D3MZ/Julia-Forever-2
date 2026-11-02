@@ -497,9 +497,12 @@ api_session_children(api::SessionAPI, params::AbstractDict) = stored(session -> 
 function api_session_turn!(api::SessionAPI, params::AbstractDict)
     apply(api_session(api, params)) do session
         prompt = api_parameter(params, "prompt")
+        include_id = get(params, "includeOperationId", false)
         name = String(params["session"])
         if !(prompt isa AbstractString && !isempty(prompt))
             RpcError(-32602, "Prompt is required")
+        elseif !(include_id isa Bool)
+            RpcError(-32602, "includeOperationId must be Boolean")
         else
             lock(api.lock) do
                 previous = get(api.handles, name, nothing)
@@ -510,8 +513,10 @@ function api_session_turn!(api::SessionAPI, params::AbstractDict)
                 elseif !isnothing(previous) && !istaskdone(previous)
                     RpcError(-32000, "Session already has an active turn: $name")
                 else
-                    api.handles[name] = submit_turn!(session, prompt)
-                    Dict("accepted" => true)
+                    handle = submit_turn!(session, prompt)
+                    api.handles[name] = handle
+                    include_id ? Dict{String,Any}("accepted" => true,
+                        "operationId" => api_operation_id(handle)) : Dict("accepted" => true)
                 end
             end
         end
@@ -521,8 +526,11 @@ end
 """Cancel only the in-flight operation; preserve the Julia session and future turns."""
 function api_session_cancel!(api::SessionAPI, params::AbstractDict)
     name = api_parameter(params, "session")
+    target = get(params, "operationId", nothing)
     if !(name isa AbstractString && !isempty(name))
         RpcError(-32602, "Expected a session identifier")
+    elseif !valid_operation_target(target)
+        RpcError(-32602, "Expected a nonempty operation identifier")
     else
         lock(api.lock) do
             if api.closed
@@ -530,12 +538,25 @@ function api_session_cancel!(api::SessionAPI, params::AbstractDict)
             elseif !haskey(api.sessions, String(name))
                 Dict("cancelled" => false)
             else
-                cancel_api_turn!(get(api.handles, String(name), nothing))
+                handle = get(api.handles, String(name), nothing)
+                matches_operation(handle, target) ? cancel_api_turn!(handle) : Dict("cancelled" => false)
             end
         end
     end
 end
 
+const API_OPERATION_NAMESPACE = Ref{String}("")
+
+function __init__()
+    API_OPERATION_NAMESPACE[] = string(uuid4())
+    nothing
+end
+
+api_operation_id(handle::TaskHandle) = string(API_OPERATION_NAMESPACE[], ':', operation_id(handle.context))
+valid_operation_target(target) = isnothing(target) || (target isa AbstractString && !isempty(target))
+matches_operation(handle, ::Nothing) = true
+matches_operation(::Nothing, ::AbstractString) = false
+matches_operation(handle::TaskHandle, target::AbstractString) = api_operation_id(handle) == target
 cancel_api_turn!(::Nothing) = Dict("cancelled" => false)
 
 function cancel_api_turn!(handle::TaskHandle)
@@ -544,8 +565,14 @@ function cancel_api_turn!(handle::TaskHandle)
     return Dict("cancelled" => active)
 end
 function api_session_wait(api::SessionAPI, params::AbstractDict)
-    apply(api_session(api, params)) do session
-        status(lock(() -> get(api.handles, String(params["session"]), nothing), api.lock))
+    target = get(params, "operationId", nothing)
+    if !valid_operation_target(target)
+        RpcError(-32602, "Expected a nonempty operation identifier")
+    else
+        apply(api_session(api, params)) do session
+            handle = lock(() -> get(api.handles, String(params["session"]), nothing), api.lock)
+            matches_operation(handle, target) ? status(handle) : Dict("status" => "stale")
+        end
     end
 end
 

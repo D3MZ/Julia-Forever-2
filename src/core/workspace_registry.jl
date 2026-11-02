@@ -120,16 +120,23 @@ workspace_success(value, event=nothing) = (ok=true, reason="", changed=!isnothin
 function workspace_mutate!(mutation, registry::WorkspaceRegistry)
     with_workspace_registry(registry; mutation=true) do
         state = read_workspace_state(registry)
-        result = mutation(state["items"])
+        items = Dict{String,Any}[item for item in state["items"]]
+        state["items"] = items
+        result = mutation(items)
         if result.changed
-            state["revision"] += 1
-            event = Dict{String,Any}(result.event)
-            event["revision"] = state["revision"]
-            push!(state["events"], event)
-            if length(state["events"]) > 256
-                state["events"] = state["events"][(end - 255):end]
+            change = result.event
+            if isnothing(change)
+                error("Changed workspace requires an event")
+            else
+                state["revision"] += 1
+                event = Dict{String,Any}(change)
+                event["revision"] = state["revision"]
+                push!(state["events"], event)
+                if length(state["events"]) > 256
+                    state["events"] = state["events"][(end - 255):end]
+                end
+                write_workspace_state!(registry, state)
             end
-            write_workspace_state!(registry, state)
         end
         result
     end
@@ -180,7 +187,7 @@ end
 register_workspace_label!(registry::WorkspaceRegistry, directory::AbstractString, ::Nothing) = workspace_failure("Workspace title must not be blank")
 
 function register_workspace_label!(registry::WorkspaceRegistry, directory::AbstractString, label::String)
-    workspace_mutate!(registry) do items
+    workspace_mutate!(registry) do items::Vector{Dict{String,Any}}
         existing = findfirst(item -> item["path"] == directory, items)
         if !isnothing(existing)
             workspace_success(Dict("workspace" => deepcopy(items[existing]), "created" => false))
@@ -202,7 +209,7 @@ end
 rename_workspace_label!(registry::WorkspaceRegistry, id::AbstractString, ::Nothing) = workspace_failure("Workspace title must not be blank")
 
 function rename_workspace_label!(registry::WorkspaceRegistry, id::AbstractString, label::String)
-    workspace_mutate!(registry) do items
+    workspace_mutate!(registry) do items::Vector{Dict{String,Any}}
         index = workspace_find(items, id)
         if isnothing(index)
             workspace_failure("Unknown workspace")
@@ -228,7 +235,7 @@ end
 
 """Remove a registration without deleting the directory or any saved session."""
 function delete_workspace!(registry::WorkspaceRegistry, id::AbstractString)
-    workspace_mutate!(registry) do items
+    workspace_mutate!(registry) do items::Vector{Dict{String,Any}}
         index = workspace_find(items, id)
         if isnothing(index)
             workspace_failure("Unknown workspace")
@@ -242,7 +249,7 @@ end
 
 """Move a registered workspace before an anchor, or append it at the end."""
 function move_workspace!(registry::WorkspaceRegistry, id::AbstractString, before=nothing)
-    workspace_mutate!(registry) do items
+    workspace_mutate!(registry) do items::Vector{Dict{String,Any}}
         index = workspace_find(items, id)
         anchor = isnothing(before) ? nothing : workspace_find(items, String(before))
         if isnothing(index) || (!isnothing(before) && isnothing(anchor))
@@ -263,7 +270,7 @@ end
 """Persist per-workspace session order, constrained to observed UUID memberships."""
 function move_workspace_session!(registry::WorkspaceRegistry, id::AbstractString,
         session_id::AbstractString, before, members::Vector{String})
-    workspace_mutate!(registry) do items
+    workspace_mutate!(registry) do items::Vector{Dict{String,Any}}
         index = workspace_find(items, id)
         if isnothing(index)
             workspace_failure("Unknown workspace")

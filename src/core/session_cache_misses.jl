@@ -41,21 +41,27 @@ function cache_miss_estimate(message::AbstractDict,report::UsageReport,missed::I
     read=usage_cost(usage_detail(raw,"cacheRead"))
     paid_tokens=cache_prompt_tokens(report.input_tokens,0,report.cache_write_tokens)
     paid=isnothing(input)||isnothing(written)||isnothing(paid_tokens) ? nothing : paid_tokens>0 ? (input+written)/paid_tokens : 0.0
-    cached=report.cache_read_tokens>0 ? (isnothing(read) ? nothing : read/report.cache_read_tokens) : usage_cost(read_price(message))
+    read_tokens=report.cache_read_tokens
+    cached=isnothing(read_tokens) ? nothing : read_tokens>0 ? (isnothing(read) ? nothing : read/read_tokens) : usage_cost(read_price(message))
     estimate=isnothing(paid)||isnothing(cached) ? nothing : missed*max(0.0,paid-cached)
     isnothing(estimate) || !isfinite(estimate) ? nothing : estimate
 end
 
 function cache_request_miss(previous::SessionCacheRequest,message::AbstractDict,report::UsageReport,tokens::Int,timestamp,read_price)
-    activity=something(report.cache_read_tokens,0)>0 || something(report.cache_write_tokens,0)>0
-    missed=min(previous.tokens,tokens)-report.cache_read_tokens
-    if tokens<=0 || (!activity && !previous.reported_cache) || missed<=1024
+    read_tokens=report.cache_read_tokens
+    if isnothing(read_tokens)
         nothing
     else
-        key=cache_model_key(message)
-        idle=isnothing(timestamp)||isnothing(previous.timestamp) ? nothing : max(0.0,timestamp-previous.timestamp)
-        changed=!isnothing(key)&&!isnothing(previous.model)&&key!=previous.model
-        SessionCacheMiss(missed,cache_miss_estimate(message,report,missed,read_price),idle,changed)
+        activity=read_tokens>0 || something(report.cache_write_tokens,0)>0
+        missed=min(previous.tokens,tokens)-read_tokens
+        if tokens<=0 || (!activity && !previous.reported_cache) || missed<=1024
+            nothing
+        else
+            key=cache_model_key(message)
+            idle=isnothing(timestamp)||isnothing(previous.timestamp) ? nothing : max(0.0,timestamp-previous.timestamp)
+            changed=!isnothing(key)&&!isnothing(previous.model)&&key!=previous.model
+            SessionCacheMiss(missed,cache_miss_estimate(message,report,missed,read_price),idle,changed)
+        end
     end
 end
 cache_request_miss(::Nothing,message,report,tokens,timestamp,read_price)=nothing

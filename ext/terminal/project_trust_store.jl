@@ -46,12 +46,22 @@ end
 """Find the nearest saved canonical directory decision; child denial overrides parent trust."""
 function project_trust_entry(data::Dict{String,Bool},canonical::String)
     path=canonical
-    while true
-        haskey(data,path) && return (path,decision=data[path])
-        parent=dirname(path)
-        parent==path && return nothing
-        path=parent
+    result=nothing
+    searching=true
+    while searching
+        if haskey(data,path)
+            result=(path,decision=data[path])
+            searching=false
+        else
+            parent=dirname(path)
+            if parent==path
+                searching=false
+            else
+                path=parent
+            end
+        end
     end
+    result
 end
 
 """Hold one exclusive native-process write claim and always release it after the operation settles."""

@@ -1,7 +1,7 @@
 "use strict";
 (() => {
   const $ = id => document.getElementById(id);
-  let rpcId = 0, active = null, sessions = [], operation = null, busy = false, cancelling = false;
+  let rpcId = 0, active = null, sessions = [], operation = null, busy = false;
   let pollTimer = null, viewEpoch = 0, authorized = true, capabilities = {}, pendingSubmission = null, menuAnchor = null;
   const fields = {
     workspace: $("workspace"), workspaceTitle: $("workspace-title"), workspaceList: $("workspace-list"),
@@ -30,10 +30,10 @@
   function notice(text = "", error = false) { $("status").textContent = text; $("status").classList.toggle("error",error); }
   function enable() {
     const blocked = busy || !authorized;
-    $("send").disabled = blocked || !!operation || cancelling || !$("prompt").value.trim();
+    $("send").disabled = blocked || !!operation || !$("prompt").value.trim();
     $("send").hidden = !!operation;
     $("stop").hidden = !operation || !!operation.saving;
-    $("stop").disabled = cancelling || !authorized;
+    $("stop").disabled = !!operation?.cancelling || !authorized;
     $("new-chat").disabled = blocked || !!operation;
     $("new-menu").disabled = blocked || !!operation;
     for (const id of ["save","export","export-settings","rename","rename-menu","close-session"])
@@ -216,7 +216,7 @@
   $("prompt").addEventListener("input",enable);
   $("prompt").addEventListener("keydown",event => { if (event.key === "Enter" && !event.shiftKey && !event.isComposing && $("enter-send").checked) { event.preventDefault(); if (!$("send").disabled) $("composer").requestSubmit(); } });
   $("composer").addEventListener("submit",event => {
-    event.preventDefault(); if (operation || cancelling || !$("prompt").value.trim()) return;
+    event.preventDefault(); if (operation || !$("prompt").value.trim()) return;
     action(async () => {
       $("announcement").textContent = "";
       const text = $("prompt").value.trim(), session = await ensureSession();
@@ -243,11 +243,11 @@
     });
   });
   $("stop").addEventListener("click",async () => {
-    const owner = operation; if (!owner || cancelling) return;
-    cancelling = true; enable();
+    const owner = operation; if (!owner || owner.cancelling) return;
+    owner.cancelling = true; enable();
     try { const result = await rpc("web/cancel",{session:owner.session,turn:owner.turn}); if (operation === owner) notice(result.cancelled ? "Stopping reply…" : "Reply already finished."); }
-    catch (error) { notice(error.message,true); }
-    finally { cancelling = false; enable(); }
+    catch (error) { if (operation === owner) notice(error.message,true); }
+    finally { owner.cancelling = false; if (operation === owner) enable(); }
   });
   $("save").addEventListener("click",() => action(async () => { await rpc("session/save",{session:active}); notice("Conversation saved."); await refresh(); }));
   for (const id of ["export","export-settings"]) $(id).addEventListener("click",() => action(exportChat));

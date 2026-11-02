@@ -70,17 +70,18 @@ function startup_discover_resources!(controls::StartupControls,app;directory::Ab
                     [joinpath(root,file) for file in files if endswith(file,".md")] : String[]
                 for path in paths
                     path=scope==:project ? project_resource_path(app,path;directory) : path
-                    isnothing(path) && continue
-                    content=preference_attempt(()->scope==:project ? project_resource_read(app,path;directory) : read(path,String))
-                    if !content.ok
-                        push!(collector.document.diagnostics,StartupDiagnostic(;section=:skill,severity=:error,path,message=content.reason))
-                        continue
+                    if !isnothing(path)
+                        content=preference_attempt(()->scope==:project ? project_resource_read(app,path;directory) : read(path,String))
+                        if !content.ok
+                            push!(collector.document.diagnostics,StartupDiagnostic(;section=:skill,severity=:error,path,message=content.reason))
+                            continue
+                        end
+                        fallback=basename(path)=="SKILL.md" ? basename(root) : splitext(basename(path))[1]
+                        name=resource_metadata_text(content.value,"name",fallback);description=resource_metadata_text(content.value,"description")
+                        registered=register_skill!(app,name,path;description)
+                        controls.disk_registrations[(:skill,registered.name)]=(resource_registration_revision(app,:skill,registered.name),registered)
+                        startup_registered_resource!(collector,StartupResource(;kind=:skill,name=registered.name,path=registered.path,source="local",scope))
                     end
-                    fallback=basename(path)=="SKILL.md" ? basename(root) : splitext(basename(path))[1]
-                    name=resource_metadata_text(content.value,"name",fallback);description=resource_metadata_text(content.value,"description")
-                    registered=register_skill!(app,name,path;description)
-                    controls.disk_registrations[(:skill,registered.name)]=(resource_registration_revision(app,:skill,registered.name),registered)
-                    startup_registered_resource!(collector,StartupResource(;kind=:skill,name=registered.name,path=registered.path,source="local",scope))
                 end
                 "SKILL.md" in files && empty!(children)
             end

@@ -15,4 +15,3 @@ Base.@kwdef mutable struct TerminalSelectionControl
     timer::Union{Nothing,Timer}=nothing
     timer_epoch::UInt=0
 end
-

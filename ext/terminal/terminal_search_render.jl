@@ -60,7 +60,7 @@ function terminal_search_lines(state::TerminalTranscriptSearch,width::Integer;
     input=terminal_search_input_lines(state,input_width;hardware)
     push!(input,terminal_search_span(repeat(" ",max(0,input_width-terminal_search_width(input)))))
     push!(input,Tachikoma.Span(result_text,Tachikoma.Style(;dim=true)))
-    previous="↑ "*String(previous_key);next="↓ "*String(next_key);separator=" · "
+    previous=string("↑ ",previous_key)::String;next=string("↓ ",next_key)::String;separator=" · "
     available=max(0,inner-3);controls=menu_search_width(previous*separator*next)
     if controls>available
         previous="↑";next="↓";separator=" ";controls=3
