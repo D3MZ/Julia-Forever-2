@@ -55,7 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          julia --project=benchmarks -e 'using Pkg; Pkg.instantiate(); Pkg.status()' \
+          julia --project=benchmarks -e 'using Pkg; Pkg.instantiate(); Pkg.add(name="YAML", version="0.4.17"); Pkg.status()' \
             > "$RUNNER_TEMP/perf-evidence/packages.txt" 2>&1 || {
               cat "$RUNNER_TEMP/perf-evidence/packages.txt"
               exit 1
