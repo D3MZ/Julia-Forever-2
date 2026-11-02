@@ -110,6 +110,41 @@ function load_skill(registry::SkillRegistry, name::Union{Symbol,AbstractString},
     end
 end
 
+"""Prepare a bounded user message from an explicitly selected, user-visible Julia skill."""
+function skill_request(registry, name::Union{Symbol,AbstractString},
+        workspace::AbstractString=pwd(); request::AbstractString="")
+    label = String(name)
+    if !occursin(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", label)
+        skill_request_failure("Invalid skill name: $label")
+    else
+        loaded = load_skill(registry, name, workspace; audience=:user)
+        if !loaded.ok
+            skill_request_failure(loaded.reason)
+        elseif isempty(strip(loaded.instructions))
+            skill_request_failure("Skill $label has no instructions")
+        else
+            suffix = isempty(strip(request)) ? "" : "\n\nUser request:\n" * String(request)
+            message = "User-selected Julia skill: $label\n\nSkill instructions:\n" *
+                String(loaded.instructions) * suffix
+            ncodeunits(message) > 262_144 ?
+                skill_request_failure("Selected skill and request exceed 262,144 bytes") :
+                (ok=true, reason="", text=message)
+        end
+    end
+end
+
+skill_request_failure(reason) = (ok=false, reason=String(reason), text="")
+
+"""Resolve the active Julia skill service without loading model-visible-only instructions."""
+function skill_request(session::Session, name::Union{Symbol,AbstractString};
+        request::AbstractString="")
+    prepared = with_component(session.kernel, :skills) do registry
+        skill_request(registry, name, working_directory(session); request)
+    end
+    isnothing(prepared) ?
+        skill_request_failure("No skill service is configured") : prepared
+end
+
 """Expose one replaceable skill service through the standard Julia plugin lifecycle."""
 function skill_registry_plugin(; name=:skill_registry, service_name=:skills, factory=SkillRegistry)
     contract = Symbol(service_name)
