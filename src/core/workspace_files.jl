@@ -1,3 +1,5 @@
+import SHA
+
 """Bounded, read-only workspace file inspection shared by optional Julia frontends."""
 struct WorkspaceFileService{R}
     registry::R
@@ -148,14 +150,14 @@ function workspace_file_read_page(files::WorkspaceFileService, metadata::Abstrac
         workspace_file_unavailable("Workspace file exceeds the text inspection limit")
     elseif current["version"] != metadata["version"]
         workspace_file_unavailable("Workspace file changed while it was being read")
-    elseif !isvalid(String(bytes)) || any(iszero, bytes)
+    elseif any(iszero, bytes) || !isvalid(String(bytes))
         workspace_file_unavailable("Workspace file is not UTF-8 text")
     else
         text = String(bytes)
         lines = split(text, '\n'; keepempty=true)
         endswith(text, "\n") && pop!(lines)
         first_line = Int(offset)
-        last_line = min(length(lines), first_line + limit - 1)
+        last_line = first_line > length(lines) ? length(lines) : min(length(lines), first_line + limit - 1)
         count = max(0, last_line - first_line + 1)
         page = count == 0 ? "" : join(@view(lines[first_line:last_line]), "\n")
         Dict{String,Any}("absolutePath" => path, "version" => metadata["version"],
