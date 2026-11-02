@@ -48,8 +48,8 @@ function filesystem_skill_roots(registry::FilesystemSkillRegistry, workspace)
     unique(roots)
 end
 
-"""Treat an unreadable or malformed entry as absent without losing other skill sources."""
-function observe_skill_file(callback::Function, path::AbstractString)
+"""Distinguish an inaccessible source from an empty file or directory."""
+function observe_skill_status(callback::Function, path::AbstractString)
     worker = Task(callback)
     schedule(worker)
     wait(worker; throw=false)
@@ -57,11 +57,14 @@ function observe_skill_file(callback::Function, path::AbstractString)
         exceptions = Base.current_exceptions(worker)
         reason = isempty(exceptions) ? "Unknown read failure" : sprint(showerror, last(exceptions).exception)
         @warn "Skipping filesystem skill" path reason
-        nothing
+        (ok=false, value=nothing)
     else
-        fetch(worker)
+        (ok=true, value=fetch(worker))
     end
 end
+
+observe_skill_file(callback::Function, path::AbstractString) =
+    observe_skill_status(callback, path).value
 
 """Read only a bounded frontmatter prefix when producing the discovery catalog."""
 function filesystem_skill_header(path::AbstractString)
@@ -128,46 +131,70 @@ function filesystem_skill_candidate(root::AbstractString, entry::AbstractString)
     end
 end
 
-function filesystem_skill_root_entries(root::AbstractString)
-    if isdir(root) && !islink(root)
-        entries = observe_skill_file(() -> sort!(readdir(root)), root)
-        isnothing(entries) ? String[] : entries
+"""Missing optional roots are complete; unreadable or unsupported roots are not."""
+function filesystem_skill_root_observation(root::AbstractString)
+    if islink(root) || (ispath(root) && !isdir(root))
+        (entries=String[], complete=false)
+    elseif isdir(root)
+        found = observe_skill_status(() -> sort!(readdir(root)), root)
+        (entries=isnothing(found.value) ? String[] : found.value, complete=found.ok)
     else
-        String[]
+        (entries=String[], complete=true)
     end
 end
 
-function filesystem_skill_entries(registry::FilesystemSkillRegistry, workspace::AbstractString)
+filesystem_skill_root_entries(root::AbstractString) =
+    filesystem_skill_root_observation(root).entries
+
+"""Keep usable candidates while tracking failures in each recognized filesystem skill."""
+function filesystem_skill_observation(registry::FilesystemSkillRegistry, workspace::AbstractString)
     entries = FilesystemSkillEntry[]
     names = Set{Symbol}()
+    complete = true
     for root in filesystem_skill_roots(registry, workspace)
-        for filename in filesystem_skill_root_entries(root)
+        listing = filesystem_skill_root_observation(root)
+        complete &= listing.complete
+        for filename in listing.entries
             candidate = filesystem_skill_candidate(root, filename)
             if !isnothing(candidate)
-                header = observe_skill_file(() -> filesystem_skill_header(candidate.path), candidate.path)
-                entry = filesystem_skill_entry(candidate.path, candidate.name, header)
-                if !isnothing(entry) && !(entry.name in names)
+                header = observe_skill_status(() -> filesystem_skill_header(candidate.path), candidate.path)
+                entry = filesystem_skill_entry(candidate.path, candidate.name, header.value)
+                if !header.ok || isnothing(entry)
+                    complete = false
+                elseif !(entry.name in names)
                     push!(entries, entry)
                     push!(names, entry.name)
                 end
             end
         end
     end
-    entries
+    (entries, complete)
 end
 
-"""Merge the native filesystem catalog with registered skills without exposing instructions."""
-function skill_catalog(registry::FilesystemSkillRegistry, workspace::AbstractString=pwd(); audience::Symbol=:model)
-    rows = skill_catalog(registry.registered, workspace; audience)
-    seen = Set(entry.name for entry in skill_catalog(registry.registered, workspace; audience=:all))
-    for entry in filesystem_skill_entries(registry, workspace)
+filesystem_skill_entries(registry::FilesystemSkillRegistry, workspace::AbstractString) =
+    filesystem_skill_observation(registry, workspace).entries
+
+"""Expose usable skills and whether every recognized source was readable and valid."""
+function skill_catalog_snapshot(registry::FilesystemSkillRegistry,
+        workspace::AbstractString=pwd(); audience::Symbol=:model)
+    registered = skill_catalog_snapshot(registry.registered, workspace; audience)
+    all_registered = skill_catalog_snapshot(registry.registered, workspace; audience=:all)
+    rows = copy(registered.skills)
+    seen = Set(entry.name for entry in all_registered.skills)
+    observation = filesystem_skill_observation(registry, workspace)
+    for entry in observation.entries
         if !(entry.name in seen)
             push!(seen, entry.name)
             skill_visible(entry, Val(audience)) && push!(rows, (name=entry.name, description=entry.description))
         end
     end
-    sort!(rows; by=entry -> entry.name)
+    (skills=sort!(rows; by=entry -> entry.name),
+        complete=registered.complete && all_registered.complete && observation.complete)
 end
+
+"""Merge registered and filesystem skills, retaining the original catalog shape."""
+skill_catalog(registry::FilesystemSkillRegistry, workspace::AbstractString=pwd(); audience::Symbol=:model) =
+    skill_catalog_snapshot(registry, workspace; audience).skills
 
 """Read the selected body afresh, revalidating visibility after edits to SKILL.md."""
 function filesystem_skill_load(entry::FilesystemSkillEntry, audience::Symbol)
