@@ -17,8 +17,8 @@ function menu_packet(event::KeyEvent, raw::AbstractVector{UInt8})
 end
 
 """Filter only known credential-owning providers or explicitly selected native providers."""
-function configured_model_providers(app::App)
-    active = provider_selection_snapshot(app.session.kernel).id
+function configured_model_providers(app::App; kernel::Kernel=app.session.kernel)
+    active = provider_selection_snapshot(kernel).id
     ids = Symbol[]
     for descriptor in provider_descriptors(app.settings.registry)
         configured = isnothing(descriptor.auth) || (descriptor.id == active && !(descriptor.id in (:chatgpt, :openrouter)))
@@ -78,9 +78,9 @@ function save_model_preferences!(app::App, preferences::AbstractDict)
 end
 
 """Take a cached model snapshot without authenticating or making an inference request."""
-function menu_model_snapshot(app::App; configured=true)
+function menu_model_snapshot(app::App; configured=true, kernel::Kernel=app.session.kernel)
     models = provider_models(app.settings.registry)
-    ids = configured ? configured_model_providers(app) : Symbol[]
+    ids = configured ? configured_model_providers(app; kernel) : Symbol[]
     configured ? filter(model -> model.provider in ids, models) : models
 end
 
