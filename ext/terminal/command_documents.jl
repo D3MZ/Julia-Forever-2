@@ -101,24 +101,25 @@ function command_stats_rows(stats::JuliaForever2.SessionStatistics,width::Int;ca
     rows
 end
 
-function command_document_rows(document::InlineCommandDocument,width::Int)
-    if document.content isa CommandSessionInfo
-        command_stats_rows(document.content.statistics,width;cache_mode=document.content.cache_mode,selected_model=document.content.selected_model)
-    elseif document.content isa JuliaForever2.SessionStatistics
-        command_stats_rows(document.content,width)
-    else
-        rows=SessionDisplayRows([session_display_blank(width)])
-        border=[Tachikoma.Span(repeat("─",width),session_display_style(:border))]
-        push!(rows,border)
-        append!(rows,session_display_text_rows(document.title,width,1;style=session_display_style(:accent;bold=true)))
-        push!(rows,session_display_blank(width))
-        push!(rows,session_display_blank(width))
-        append!(rows,document.content isa CommandHotkeyTable ? command_hotkeys_rows(document.content.markdown,width) : session_display_markdown(document.content,width,1))
-        push!(rows,session_display_blank(width))
-        push!(rows,border)
-        rows
-    end
+command_document_rows(content::CommandSessionInfo,::String,width::Int) = command_stats_rows(content.statistics,width;cache_mode=content.cache_mode,selected_model=content.selected_model)
+command_document_rows(content::JuliaForever2.SessionStatistics,::String,width::Int) = command_stats_rows(content,width)
+command_document_body(content::String,width::Int) = session_display_markdown(content,width,1)
+command_document_body(content::CommandHotkeyTable,width::Int) = command_hotkeys_rows(content.markdown,width)
+
+function command_document_rows(content::Union{String,CommandHotkeyTable},title::String,width::Int)
+    rows=SessionDisplayRows([session_display_blank(width)])
+    border=[Tachikoma.Span(repeat("─",width),session_display_style(:border))]
+    push!(rows,border)
+    append!(rows,session_display_text_rows(title,width,1;style=session_display_style(:accent;bold=true)))
+    push!(rows,session_display_blank(width))
+    push!(rows,session_display_blank(width))
+    append!(rows,command_document_body(content,width))
+    push!(rows,session_display_blank(width))
+    push!(rows,border)
+    rows
 end
+
+command_document_rows(document::InlineCommandDocument,width::Int) = command_document_rows(document.content,document.title,width)
 
 function command_document_rows(state::CommandDocumentState,id::String,anchor,width::Int)
     rows=SessionDisplayRows()
