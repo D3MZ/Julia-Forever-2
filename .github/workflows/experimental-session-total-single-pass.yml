@@ -1,0 +1,75 @@
+name: Isolated session-total and terminal smoke
+on:
+  push:
+    branches:
+      - refactor/session-total-single-pass-20261102-0627
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Direct source arithmetic contract probes
+        shell: bash
+        run: |
+          julia --startup-file=no -e '
+            using Test
+            module Candidate
+              struct UsageReport end
+              include("src/core/session_statistics.jl")
+            end
+            function baseline(values::AbstractVector, ::Type{T}) where {T<:Real}
+              reported=count(v->!isnothing(v),values)
+              total=zero(T)
+              for value in values
+                if !isnothing(value)
+                  converted=convert(T,value)
+                  if T <: Integer
+                    total=Base.Checked.checked_add(total,converted)
+                  else
+                    total+=converted
+                    isfinite(total) || error("Session usage sum overflowed")
+                  end
+                end
+              end
+              (total,reported,length(values))
+            end
+            for (values,T) in ((Any[],Int),(Any[nothing,nothing],Int),(Any[nothing,2,3],Int),
+                               (Any[nothing,true,false,8],Int),(Any[nothing,1.25,2.5],Float64),
+                               (Any[false,true],Bool),(Any[0.1,0.2,0.3],Float64))
+              current=Candidate.session_reported_total(values,T)
+              @test (current.value,current.reported,current.expected) == baseline(values,T)
+            end
+            @test_throws OverflowError Candidate.session_reported_total([typemax(Int),1],Int)
+            @test_throws ErrorException Candidate.session_reported_total([NaN],Float64)
+            @test_throws ErrorException Candidate.session_reported_total([Inf],Float64)
+            @test_throws InexactError Candidate.session_reported_total([1.25],Int)
+            @test_throws Exception Candidate.session_reported_total(Any[nothing,missing],Int)
+            @test which(Candidate.session_total_add,(Int,Int)).sig == Tuple{typeof(Candidate.session_total_add),Int,Int}
+            @test Candidate.session_reported_total(Any[nothing,nothing],Float64).reported == 0
+            println("SOURCE_NUMERIC_PROBES_PASSED")
+          '
+      - name: Install native terminal environment
+        run: julia --project=app -e 'using Pkg; Pkg.instantiate()'
+      - name: Headless Tachikoma Frame/TestBackend and native JF2 views
+        run: |
+          julia --project=app --startup-file=no -e '
+            using JuliaForever2, Tachikoma, CommonMark
+            backend=Tachikoma.TestBackend(80,24)
+            frame=Tachikoma.Frame(backend.buf,backend.buf.area,Tachikoma.GraphicsRegion[],Tachikoma.PixelSnapshot[])
+            Tachikoma.set_char!(backend.buf,2,2,\x27Z\x27,Tachikoma.Style())
+            @assert Tachikoma.char_at(backend,2,2)==\x27Z\x27
+            extension=Base.get_extension(JuliaForever2,:JuliaForever2TerminalExt)
+            @assert !isnothing(extension)
+            rendered=extension.terminal_compile_workload()
+            @assert rendered>0
+            println("HEADLESS_TERMINAL_PROBES_PASSED rendered=",rendered)
+          '
