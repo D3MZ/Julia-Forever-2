@@ -168,12 +168,19 @@ workspace_title(title) = title isa AbstractString &&
 
 """Register an existing absolute directory; repeated creation preserves its UUID and order."""
 function register_workspace!(registry::WorkspaceRegistry, path::AbstractString; title=nothing)
-    if !isabspath(path) || !isdir(path)
-        return workspace_failure("Workspace requires an existing absolute directory")
+    if isabspath(path) && isdir(path)
+        directory = realpath(path)
+        register_workspace_label!(registry, directory,
+            workspace_title(isnothing(title) ? basename(directory) : title))
+    else
+        workspace_failure("Workspace requires an existing absolute directory")
     end
-    directory = realpath(path)
-    label = workspace_title(isnothing(title) ? basename(directory) : title)
-    isnothing(label) && return workspace_failure("Workspace title must not be blank")
+end
+
+register_workspace_label!(registry::WorkspaceRegistry, directory::AbstractString, ::Nothing) =
+    workspace_failure("Workspace title must not be blank")
+
+function register_workspace_label!(registry::WorkspaceRegistry, directory::AbstractString, label::String)
     workspace_mutate!(registry) do items
         existing = findfirst(item -> item["path"] == directory, items)
         if !isnothing(existing)
@@ -193,9 +200,10 @@ function register_workspace!(registry::WorkspaceRegistry, path::AbstractString; 
 end
 
 """Rename only the registry entry; sessions and filesystem contents are unaffected."""
-function rename_workspace!(registry::WorkspaceRegistry, id::AbstractString, title)
-    label = workspace_title(title)
-    isnothing(label) && return workspace_failure("Workspace title must not be blank")
+rename_workspace_label!(registry::WorkspaceRegistry, id::AbstractString, ::Nothing) =
+    workspace_failure("Workspace title must not be blank")
+
+function rename_workspace_label!(registry::WorkspaceRegistry, id::AbstractString, label::String)
     workspace_mutate!(registry) do items
         index = workspace_find(items, id)
         if isnothing(index)
@@ -214,6 +222,10 @@ function rename_workspace!(registry::WorkspaceRegistry, id::AbstractString, titl
             end
         end
     end
+end
+
+function rename_workspace!(registry::WorkspaceRegistry, id::AbstractString, title)
+    rename_workspace_label!(registry, id, workspace_title(title))
 end
 
 """Remove a registration without deleting the directory or any saved session."""
