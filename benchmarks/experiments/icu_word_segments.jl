@@ -20,7 +20,10 @@ const emoji_text = repeat("🚀👩‍🚀 ZWJ👨‍👩‍👧‍👦, e\u0301
 const punctuation_text = repeat("words[]{}⇢测试; a+b=c, π/σ? punctuation\n", 230)
 const short_text = repeat("café 中文 λ/β word! ", 18)
 const input_json = JSON.json(Dict("text" => primary_text, "values" => collect(1:150)))
-const messages = [Candidate.Message(isodd(index) ? :user : :assistant,
+const baseline_messages = [Baseline.Message(isodd(index) ? :user : :assistant,
+    repeat("Message $(index) about Unicode text and punctuation. ", 10))
+    for index in 1:45]
+const candidate_messages = [Candidate.Message(isodd(index) ? :user : :assistant,
     repeat("Message $(index) about Unicode text and punctuation. ", 10))
     for index in 1:45]
 
@@ -65,7 +68,8 @@ const workloads = [
         (length(value["text"]), length(value["values"]), value["values"][end])
     end, scope="unchanged: JSON parser only; does not call ICU segmentation", primary=false),
     (name="control/unchanged-markdown-transcript", work=package -> begin
-        result = package.session_markdown(messages; title="Unchanged history export")
+        records = package === Baseline ? baseline_messages : candidate_messages
+        result = package.session_markdown(records; title="Unchanged history export")
         (ncodeunits(result), bytes2hex(sha256(result)))
     end, scope="unchanged: Markdown renderer only; no ICU segmentation", primary=false),
 ]
