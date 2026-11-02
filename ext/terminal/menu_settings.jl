@@ -67,7 +67,7 @@ end
 """Share model and setting menu ranking; retain the original no-swap settings contract."""
 menu_alignment_score(text::Vector{Char}, positions::Vector{Int}) = selector_alignment(text, positions)
 menu_token_score(label::AbstractString, query::AbstractString) = selector_token_score(label, query; swap=false)
-search_settings(items::Vector{SettingSpec}, query::AbstractString) = selector_filter(items, query, item -> item.label)
+search_settings(items::Vector{SettingSpec}, query::AbstractString) = selector_filter(items, query, item -> item.label; swap=false)
 
 const WARNING_SETTINGS = [SettingSpec("anthropic-extra-usage", "Anthropic extra usage",
     "Warn when Anthropic subscription auth may use paid extra usage", "true", ["true", "false"])]
