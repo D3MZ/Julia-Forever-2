@@ -32,6 +32,7 @@ public working_directory, set_working_directory!, workspace_path
 public AgentDecision, agent_decision, action_content, action_kind, action_payload
 public BoundComponent, bind_component, bound_dependency, fork_kernel
 public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileStore, compose_profiles, save_profile!, load_profile, profile_names, ProfilePlan, profile_plan
+public Skill, SkillRegistry, SkillRegistration, register_skill!, unregister_skill!, skill_catalog, load_skill, skill_registry_plugin
 public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
 public ToolSpec, ToolCall, ToolExecutor, ToolBatch, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!, invoke_tool_batch!, tool_concurrency_safe
@@ -62,6 +63,7 @@ include("files/search_tool.jl")
 include("kernel.jl")
 include("agent.jl")
 include("core/plugins.jl")
+include("core/skills.jl")
 include("core/prompt_templates.jl")
 include("text/word_segmentation.jl")
 include("core/profile_store.jl")
