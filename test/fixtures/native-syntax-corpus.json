@@ -1,0 +1,690 @@
+[
+  {
+    "name": "read-c",
+    "tool": "read",
+    "args": {
+      "path": "example.c"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "#include <stdio.h>\nint main(void) { /* greeting */\n    printf(\"hello %d\\n\", 42);\n    return 0;\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-cpp",
+    "tool": "read",
+    "args": {
+      "path": "example.cpp"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "#include <vector>\ntemplate<class T> T twice(T value) { return value * 2; }\nstd::vector<int> values{1, 2, 3};\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-cs",
+    "tool": "read",
+    "args": {
+      "path": "example.cs"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "using System;\npublic class Example {\n    public static string Hello(string name) => $\"Hi {name}\";\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-go",
+    "tool": "read",
+    "args": {
+      "path": "example.go"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "package main\nimport \"fmt\"\nfunc main() {\n    value := 42\n    fmt.Printf(\"%d\\n\", value)\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-java",
+    "tool": "read",
+    "args": {
+      "path": "example.java"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "import java.util.List;\npublic class Example {\n    public static void main(String[] args) { System.out.println(\"Hello\"); }\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-kt",
+    "tool": "read",
+    "args": {
+      "path": "example.kt"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "package example\nfun greet(name: String): String {\n    val enabled = true\n    return \"Hello $name\"\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-swift",
+    "tool": "read",
+    "args": {
+      "path": "example.swift"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "import Foundation\nfunc greet(_ name: String) -> String {\n    let count: Int = 42\n    return \"Hello \\(name)\"\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-rb",
+    "tool": "read",
+    "args": {
+      "path": "example.rb"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "class Greeter\n  def hello(name)\n    puts \"Hello #{name}\"\n  end\nend\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-php",
+    "tool": "read",
+    "args": {
+      "path": "example.php"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "<?php\nfunction hello(string $name): string {\n    return \"Hello \" . $name;\n}\necho hello(\"World\");\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-fish",
+    "tool": "read",
+    "args": {
+      "path": "example.fish"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "#!/usr/bin/env fish\nset name world\nif test -n \"$name\"\n    echo \"Hello $name\"\nend\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-ps1",
+    "tool": "read",
+    "args": {
+      "path": "example.ps1"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "# Greeting\nparam([string]$Name = \"World\")\nfunction Get-Greeting { Write-Output \"Hello $Name\" }\nGet-Greeting\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-css",
+    "tool": "read",
+    "args": {
+      "path": "example.css"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "/* main */\nbody.main > a:hover {\n    color: #abc123;\n    margin: 10px 0;\n    display: flex;\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-scss",
+    "tool": "read",
+    "args": {
+      "path": "example.scss"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "$accent: #abc123;\n@mixin center($gap: 4px) { display: flex; gap: $gap; }\n.main { @include center(); color: $accent; &:hover { color: red; } }\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-sass",
+    "tool": "read",
+    "args": {
+      "path": "example.sass"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "$accent: #abc123\n.main\n  color: $accent\n  &:hover\n    color: red\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-less",
+    "tool": "read",
+    "args": {
+      "path": "example.less"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "@accent: #abc123;\n.rounded(@radius: 4px) { border-radius: @radius; }\n.main { color: @accent; .rounded(); }\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-toml",
+    "tool": "read",
+    "args": {
+      "path": "example.toml"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "# configuration\n[server]\nport = 8080\nenabled = true\nnames = [\"one\", \"two\"]\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-dockerfile",
+    "tool": "read",
+    "args": {
+      "path": "example.dockerfile"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "FROM julia:1.13\nWORKDIR /app\nCOPY . .\nENV PORT=8080\nRUN echo \"hello\"\nCMD [\"julia\", \"main.jl\"]\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-makefile",
+    "tool": "read",
+    "args": {
+      "path": "example.makefile"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": ".PHONY: test\nCC := gcc\nbuild: main.c\n\t$(CC) -o $@ $<\ntest: build\n\t./build\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-cmake",
+    "tool": "read",
+    "args": {
+      "path": "example.cmake"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "cmake_minimum_required(VERSION 3.20)\nproject(Example LANGUAGES CXX)\nset(SOURCES main.cpp)\nadd_executable(example ${SOURCES})\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-lua",
+    "tool": "read",
+    "args": {
+      "path": "example.lua"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "local function greet(name)\n    -- greeting\n    return \"Hello \" .. name\nend\nprint(greet(\"World\"))\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-perl",
+    "tool": "read",
+    "args": {
+      "path": "example.perl"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "use strict;\nuse warnings;\nmy $name = \"World\";\nprint \"Hello $name\\n\";\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-r",
+    "tool": "read",
+    "args": {
+      "path": "example.r"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "# sum values\ngreet <- function(name) {\n  values <- c(1, 2, 3)\n  paste(\"Hello\", name, sum(values))\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-scala",
+    "tool": "read",
+    "args": {
+      "path": "example.scala"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "object Example {\n  def greet(name: String): String = {\n    val count = 42\n    s\"Hello $name\"\n  }\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-clj",
+    "tool": "read",
+    "args": {
+      "path": "example.clj"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "(ns example.core)\n(defn greet [name]\n  (str \"Hello \" name))\n(println (greet \"World\"))\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-ex",
+    "tool": "read",
+    "args": {
+      "path": "example.ex"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "defmodule Example do\n  def greet(name) do\n    IO.puts(\"Hello #{name}\")\n  end\nend\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-erl",
+    "tool": "read",
+    "args": {
+      "path": "example.erl"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "-module(example).\n-export([greet/1]).\ngreet(Name) ->\n    io:format(\"Hello ~s~n\", [Name]).\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-hs",
+    "tool": "read",
+    "args": {
+      "path": "example.hs"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "module Main where\ngreet :: String -> String\ngreet name = \"Hello \" ++ name\nmain = putStrLn (greet \"World\")\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-ml",
+    "tool": "read",
+    "args": {
+      "path": "example.ml"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "(* greeting *)\nlet greet name = \"Hello \" ^ name;;\nlet () = print_endline (greet \"World\");;\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-vim",
+    "tool": "read",
+    "args": {
+      "path": "example.vim"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "\" configuration\nset number\nfunction! Greet(name)\n  echo \"Hello \" . a:name\nendfunction\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-graphql",
+    "tool": "read",
+    "args": {
+      "path": "example.graphql"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "query Greeting($id: ID!) {\n  user(id: $id) { id name active }\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-proto",
+    "tool": "read",
+    "args": {
+      "path": "example.proto"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "syntax = \"proto3\";\npackage example;\nmessage User {\n  string name = 1;\n  repeated int32 values = 2;\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-hcl",
+    "tool": "read",
+    "args": {
+      "path": "example.hcl"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "variable \"name\" {\n  type = string\n  default = \"World\"\n}\nresource \"example\" \"main\" { name = var.name }\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-py",
+    "tool": "read",
+    "args": {
+      "path": "example.py"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "@decorator\nclass Example(Base):\n    text = \"\"\"multi\nline string\"\"\"\n    def greet(self, name: str) -> str:\n        return f\"Hello {name!r}: {len(name)}\"\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-js",
+    "tool": "read",
+    "args": {
+      "path": "example.js"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "/** docs */\nclass Example extends Base {\n  async greet(name = \"World\") {\n    const pattern = /hello\\s+/gi;\n    return `Hello ${name.toUpperCase()}`;\n  }\n}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-ts",
+    "tool": "read",
+    "args": {
+      "path": "example.ts"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "interface User { readonly name: string; }\ntype Result<T> = Promise<T | null>;\nconst greet = <T extends User>(user: T): string => `Hello ${user.name}`;\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-rs",
+    "tool": "read",
+    "args": {
+      "path": "example.rs"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "#[derive(Debug)]\nstruct User<'a> { name: &'a str }\nimpl<'a> User<'a> { fn greet(&self) -> String { format!(\"Hi {}\", self.name) } }\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-md",
+    "tool": "read",
+    "args": {
+      "path": "example.md"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "# Heading\n\n> quoted **bold**\n\n- item\n\n```python\nprint(\"Hi\")\n```\n\n~~deleted~~ [link](https://example.test)\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-json",
+    "tool": "read",
+    "args": {
+      "path": "example.json"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"unicode\": \"hello \\u03bb\", \"scientific\": -1.2e3, \"nested\": {\"a\": false}}\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-yaml",
+    "tool": "read",
+    "args": {
+      "path": "example.yaml"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "---\nbase: &base\n  value: 42\nchild:\n  <<: *base\n  text: |\n    line one\n    line two\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-html",
+    "tool": "read",
+    "args": {
+      "path": "example.html"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "<!DOCTYPE html>\n<!-- comment -->\n<div data-value=\"a > b\">\n  <script>const x = 42;</script>\n  <style>body { color: red; }</style>\n</div>\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-sql",
+    "tool": "read",
+    "args": {
+      "path": "example.sql"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "WITH cte AS (SELECT COUNT(*) AS total FROM users)\nSELECT total::integer, COALESCE(name, 'n/a') FROM cte WHERE total >= 1;\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-sh",
+    "tool": "read",
+    "args": {
+      "path": "example.sh"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "#!/bin/bash\nset -euo pipefail\nfor item in \"${values[@]}\"; do\n  printf \"%s\\n\" \"$(basename \"$item\")\"\ndone\n"
+        }
+      ],
+      "isError": false
+    }
+  },
+  {
+    "name": "read-xml",
+    "tool": "read",
+    "args": {
+      "path": "example.xml"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root xmlns:x=\"urn:example\"><x:item enabled=\"true\">Text &amp; more</x:item></root>\n"
+        }
+      ],
+      "isError": false
+    }
+  }
+]

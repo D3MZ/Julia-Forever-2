@@ -1,0 +1,171 @@
+{
+  "args": [
+    "",
+    "one two",
+    "\"\" a ''",
+    "a\"two words\"b c",
+    "\"unterminated",
+    "'one'\"two\"",
+    "one\\ two",
+    "\"a\\\"b\" c",
+    "λ \"日本 語\" 🙂",
+    "a b﻿c",
+    "ab",
+    "one\ntwo\tthree",
+    "\" \" \"\"",
+    "\"$1\" '$@'"
+  ],
+  "substitutions": [
+    {
+      "template": "$1|$2|$0|$10|$01|$999999999999999999999999",
+      "args": [
+        "α",
+        "β"
+      ]
+    },
+    {
+      "template": "$@ / $ARGUMENTS",
+      "args": [
+        "one",
+        "",
+        "three"
+      ]
+    },
+    {
+      "template": "${1:-first}|${2:-second}|${@:-all}|${ARGUMENTS:-none}",
+      "args": [
+        ""
+      ]
+    },
+    {
+      "template": "${1:-$2}/${2:-$ARGUMENTS}/$1",
+      "args": [
+        "$@"
+      ]
+    },
+    {
+      "template": "${@:0}|${@:1}|${@:2}|${@:3}|${@:1:0}|${@:2:2}",
+      "args": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "template": "${@:0002:01}|${@:999999999999999999:5}",
+      "args": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "template": "${1:-nested ${2}}|$1",
+      "args": [
+        ""
+      ]
+    },
+    {
+      "template": "$ARGUMENTSX|$@X|$1X|$$1",
+      "args": [
+        "a"
+      ]
+    },
+    {
+      "template": "line\n$1\n${2:-日本 語}",
+      "args": [
+        "🙂"
+      ]
+    },
+    {
+      "template": "${@:-fallback}",
+      "args": [
+        "",
+        ""
+      ]
+    },
+    {
+      "template": "${1:-x}",
+      "args": [
+        "0"
+      ]
+    },
+    {
+      "template": "${0:-zero}|${00:-doublezero}",
+      "args": []
+    }
+  ],
+  "frontmatter": [
+    {
+      "name": "plain",
+      "raw": "\nPlain body\n"
+    },
+    {
+      "name": "simple",
+      "raw": "---\ndescription: Help\nargument-hint: \"[name]\"\n---\nHello $1\n"
+    },
+    {
+      "name": "bom",
+      "raw": "﻿---\r\ndescription: >-\r\n  Folded\r\n  description\r\n---\r\nBody\r\n"
+    },
+    {
+      "name": "quotes",
+      "raw": "---\ndescription: \"λ \\n line\"\nargument-hint: 'say \"hi\"'\n---\nbody"
+    },
+    {
+      "name": "literal",
+      "raw": "---\ndescription: |\n  one\n  two\n---\nbody"
+    },
+    {
+      "name": "boolean",
+      "raw": "---\ndescription: true\n---\n  first nonempty\nsecond"
+    },
+    {
+      "name": "yes",
+      "raw": "---\ndescription: yes\n---\nbody"
+    },
+    {
+      "name": "date",
+      "raw": "---\ndescription: 2026-11-01\n---\nbody"
+    },
+    {
+      "name": "empty",
+      "raw": "---\n---\n  body  \n"
+    },
+    {
+      "name": "open",
+      "raw": "---\ndescription: missing close"
+    },
+    {
+      "name": "array",
+      "raw": "---\n[one,two]\n---\nbody"
+    },
+    {
+      "name": "null",
+      "raw": "---\nnull\n---\nbody"
+    },
+    {
+      "name": "duplicate",
+      "raw": "---\ndescription: a\ndescription: b\n---\nbody"
+    },
+    {
+      "name": "invalid",
+      "raw": "---\ndescription: [unclosed\n---\nbody"
+    },
+    {
+      "name": "alias",
+      "raw": "---\nfirst: &text \"alias text\"\ndescription: *text\n---\nbody"
+    },
+    {
+      "name": "unknown-tag",
+      "raw": "---\ndescription: !include /no/such/private/file\n---\nbody"
+    },
+    {
+      "name": "unicode",
+      "raw": "---\nother: key\n---\n🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂ab"
+    },
+    {
+      "name": "scalar",
+      "raw": "---\nscalar\n---\nbody"
+    }
+  ]
+}

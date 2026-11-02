@@ -1,0 +1,10 @@
+import{readFileSync,writeFileSync}from'node:fs';import assert from'node:assert/strict';
+import{createGraphemeTerminal,graphemeTerminalProfile,graphemeScreen}from'./terminal_grapheme_profile.mjs';
+const[originalPath,nativePath,hostPath,output]=process.argv.slice(2);const original=JSON.parse(readFileSync(originalPath)),native=JSON.parse(readFileSync(nativePath)),host=JSON.parse(readFileSync(hostPath));
+const snapshots=[],failures=[];let checked=0;
+for(const a of original.cases){const b=native.cases.find(c=>c.glyph===a.glyph);assert(b,'missing glyph '+a.glyph);const terms=[createGraphemeTerminal(24,4),createGraphemeTerminal(24,4)];
+ for(let i=0;i<a.steps.length;i++){const steps=[a.steps[i],b.steps[i]];assert.equal(steps[0].name,steps[1].name);for(let side=0;side<2;side++){terms[side].resize(steps[side].width,steps[side].height);await new Promise(done=>terms[side].write(steps[side].writes,done));}const frames=terms.map(t=>({cells:graphemeScreen(t)}));const equal=JSON.stringify(frames[0])===JSON.stringify(frames[1]);checked++;if(!equal)failures.push({glyph:a.glyph,step:steps[0].name});snapshots.push({id:a.glyph+'-'+steps[0].name,width:steps[0].width,input:steps[0].text,terminalProfile:graphemeTerminalProfile,equal,frames});}
+ terms.forEach(t=>t.dispose());
+}
+const terms=[createGraphemeTerminal(40,12),createGraphemeTerminal(40,12)];for(const step of host.steps){await new Promise(done=>terms[0].write(step.referenceWrites,done));await new Promise(done=>terms[1].write(step.writes,done));const frames=terms.map(t=>({cells:graphemeScreen(t)}));const equal=JSON.stringify(frames[0])===JSON.stringify(frames[1]);checked++;if(!equal)failures.push({host:step.name});snapshots.push({id:'host-'+step.name,width:step.width,equal,frames});}terms.forEach(t=>t.dispose());
+writeFileSync(output,JSON.stringify({terminalProfile:graphemeTerminalProfile,checked,matching:checked-failures.length,failures,snapshots},null,2));console.log(JSON.stringify({checked,matching:checked-failures.length,failures}));if(failures.length)process.exitCode=1;

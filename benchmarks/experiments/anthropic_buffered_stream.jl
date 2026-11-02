@@ -166,15 +166,10 @@ function profile(f, prefix)
     Profile.Allocs.clear()
     Profile.Allocs.@profile sample_rate=0.02 f()
     sites = Dict{String,Tuple{Int,Int}}()
-    for allocation in Profile.Allocs.fetch().allocs
-        isempty(allocation.stacktrace) && continue
-        frame = first(allocation.stacktrace)
-        for location in allocation.stacktrace
-            if occursin("anthropic.jl", string(location.file))
-                frame = location
-                break
-            end
-        end
+    allocations = Iterators.filter(allocation -> !isempty(allocation.stacktrace), Profile.Allocs.fetch().allocs)
+    for allocation in allocations
+        source_index = findfirst(location -> occursin("anthropic.jl", string(location.file)), allocation.stacktrace)
+        frame = allocation.stacktrace[isnothing(source_index) ? firstindex(allocation.stacktrace) : source_index]
         label = string(frame.file, ":", frame.line, " ", frame.func)
         count, bytes = get(sites, label, (0, 0))
         sites[label] = (count+1, bytes+allocation.size)

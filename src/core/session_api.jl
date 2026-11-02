@@ -85,7 +85,9 @@ function restore!(api::SessionAPI, name, directory, resume)
 end
 
 restore(target::Union{Kernel,AgentDefinition}, ::Nothing, directory) = api_create_session(target; working_directory=directory)
-restore(target::Union{Kernel,AgentDefinition}, record, directory) = api_create_session(target; messages=record.messages, working_directory=record.directory, id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id)
+restore(target::Union{Kernel,AgentDefinition}, record, directory) = api_create_session(target; messages=record.messages, compaction_entry=record.compaction,
+    working_directory=record.directory, id=record.lineage.id,
+    parent_id=record.lineage.parent_id, root_id=record.lineage.root_id)
 function api_close_session!(api::SessionAPI, params::AbstractDict)
     apply(api_session(api, params)) do session
         name = String(params["session"])
@@ -129,6 +131,7 @@ function api_saved_session_list(api::SessionAPI, params::AbstractDict)
 end
 
 saved_summary(error::RpcError, name) = error
+saved_summary(error::RpcError, ::AbstractString) = error
 saved_summary(store, name) = RpcError(-32602, "Expected a session identifier")
 saved_summary(store, name::AbstractString) = isempty(name) ?
     RpcError(-32602, "Expected a session identifier") : saved_summary_lookup(store, name)

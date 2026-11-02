@@ -7,6 +7,7 @@ import Tachikoma: update!
 
 const Terminal = Base.get_extension(JuliaForever2, :JuliaForever2TerminalExt)
 const App = Terminal.App
+terminal_fixture_app(args...; kwargs...) = Terminal.App(args...; theme_fallback="dark", kwargs...)
 
 struct RegisteredTerminalProvider
     directory::String
@@ -41,6 +42,14 @@ function drain_ui_events!(app)
         update!(app, take!(app.queue.channel))
     end
     return nothing
+end
+
+function settle_ui_completion!(app; timeout=5)
+    timedwait(timeout; pollint=0.001) do
+        drain_ui_events!(app)
+        state=app.menus.chat_completion
+        !isnothing(state) && isnothing(state.timer) && (isnothing(state.worker) || istaskdone(state.worker)) && !isready(app.queue.channel)
+    end
 end
 
 function finish_ui_operation!(app; timeout=5)
@@ -126,21 +135,27 @@ withenv("JULIAFOREVER_CONFIG_DIR" => terminal_configuration, "OPENROUTER_API_KEY
     @test Tachikoma.text(input) == "abcde"
 end
 
-@testset "Cursor shortcuts preserve menu selection" begin
-    app = App(default_kernel())
+@testset "Cursor shortcuts preserve or refresh selection according to their actual action" begin
+    app = terminal_fixture_app(default_kernel())
     update!(app, KeyEvent('/'))
+    @test settle_ui_completion!(app)==:ok
     update!(app, KeyEvent(:down))
     @test app.selected == 2
     update!(app, KeyEvent(:ctrl, 'a'))
     @test app.selected == 2
     update!(app, KeyEvent(:left))
-    @test app.selected == 2
-    update!(app, KeyEvent('s'))
+    @test settle_ui_completion!(app)==:ok
     @test app.selected == 1
+    @test !app.menu
+    update!(app, KeyEvent('s'))
+    @test settle_ui_completion!(app)==:ok
+    @test app.selected == 1
+    Terminal.finish_shutdown!(app)
+    close(app.session.kernel)
 end
 
 @testset "TUI uses captured modifiers once per key" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     Tachikoma.set_text!(app.input, "alpha beta")
     Tachikoma.enable_raw_capture!()
     bytes = Tachikoma.last_event_raw()
@@ -158,7 +173,7 @@ end
 
 @testset "Page-specific keys remain independent of prompt editing" begin
     mktempdir() do settings_directory
-        app = App(default_kernel(); settings_dir=settings_directory)
+        app = terminal_fixture_app(default_kernel(); settings_dir=settings_directory)
         app.page = :settings
         update!(app, KeyEvent(:down))
         @test app.selected == 2
@@ -176,7 +191,7 @@ end
 end
 
 @testset "Cross-terminal prompt editing shortcuts" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     Tachikoma.set_text!(app.input, "alpha beta gamma")
     app.input.cursor = 10
     update!(app, KeyEvent(:ctrl, 'u'))  # Ctrl+U; also Ghostty's Command+Backspace
@@ -215,32 +230,35 @@ end
 end
 
 @testset "Slash completion and menu editing" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     for character in "/se"
         update!(app, KeyEvent(character))
     end
+    @test settle_ui_completion!(app)==:ok
     @test app.menu
     update!(app, KeyEvent(:tab))
     @test Tachikoma.text(app.input) == "/settings "
     @test !app.menu
     @test app.page == :chat
     update!(app, KeyEvent(:enter))
-    @test app.page == :settings
+    @test app.page == :pi_menu
 
-    selected = App(default_kernel())
+    selected = terminal_fixture_app(default_kernel())
     update!(selected, KeyEvent('/'))
+    @test settle_ui_completion!(selected)==:ok
     update!(selected, KeyEvent(:down))
     update!(selected, KeyEvent(:tab))
-    @test Tachikoma.text(selected.input) == "/components "
+    @test Tachikoma.text(selected.input) == "/model "
     @test selected.page == :chat
     @test !selected.menu
 
     output = String[]
-    custom = App(default_kernel())
+    custom = terminal_fixture_app(default_kernel())
     Terminal.register_command!(custom, Terminal.CommandSpec("echo", "Echo", (app, arguments) -> push!(output, String(arguments))))
     for character in "/ec"
         update!(custom, KeyEvent(character))
     end
+    @test settle_ui_completion!(custom)==:ok
     update!(custom, KeyEvent(:tab))
     @test Tachikoma.text(custom.input) == "/echo "
     @test isempty(output)
@@ -252,35 +270,49 @@ end
     @test Tachikoma.text(custom.input) == ""
 
     update!(custom, KeyEvent('/'))
+    @test settle_ui_completion!(custom)==:ok
     update!(custom, KeyEvent(:backtab))
-    @test custom.selected == length(Terminal.matching_commands(custom))
+    # Shift+Tab cycles thinking at the application layer, not completion selection.
+    @test custom.selected == 1
+    @test custom.menu
     update!(custom, KeyEvent(:ctrl, 'u'))
-    @test !custom.menu
+    @test settle_ui_completion!(custom)==:ok
+    # The pinned editor retains suggestions across kill/yank/undo, even with empty text.
+    @test custom.menu
     @test Tachikoma.text(custom.input) == ""
     Tachikoma.set_text!(custom.input, "plain text")
     update!(custom, KeyEvent(:tab))
+    @test settle_ui_completion!(custom)==:ok
     @test Tachikoma.text(custom.input) == "plain text"
+    for owner in (app,selected,custom)
+        Terminal.finish_shutdown!(owner);close(owner.session.kernel)
+    end
 end
 
 @testset "Terminal navigation" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     update!(app, KeyEvent('/'))
+    @test settle_ui_completion!(app)==:ok
     @test app.menu == true
     update!(app, KeyEvent(:enter))
-    @test app.page == :settings
+    @test app.page == :pi_menu
+    @test app.menus.path == ["settings"]
     update!(app, KeyEvent(:escape))
     @test app.page == :chat
     update!(app, KeyEvent('/'))
+    @test settle_ui_completion!(app)==:ok
     update!(app, KeyEvent(:down))
     update!(app, KeyEvent(:enter))
-    @test app.page == :components
+    @test app.page == :pi_menu
+    @test app.menus.path == ["model"]
     update!(app, KeyEvent(:escape))
     @test app.page == :chat
 end
 
 @testset "Conversation presentation" begin
-    app = App(default_kernel())
-    app.directory = "test-project (main)"
+    app = terminal_fixture_app(default_kernel())
+    app.settings.workspace = "test-project"
+    Terminal.refresh_footer_controls!(app;branch="main",home=nothing)
     append_message!(app.session, Message(:user, "My favorite fruit is mango."))
     append_message!(app.session, Message(:assistant, "Mango is a great choice."))
     append_message!(app.session, Message(:code_result, "Julia output"))
@@ -297,20 +329,19 @@ end
     @test Tachikoma.style_at(tb, output.x, output.y).bg == Tachikoma.ColorRGB(37, 65, 49)
     @test isnothing(find_text(tb, "You")) && isnothing(find_text(tb, "Agent"))
     @test answer.y - user.y == 3
-    @test !isnothing(find_text(tb, app.directory))
-    @test !isnothing(find_text(tb, "(demo) offline"))
-    app.session.usage.input_tokens = 120
-    app.session.usage.output_tokens = 18
-    app.session.usage.reported = true
+    @test !isnothing(find_text(tb, "test-project (main)"))
+    @test !isnothing(find_text(tb, "offline · /settings to connect"))
+    JuliaForever2.timeline_append_message!(app.archive.timeline, Dict("role"=>"assistant",
+        "content"=>Any[], "usage"=>Dict("input"=>120,"output"=>18,"cacheRead"=>0,"cacheWrite"=>0,"cost"=>Dict("total"=>0))))
     Tachikoma.reset!(tb.buf)
     Tachikoma.view(app, frame)
     usage = find_text(tb, "↑120 ↓18")
-    provider = find_text(tb, "(demo) offline")
+    provider = find_text(tb, "offline · /settings to connect")
     @test !isnothing(usage) && !isnothing(provider) && usage.y == provider.y && usage.x < provider.x
 end
 
 @testset "Code-mode presentation" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     append_message!(app.session, Message(:assistant, "println(42)", :code))
     append_message!(app.session, Message(:code_result, "RESULT_42"))
     tb = TestBackend(80, 24)
@@ -325,7 +356,7 @@ end
 end
 
 @testset "Assistant Markdown presentation" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     append_message!(app.session, Message(:assistant, "# Heading\n\nPlain **bold** and `code`.\n\n```julia\n" * repeat("x", 40) * "\n```"))
     tb = TestBackend(24, 24)
     frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
@@ -336,28 +367,28 @@ end
     @test Tachikoma.style_at(tb, heading.x, heading.y).fg == Tachikoma.ColorRGB(205, 154, 34)
     @test Tachikoma.style_at(tb, bold.x, bold.y).bold
     @test isnothing(find_text(tb, "**")) && isnothing(find_text(tb, "```"))
-    code = filter(line -> line[2] == :markdown, app.transcript_lines)
-    @test all(sum((textwidth(span.content) for span in line[1]); init=0) <= 22 for line in code)
-    cached = app.transcript_lines
-    cached_chunks = copy(app.transcript_chunks)
+    rows = app.transcript.display_rows
+    @test !isempty(rows)
+    @test all(sum((textwidth(span.content) for span in row); init=0) <= 24 for row in rows)
+    cached = rows
     Tachikoma.view(app, frame)
-    @test app.transcript_lines === cached
+    @test app.transcript.display_rows === cached
     append_message!(app.session, Message(:assistant, "Additional response"))
     Tachikoma.view(app, frame)
-    @test app.transcript_lines === cached
-    @test app.transcript_chunks[1] === cached_chunks[1]
+    @test app.transcript.display_rows !== cached
+    @test length(app.transcript.display_rows) > length(cached)
     @test !isnothing(find_text(tb, "Additional response"))
 end
 
 @testset "Terminal rendering" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     tb = TestBackend(80, 24)
     frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
     Tachikoma.view(app, frame)
     @test isnothing(find_text(tb, "JULIA FOREVER"))
     @test Tachikoma.char_at(tb, 1, 20) == '─'
     @test Tachikoma.char_at(tb, 1, 22) == '─'
-    @test Tachikoma.style_at(tb, 1, 20).fg == Tachikoma.ColorRGB(151, 118, 229)
+    @test Tachikoma.style_at(tb, 1, 20).fg == Terminal.theme_style(app.menus.theme_runtime,:borderMuted).fg
     update!(app, KeyEvent('/'))
     Tachikoma.reset!(tb.buf)
     Tachikoma.view(app, frame)
@@ -367,17 +398,17 @@ end
     update!(app, KeyEvent(:enter))
     Tachikoma.reset!(tb.buf)
     Tachikoma.view(app, frame)
-    @test !isnothing(find_text(tb, "> Provider"))
-    @test !isnothing(find_text(tb, "OpenRouter"))
+    @test !isnothing(find_text(tb, "Auto-compact"))
+    @test !isnothing(find_text(tb, "settings"))
 end
 
 @testset "Editor border shows active work" begin
     provider = StreamedTerminalProvider([Reply(:answer, "Response")])
-    app = App(default_kernel(provider))
+    app = terminal_fixture_app(default_kernel(provider))
     backend = TestBackend(80, 24)
     frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
     Tachikoma.view(app, frame)
-    @test Tachikoma.char_at(backend, 4, 20) == '─'
+    @test Tachikoma.char_at(backend, 4, Terminal.startup_editor_geometry(app).visible_top) == '─'
 
     handle = Terminal.submit!(app, "Is the agent working?")
     @test timedwait(() -> isready(provider.started), 5) == :ok
@@ -385,8 +416,8 @@ end
     Tachikoma.reset!(backend.buf)
     Tachikoma.view(app, frame)
     working = find_text(backend, "Thinking…")
-    @test !isnothing(working) && working.y == 20
-    @test Tachikoma.style_at(backend, 4, 20).fg == Tachikoma.ColorRGB(167, 152, 215)
+    @test !isnothing(working) && working.y == Terminal.startup_editor_geometry(app).visible_top
+    @test Tachikoma.style_at(backend, 4, Terminal.startup_editor_geometry(app).visible_top).fg == Tachikoma.ColorRGB(167, 152, 215)
 
     Tachikoma.reset!(backend.buf)
     Terminal.draw_input_border!(backend.buf, 1, 20, 80, app; ticks=0)
@@ -406,13 +437,13 @@ end
     Tachikoma.reset!(backend.buf)
     Tachikoma.view(app, frame)
     cancelling = find_text(backend, "Cancelling…")
-    @test !isnothing(cancelling) && cancelling.y == 20
+    @test !isnothing(cancelling) && cancelling.y == Terminal.startup_editor_geometry(app).visible_top
 
     put!(provider.proceed, nothing)
     @test finish_ui_operation!(app) == :ok
     Tachikoma.reset!(backend.buf)
     Tachikoma.view(app, frame)
-    @test Tachikoma.char_at(backend, 4, 20) == '─'
+    @test Tachikoma.char_at(backend, 4, Terminal.startup_editor_geometry(app).visible_top) == '─'
     @test isnothing(find_text(backend, "Thinking…"))
     update!(app, TaskEvent(:turn, handle))
     @test !app.busy
@@ -420,37 +451,44 @@ end
 end
 
 @testset "Command filtering and history" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     for c in "/set"
         update!(app, KeyEvent(c))
     end
     @test app.menu
     @test first(Terminal.matching_commands(app))[1] == "settings"
     update!(app, KeyEvent(:enter))
-    @test app.page == :settings
+    @test app.page == :pi_menu
     update!(app, KeyEvent(:escape))
     for i in 1:30
         append_message!(app.session, Message(:assistant, "line $i"))
     end
+    editor=Terminal.chat_editor_state!(app)
+    Terminal.chat_set_text!(editor,"line one\nline two\nline three")
+    before=app.input.cursor
     update!(app, KeyEvent(:pageup))
-    @test app.scroll > 0
+    @test app.input.cursor < before
+    @test app.scroll == 0
 end
 
 @testset "Mouse selection" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel(); settings_dir=mktempdir())
     tb = TestBackend(80, 24)
     frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
     update!(app, KeyEvent('/'))
     Tachikoma.view(app, frame)
     pos = find_text(tb, "→ settings")
     update!(app, MouseEvent(pos.x, pos.y, Tachikoma.mouse_left, Tachikoma.mouse_press, false, false, false))
-    @test app.page == :settings
+    @test app.page == :pi_menu
     Tachikoma.reset!(tb.buf)
     Tachikoma.view(app, frame)
-    pos = find_text(tb, "OpenRouter")
+    pos = find_text(tb, "Auto-compact")
+    @test !isnothing(pos)
     update!(app, MouseEvent(pos.x, pos.y, Tachikoma.mouse_left, Tachikoma.mouse_press, false, false, false))
-    @test app.page == :chat
-    @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.OpenRouterProvider
+    @test app.menus.path == ["settings"]
+    update!(app, MouseEvent(pos.x, pos.y, Tachikoma.mouse_left, Tachikoma.mouse_release, false, false, false))
+    @test Terminal.menu_preference(app, "autocompact", "true") == "false"
+    @test !JuliaForever2.session_compaction_settings(app.session).enabled
 end
 
 @testset "Wrapping and compact terminal layout" begin
@@ -482,11 +520,11 @@ end
     content = SubString(surrounding, nextind(surrounding, 0, 9), prevind(surrounding, lastindex(surrounding), 8))
     @test Terminal.wrap_conversation_line(content, 8) == lines
 
-    app = App(default_kernel())
-    update!(app, KeyEvent('/'))
-    for _ in 1:4
-        update!(app, KeyEvent(:down))
+    app = terminal_fixture_app(default_kernel())
+    for character in "/qui"
+        update!(app, KeyEvent(character))
     end
+    update!(app, KeyEvent(:up))
     tb = TestBackend(40, 8)
     frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
     Tachikoma.view(app, frame)
@@ -498,10 +536,10 @@ end
     for (width, height) in ((5, 5), (12, 6), (20, 10), (100, 30))
         backend = TestBackend(width, height)
         compact = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
-        Tachikoma.view(App(default_kernel()), compact)
+        Tachikoma.view(terminal_fixture_app(default_kernel()), compact)
     end
 
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     app.page = :settings
     app.selected = 4
     small = TestBackend(40, 8)
@@ -515,14 +553,14 @@ end
 
 @testset "Provider selection persists" begin
     mktempdir() do dir
-        app = App(default_kernel(); settings_dir=dir)
+        app = terminal_fixture_app(default_kernel(); settings_dir=dir)
         @test JuliaForever2.configured_provider(dir) isa JuliaForever2.DemoProvider
         app.page = :settings
         app.selected = 4
         update!(app, KeyEvent(:enter))
         @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.CodexProvider
         @test JuliaForever2.configured_provider(dir) isa JuliaForever2.CodexProvider
-        Terminal.command!(app, "settings")
+        Terminal.providers_command!(app, "")
         @test app.selected == 4
         @test stat(joinpath(dir, "provider")).mode & 0o777 == 0o600
         write(joinpath(dir, "provider"), "unknown")
@@ -535,16 +573,15 @@ end
 end
 
 @testset "Replaceable terminal input" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     install!(app.session.kernel, ComponentSpec(:input, (app, event) -> (app.status = "custom input")))
     update!(app, KeyEvent('x'))
     @test app.status == "custom input"
 end
 
 @testset "Provider sign-in controls" begin
-    app = App(default_kernel())
-    update!(app, KeyEvent('/'))
-    update!(app, KeyEvent(:enter))
+    app = terminal_fixture_app(default_kernel())
+    Terminal.providers_command!(app, "")
     update!(app, KeyEvent(:down))
     @test app.selected == 2
     update!(app, KeyEvent(:enter))
@@ -556,7 +593,7 @@ end
     mktempdir() do dir
         JuliaForever2.save_credentials!(dir, :chatgpt, Dict("email" => "example@example.com", "access_token" => "never-display-this"))
         withenv("JULIAFOREVER_CONFIG_DIR" => dir) do
-            app = App(default_kernel())
+            app = terminal_fixture_app(default_kernel())
             app.page = :settings
             tb = TestBackend(100, 24)
             frame = Tachikoma.Frame(tb.buf, tb.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
@@ -570,7 +607,7 @@ end
 @testset "Sign-in updates the terminal" begin
     mktempdir() do dir
         withenv("JULIAFOREVER_CONFIG_DIR" => dir) do
-            app = App(default_kernel(); settings_dir=dir)
+            app = terminal_fixture_app(default_kernel(); settings_dir=dir)
             app.page = :settings
             action = (flow, provider, storage; announce) -> begin
                 announce("https://example.invalid/authorize")
@@ -600,7 +637,7 @@ end
 end
 
 @testset "Commands and background event subscriptions compose" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     Terminal.register_command!(app, Terminal.CommandSpec("echo", "Echo arguments", (app, arguments) -> (app.status = String(arguments))))
     Terminal.submit!(app, "/echo custom payload")
     @test app.status == "custom payload"
@@ -630,7 +667,7 @@ end
 end
 
 @testset "Julia commands submit managed background work" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     started = Channel{Nothing}(1)
     finish = Channel{Nothing}(1)
     executor = (session, code) -> begin
@@ -651,7 +688,7 @@ end
     frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
     Tachikoma.view(app, frame)
     running = find_text(backend, "Running Julia…")
-    @test !isnothing(running) && running.y == 20
+    @test !isnothing(running) && running.y == Terminal.startup_editor_geometry(app).visible_top
     @test app.session.messages[1].content == "/julia 6 * 7"
     put!(finish, nothing)
     @test finish_ui_operation!(app) == :ok
@@ -674,7 +711,7 @@ end
 end
 
 @testset "Shutdown closes event publication without blocking producers" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     ready = Base.Event()
     producers = [Threads.@spawn begin
         wait(ready)
@@ -694,7 +731,7 @@ end
 end
 
 @testset "Transcript cache reuses unaffected messages" begin
-    app = App(default_kernel())
+    app = terminal_fixture_app(default_kernel())
     append_message!(app.session, Message(:user, "First prompt"))
     append_message!(app.session, Message(:assistant, "println(42)", :code))
     Terminal.transcript_lines!(app, 80)
@@ -749,11 +786,11 @@ end
         end
         descriptor = ProviderDescriptor(:terminal_test, "Custom test provider", RegisteredTerminalProvider; status)
         register_provider!(descriptor)
-        app = App(default_kernel(); settings_dir=directory)
-        Terminal.command!(app, "settings")
+        app = terminal_fixture_app(default_kernel(); settings_dir=directory)
+        Terminal.command!(app, "providers")
         @test observed_directory[] == directory
         @test any(occursin("Custom test provider", label) for label in app.provider_labels)
-        @test length(app.providers) == 5
+        @test Set(item.id for item in app.providers) == Set([:demo,:chatgpt,:openrouter,:codex,:groq,:anthropic,:terminal_test])
         before_render = status_reads[]
         backend = TestBackend(80, 24)
         frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
@@ -784,7 +821,7 @@ end
 
 @testset "Live response previews stay outside history and ignore stale operations" begin
     provider = StreamedTerminalProvider([Reply(:answer, "Live response"), Reply(:answer, "Cancelled response"), Reply(:answer, "Fresh response")])
-    app = App(default_kernel(provider))
+    app = terminal_fixture_app(default_kernel(provider))
     handle = Terminal.submit!(app, "First request")
     @test timedwait(() -> isready(provider.started), 5) == :ok
     identity = take!(provider.started)
@@ -841,7 +878,7 @@ end
 
 @testset "Each code-mode response replaces its preview before execution" begin
     provider = StreamedTerminalProvider([Reply(:code, "21 * 2"), Reply(:answer, "The result is 42.")])
-    app = App(default_kernel(provider))
+    app = terminal_fixture_app(default_kernel(provider))
     executing = Channel{Nothing}(1)
     execution_complete = Channel{Nothing}(1)
     executor = (session, code) -> begin
@@ -884,8 +921,8 @@ end
     mktempdir() do directory
         first_directory = joinpath(directory, "first")
         second_directory = joinpath(directory, "second")
-        first_app = App(Kernel(); settings_dir=first_directory, registry=first_registry)
-        second_app = App(Kernel(); settings_dir=second_directory, registry=second_registry)
+        first_app = terminal_fixture_app(Kernel(); settings_dir=first_directory, registry=first_registry)
+        second_app = terminal_fixture_app(Kernel(); settings_dir=second_directory, registry=second_registry)
         @test [descriptor.id for descriptor in first_app.providers] == [:first_only]
         @test [descriptor.id for descriptor in second_app.providers] == [:second_only]
         Terminal.select_provider!(first_app)
@@ -903,12 +940,13 @@ end
     end
 end
 
-@testset "Failed background work releases frontend ownership before propagating" begin
-    app = App(default_kernel())
+@testset "Failed background work releases frontend ownership and remains visible" begin
+    app = terminal_fixture_app(default_kernel())
     install!(app.session.kernel, ComponentSpec(:executor, (session, code) -> error("terminal execution fixture")))
     failed = Terminal.submit!(app, "/julia failure")
     @test timedwait(() -> istaskdone(failed), 5) == :ok
-    @test_throws TaskFailedException finish_ui_operation!(app)
+    @test finish_ui_operation!(app) == :ok
+    @test occursin("terminal execution fixture", app.status)
     @test isnothing(app.active_turn)
     @test !app.busy
     @test isnothing(app.transcript.preview)
@@ -918,7 +956,7 @@ end
     @test app.session.messages[end].content == "reused"
     Terminal.finish_shutdown!(app)
 
-    auth_app = App(default_kernel())
+    auth_app = terminal_fixture_app(default_kernel())
     releases = Threads.Atomic{Int}(0)
     action = (flow, provider, directory; announce) -> begin
         JuliaForever2.own_resource!(flow.context, nothing; cleanup=value -> Threads.atomic_add!(releases, 1))
@@ -927,7 +965,8 @@ end
     Terminal.start_sign_in!(auth_app, :openrouter; action)
     @test timedwait(() -> isready(auth_app.queue.channel), 5) == :ok
     @test releases[] == 1
-    @test_throws TaskFailedException update!(auth_app, take!(auth_app.queue.channel))
+    @test update!(auth_app, take!(auth_app.queue.channel))===nothing
+    @test occursin("No new access was verified",auth_app.status)
     @test !auth_app.busy
     @test isnothing(auth_app.auth_flow)
     @test isnothing(auth_app.auth_task)
@@ -1084,7 +1123,7 @@ end
     provider = JuliaForever2.ModelProvider(
         JuliaForever2.ModelSpec(:synthetic, "reference-model"; metadata),
         (args...) -> nothing)
-    app = App(default_kernel(provider))
+    app = terminal_fixture_app(default_kernel(provider))
     JuliaForever2.record_usage!(app.session, Dict(
         "input" => 120, "output" => 18, "cost" => 0.125))
     wide = Terminal.footer_line_parts(app, 100)
@@ -1094,17 +1133,21 @@ end
     @test wide.right == "(synthetic) reference-model • high"
     @test textwidth(wide.left) + textwidth(wide.right) + 2 <= 100
 
+    install!(app.session.kernel, ComponentSpec(:provider, JuliaForever2.ConfiguredModelProvider(provider,provider.model,"high")))
+    Terminal.refresh_footer_controls!(app;models=[provider.model])
+    JuliaForever2.timeline_append_message!(app.archive.timeline, Dict("role"=>"assistant",
+        "content"=>Any[],"usage"=>Dict("input"=>120,"output"=>18,"cacheRead"=>0,"cacheWrite"=>0,"cost"=>Dict("total"=>0.125))))
     backend = TestBackend(100, 24)
     frame = Tachikoma.Frame(backend.buf, backend.buf.area,
         Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
     Tachikoma.view(app, frame)
     left = find_text(backend, "↑120 ↓18")
-    right = find_text(backend, "(synthetic) reference-model • high")
+    right = find_text(backend, "reference-model • high")
     @test !isnothing(left) && !isnothing(right)
     if !isnothing(left) && !isnothing(right)
         @test left.y == 24 && right.y == 24
         @test left.x < right.x
-        label = "(synthetic) reference-model • high"
+        label = "reference-model • high"
         row = Tachikoma.row_text(backend, right.y)
         start = first(findfirst(label, row))
         prefix = SubString(row, firstindex(row), prevind(row, start))
@@ -1121,4 +1164,214 @@ end
     @test !occursin("reference-model", replaced.right)
     @test occursin("(sub)", replaced.left)
     close(app.session)
+end
+
+@testset "Manual compaction slash command uses supervised session operations" begin
+    kernel = Kernel()
+    install!(kernel, ComponentSpec(:provider,
+        (messages, session) -> Reply(:answer, "Condensed terminal context")))
+    session = Session(kernel; compaction=JuliaForever2.CompactionSettings(;
+        keep_recent_tokens=0), messages=Message[
+            Message(:user, "Older task"), Message(:assistant, "Previous result"),
+            Message(:user, "Current task")])
+    app = Terminal.App(session)
+    @test any(command -> command.name == "compact", app.commands)
+    Terminal.compact_command!(app, "Keep the current goal")
+    handle = app.operations.active
+    @test handle isa TaskHandle
+    @test fetch(handle).ok
+    Terminal.operation_finished!(app, handle)
+    @test [message.content for message in JuliaForever2.context_messages(session)] ==
+        ["The conversation history before this point was compacted into the following summary:\n\n<summary>\nCondensed terminal context\n</summary>", "Current task"]
+    @test length(JuliaForever2.history_snapshot(session).messages) == 3
+    @test !app.busy
+    Terminal.finish_shutdown!(app)
+end
+
+
+@testset "Settings effects persist and restore real runtime behavior" begin
+    mktempdir() do directory
+        app = terminal_fixture_app(default_kernel(); settings_dir=directory)
+        Terminal.set_setting_value!(app, "autocompact", "false")
+        Terminal.set_setting_value!(app, "skill-commands", "false")
+        @test !JuliaForever2.session_compaction_settings(app.session).enabled
+        @test !app.menus.skill_commands_enabled
+        restored = terminal_fixture_app(default_kernel(); settings_dir=directory)
+        @test !JuliaForever2.session_compaction_settings(restored.session).enabled
+        @test !restored.menus.skill_commands_enabled
+        @test Terminal.menu_preference(restored, "autocompact", "true") == "false"
+        events = []
+        install!(restored.session.kernel, ComponentSpec(:terminal_setting_changed,
+            (name, value, app) -> push!(events, (name, value))))
+        Terminal.set_setting_value!(restored, "autocompact", "true")
+        @test JuliaForever2.session_compaction_settings(restored.session).enabled
+        @test events == [("autocompact", "true")]
+        close(app.session)
+        close(restored.session)
+    end
+end
+
+@testset "Native settings input preserves selector state and real layout effects" begin
+    mktempdir() do directory
+        app = terminal_fixture_app(default_kernel(); settings_dir=directory)
+        Terminal.open_menu!(app, "settings")
+        update!(app, KeyEvent(:down))
+        update!(app, KeyEvent(:enter))
+        @test app.menus.path == ["settings"]
+        @test app.menus.cursor == 2
+        @test Terminal.menu_preference(app, "auto-resize-images", "true") == "false"
+        for character in "theme"
+            update!(app, KeyEvent(character))
+        end
+        @test first(Terminal.visible_settings(app)).id == "theme"
+        update!(app, KeyEvent(:ctrl_c))
+        @test app.page == :chat && !app.quit
+        Terminal.open_menu!(app, "settings")
+        app.menus.cursor = findfirst(item -> item.id == "warnings", Terminal.visible_settings(app))
+        saved = app.menus.cursor
+        update!(app, KeyEvent(:enter))
+        @test app.menus.path == ["settings", "warnings"]
+        update!(app, KeyEvent(' '))
+        @test app.menus.preferences["anthropic-extra-usage"] == "false"
+        update!(app, KeyEvent(:escape))
+        @test app.menus.path == ["settings"] && app.menus.cursor == saved
+        update!(app, KeyEvent(:escape))
+        Terminal.set_setting_value!(app, "autocomplete-max-visible", "10")
+        update!(app, KeyEvent('/'))
+        @test last(Terminal.command_menu(app, 32)) == 10
+        Terminal.set_setting_value!(app, "editor-padding", "3")
+        app.menu = false
+        Tachikoma.set_text!(app.input, "padded input")
+        backend = TestBackend(80, 24)
+        frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+        Tachikoma.view(app, frame)
+        @test find_text(backend, "padded input").x == 4
+        @test !isempty(Terminal.menu_wrap("界", 1))
+        @test Terminal.menu_clip("a\u0301界", 1) == "a\u0301"
+        close(app.session)
+    end
+end
+
+@testset "Native menu search integration preserves paste and navigation boundaries" begin
+    mktempdir() do directory
+        app = terminal_fixture_app(default_kernel(); settings_dir=directory)
+        Terminal.open_menu!(app, "settings")
+        for character in "padding"
+            update!(app, KeyEvent(character))
+        end
+        update!(app, KeyEvent(:down))
+        @test app.menus.cursor == 2
+        update!(app, KeyEvent(:left))
+        @test app.menus.cursor == 1
+        Terminal.open_menu!(app, "settings")
+        Terminal.page_input!(app, Val(:pi_menu), KeyEvent(:unknown), collect(codeunits("\e[200~")))
+        @test app.menus.search.pasting
+        update!(app, KeyEvent(:enter))
+        update!(app, KeyEvent(:ctrl_c))
+        @test app.page == :pi_menu && !app.quit
+        Terminal.page_input!(app, Val(:pi_menu), KeyEvent(:unknown), collect(codeunits("ab\tcd\e[201~")))
+        @test !app.menus.search.pasting
+        @test occursin("ab    cd", Tachikoma.text(app.menus.search))
+        Tachikoma.set_text!(app.menus.search, "界 é alpha")
+        update!(app, KeyEvent(:ctrl, 'w'))
+        @test Tachikoma.text(app.menus.search) == "界 é "
+        update!(app, KeyEvent(:backspace))
+        update!(app, KeyEvent(:backspace))
+        @test Tachikoma.text(app.menus.search) == "界 "
+        close(app.session)
+    end
+end
+
+@testset "Durable native session commands perform real state transitions" begin
+    mktempdir() do directory
+        app = terminal_fixture_app(default_kernel(); settings_dir=directory)
+        append_message!(app.session, Message(:user, "first prompt"))
+        append_message!(app.session, Message(:assistant, "first answer", :answer))
+        source = app.archive.timeline
+        source_id = source.identity.id
+        first_entry = first(app.archive.entry_ids)
+        @test length(JuliaForever2.timeline_entries(source)) == 2
+        @test isfile(source.path)
+        Terminal.session_action!(app, :name, "Original session")
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test JuliaForever2.timeline_name(JuliaForever2.load_timeline(app.archive.store, source_id)) == "Original session"
+        Terminal.session_action!(app, :clone)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        clone_id = app.archive.timeline.identity.id
+        @test clone_id != source_id
+        @test app.session.runtime.parent_id == Terminal.runtime_timeline_id(source_id)
+        @test app.session.runtime.root_id == Terminal.runtime_timeline_id(source_id)
+        @test [message.content for message in app.session.messages] == ["first prompt", "first answer"]
+        @test isopen(app.session.kernel)
+        Terminal.session_action!(app, :new)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test isempty(app.session.messages)
+        @test app.archive.timeline.identity.id ∉ (source_id, clone_id)
+        Terminal.session_action!(app, :resume, source_id)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test length(app.session.messages) == 2
+        @test app.archive.timeline.identity.id == source_id
+        Terminal.session_action!(app, :fork, first_entry)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test isempty(app.session.messages)
+        @test app.session.runtime.parent_id == Terminal.runtime_timeline_id(source_id)
+        @test Tachikoma.text(app.input) == "first prompt"
+        @test length(JuliaForever2.timeline_entries(JuliaForever2.load_timeline(app.archive.store, source_id))) == 3
+        append_message!(app.session, Message(:user, "fork continuation"))
+        exported = joinpath(directory, "fork.jsonl")
+        Terminal.session_action!(app, :export, exported)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test isfile(exported)
+        decoded = JuliaForever2.parse_timeline_jsonl(read(exported, String))
+        @test decoded.identity.id == app.archive.timeline.identity.id
+        @test only(JuliaForever2.timeline_messages(decoded))["content"] == "fork continuation"
+        before = read(exported, String)
+        Terminal.session_action!(app, :export, exported)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test occursin("already exists", app.status)
+        @test read(exported, String) == before
+        current_id = app.archive.timeline.identity.id
+        Terminal.session_action!(app, :import, joinpath(directory, "missing.jsonl"))
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test occursin("regular session file", app.status)
+        @test app.archive.timeline.identity.id == current_id
+        Terminal.session_action!(app, :list)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        @test app.page == :pi_menu && app.menus.path == ["resume"]
+        @test length(app.archive.sessions) == 4
+        Terminal.finish_shutdown!(app)
+    end
+end
+
+@testset "Archive projections survive edits, compaction and resume without context drift" begin
+    mktempdir() do directory
+        session = Session(default_kernel(); compaction=JuliaForever2.CompactionSettings(; keep_recent_tokens=0))
+        app = terminal_fixture_app(session; settings_dir=directory)
+        foreign = JuliaForever2.SessionTimeline(directory)
+        JuliaForever2.timeline_append_message!(foreign, Dict("role" => "user", "content" => "original imported", "timestamp" => 1000))
+        JuliaForever2.timeline_append_message!(foreign, Dict("role" => "assistant", "content" => [Dict("type" => "text", "text" => "imported answer")], "timestamp" => 2000))
+        JuliaForever2.save_timeline!(app.archive.store, foreign)
+        Terminal.session_action!(app, :resume, foreign.identity.id)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        old = app.session.messages[1]
+        @test old.metadata isa JuliaForever2.TimelineMessageMetadata
+        replace_message!(app.session, 1, Message(old.role, "edited imported", old.kind; metadata=old.metadata))
+        @test first(JuliaForever2.context_messages(app.session)).content == "edited imported"
+        @test first(JuliaForever2.timeline_messages(app.archive.timeline))["content"] == "original imported"
+        append_message!(app.session, Message(:user, "recent prompt"))
+        compacted = JuliaForever2.compact!(app.session; summarize=messages -> "verified summary")
+        @test compacted.status == :compacted
+        before = [(m.role, JuliaForever2.wire_content(m)) for m in JuliaForever2.context_messages(app.session)]
+        @test occursin("<summary>", first(before)[2])
+        id = app.archive.timeline.identity.id
+        Terminal.session_action!(app, :resume, id)
+        @test finish_ui_operation!(app; timeout=20) == :ok
+        after = [(m.role, JuliaForever2.wire_content(m)) for m in JuliaForever2.context_messages(app.session)]
+        @test before == after
+        other = Session(Kernel())
+        Terminal.discard_session_transition!((session=other, user_value=true))
+        @test isopen(other)
+        close(other)
+        Terminal.finish_shutdown!(app)
+    end
 end

@@ -22,7 +22,7 @@ end
 
 Workspace(path::AbstractString) = Workspace(String(path))
 
-mutable struct SessionRuntime{E}
+Base.@kwdef mutable struct SessionRuntime{E,C}
     executor::E
     execution_lock::ReentrantLock
     shutdown_lock::ReentrantLock
@@ -36,9 +36,20 @@ mutable struct SessionRuntime{E}
     id::UUID
     parent_id::Union{Nothing,UUID}
     root_id::UUID
+    compaction_settings::C
+    pending_inputs::PendingInputs = PendingInputs()
 end
 
-SessionRuntime(executor; owns_kernel=false, working_directory=pwd(), id=uuid4(), parent_id=nothing, root_id=id) = SessionRuntime(executor, ReentrantLock(), ReentrantLock(), TaskHandle[], AbstractSession[], false, false, owns_kernel, nothing, Workspace(working_directory).path, id, parent_id, root_id)
+SessionRuntime(executor; owns_kernel=false, working_directory=pwd(), id=uuid4(), parent_id=nothing,
+    root_id=id, compaction=nothing) = SessionRuntime(executor, ReentrantLock(), ReentrantLock(),
+    TaskHandle[], AbstractSession[], false, false, owns_kernel, nothing,
+    Workspace(working_directory).path, id, parent_id, root_id, compaction, PendingInputs())
+
+"""Preserve the prior positional runtime constructor with a fresh session-owned input queue."""
+SessionRuntime(executor, execution_lock, shutdown_lock, handles, children, closed, executor_closed,
+    owns_kernel, shutdown_task, working_directory, id, parent_id, root_id, compaction_settings) =
+    SessionRuntime(executor, execution_lock, shutdown_lock, handles, children, closed, executor_closed,
+        owns_kernel, shutdown_task, working_directory, id, parent_id, root_id, compaction_settings, PendingInputs())
 
 mutable struct Session{C,R,D} <: AbstractSession
     kernel::Kernel
@@ -76,14 +87,20 @@ function initialize_executor!(executor::JuliaExecutor, session::Session)
 end
 
 function Session(kernel::Kernel; executor=JuliaExecutor(), messages=Message[], definition=nothing, owns_kernel=false,
-        working_directory=pwd(), id=uuid4(), parent_id=nothing, root_id=id)
-    session = Session(kernel, Conversation(messages),
-        SessionRuntime(executor; owns_kernel, working_directory, id, parent_id, root_id), definition)
+        working_directory=pwd(), id=uuid4(), parent_id=nothing, root_id=id,
+        compaction=nothing, compaction_entry=nothing)
+    session = Session(kernel, Conversation(messages; compaction=compaction_entry),
+        SessionRuntime(executor; owns_kernel, working_directory, id, parent_id, root_id,
+            compaction), definition)
     initialize_executor!(executor, session)
     return session
 end
 
-Session(definition::AgentDefinition; messages=Message[], working_directory=pwd(), id=uuid4(), parent_id=nothing, root_id=id) = Session(Kernel(definition); executor=Base.invokelatest(definition.executor_factory), messages, definition, owns_kernel=true, working_directory, id, parent_id, root_id)
+Session(definition::AgentDefinition; messages=Message[], working_directory=pwd(), id=uuid4(),
+    parent_id=nothing, root_id=id, compaction=nothing, compaction_entry=nothing) =
+    Session(Kernel(definition); executor=Base.invokelatest(definition.executor_factory),
+        messages, definition, owns_kernel=true, working_directory, id, parent_id, root_id,
+        compaction, compaction_entry)
 
 const CONVERSATION_PROPERTIES = (:messages, :lock, :usage, :revision, :changes)
 const RUNTIME_PROPERTIES = (:executor, :execution_lock, :shutdown_lock, :handles, :children, :closed, :executor_closed)
@@ -110,11 +127,47 @@ function Base.setproperty!(session::Session, name::Symbol, value)
 end
 Base.propertynames(session::Session, private::Bool=false) = (fieldnames(typeof(session))..., CONVERSATION_PROPERTIES..., RUNTIME_PROPERTIES..., :scope, :output)
 
-append_message!(session::Session, message) = append_message!(session.conversation, message)
-clear_history!(session::Session) = clear_history!(session.conversation)
-replace_message!(session::Session, index::Integer, message) = replace_message!(session.conversation, index, message)
+"""Commit an optional durable journal before changing visible session history."""
+function journal_history!(session::Session, operation::Symbol, arguments...)
+    journal = component(session.kernel, :history_journals)
+    if journal isa HistoryJournals
+        Base.invokelatest(journal, session, operation, arguments...)
+    end
+    nothing
+end
+
+function append_message!(session::Session, message)
+    lock(session.conversation.lock) do
+        journal_history!(session, :append, message)
+        append_message!(session.conversation, message)
+    end
+end
+
+function clear_history!(session::Session)
+    lock(session.conversation.lock) do
+        journal_history!(session, :clear)
+        clear_history!(session.conversation)
+    end
+end
+
+function replace_message!(session::Session, index::Integer, message)
+    lock(session.conversation.lock) do
+        checkbounds(session.messages, index)
+        journal_history!(session, :replace, index, message)
+        replace_message!(session.conversation, index, message)
+    end
+end
+
 history_revision(session::Session) = history_revision(session.conversation)
 history_snapshot(session::Session, revision=nothing) = history_snapshot(session.conversation, revision)
+compaction_snapshot(session::Session) = compaction_snapshot(session.conversation)
+function context_messages(session::Session)
+    lock(session.conversation.lock) do
+        journals = component(session.kernel, :history_journals)
+        projected = journals isa HistoryJournals ? Base.invokelatest(history_journal_context, journals, session) : nothing
+        isnothing(projected) ? context_messages(session.conversation) : projected
+    end
+end
 record_usage!(session::Session, report) = record_usage!(session.conversation, report)
 usage_label(session::Session) = usage_label(session.conversation)
 

@@ -1,0 +1,509 @@
+{
+  "pin": "2c8d1feb147f6b3d97e855da803bfe7b19f3c403",
+  "hashes": {
+    "packages/coding-agent/src/core/prompt-templates.ts": "1bdaa7b3825f92bf33203fd7587014b878c55b3d812900cca5cad08fefd92171",
+    "packages/coding-agent/src/utils/frontmatter.ts": "99142d78b94e658e0be65cf05046be8069b3700168a683e0af64219ad903bcd6",
+    "packages/coding-agent/src/core/agent-session.ts": "b7c24bf1c1366e931083100d921a80d390d66bacde4acf7472a7b57af1bb69aa",
+    "packages/tui/src/autocomplete.ts": "cf43a2846e77156021f64f835d9403e2d58e22150e23178146d9da7a336500e4"
+  },
+  "args": [
+    {
+      "input": "",
+      "output": []
+    },
+    {
+      "input": "one two",
+      "output": [
+        "one",
+        "two"
+      ]
+    },
+    {
+      "input": "\"\" a ''",
+      "output": [
+        "",
+        "a",
+        ""
+      ]
+    },
+    {
+      "input": "a\"two words\"b c",
+      "output": [
+        "atwo wordsb",
+        "c"
+      ]
+    },
+    {
+      "input": "\"unterminated",
+      "output": [
+        "unterminated"
+      ]
+    },
+    {
+      "input": "'one'\"two\"",
+      "output": [
+        "onetwo"
+      ]
+    },
+    {
+      "input": "one\\ two",
+      "output": [
+        "one\\",
+        "two"
+      ]
+    },
+    {
+      "input": "\"a\\\"b\" c",
+      "output": [
+        "a\\b c"
+      ]
+    },
+    {
+      "input": "λ \"日本 語\" 🙂",
+      "output": [
+        "λ",
+        "日本 語",
+        "🙂"
+      ]
+    },
+    {
+      "input": "a b﻿c",
+      "output": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    {
+      "input": "ab",
+      "output": [
+        "ab"
+      ]
+    },
+    {
+      "input": "one\ntwo\tthree",
+      "output": [
+        "one",
+        "two",
+        "three"
+      ]
+    },
+    {
+      "input": "\" \" \"\"",
+      "output": [
+        " ",
+        ""
+      ]
+    },
+    {
+      "input": "\"$1\" '$@'",
+      "output": [
+        "$1",
+        "$@"
+      ]
+    }
+  ],
+  "substitutions": [
+    {
+      "template": "$1|$2|$0|$10|$01|$999999999999999999999999",
+      "args": [
+        "α",
+        "β"
+      ],
+      "output": "α|β|||α|"
+    },
+    {
+      "template": "$@ / $ARGUMENTS",
+      "args": [
+        "one",
+        "",
+        "three"
+      ],
+      "output": "one  three / one  three"
+    },
+    {
+      "template": "${1:-first}|${2:-second}|${@:-all}|${ARGUMENTS:-none}",
+      "args": [
+        ""
+      ],
+      "output": "first|second|all|none"
+    },
+    {
+      "template": "${1:-$2}/${2:-$ARGUMENTS}/$1",
+      "args": [
+        "$@"
+      ],
+      "output": "$@/$ARGUMENTS/$@"
+    },
+    {
+      "template": "${@:0}|${@:1}|${@:2}|${@:3}|${@:1:0}|${@:2:2}",
+      "args": [
+        "a",
+        "b",
+        "c"
+      ],
+      "output": "a b c|a b c|b c|c||b c"
+    },
+    {
+      "template": "${@:0002:01}|${@:999999999999999999:5}",
+      "args": [
+        "a",
+        "b"
+      ],
+      "output": "b|"
+    },
+    {
+      "template": "${1:-nested ${2}}|$1",
+      "args": [
+        ""
+      ],
+      "output": "nested ${2}|"
+    },
+    {
+      "template": "$ARGUMENTSX|$@X|$1X|$$1",
+      "args": [
+        "a"
+      ],
+      "output": "aX|aX|aX|$a"
+    },
+    {
+      "template": "line\n$1\n${2:-日本 語}",
+      "args": [
+        "🙂"
+      ],
+      "output": "line\n🙂\n日本 語"
+    },
+    {
+      "template": "${@:-fallback}",
+      "args": [
+        "",
+        ""
+      ],
+      "output": " "
+    },
+    {
+      "template": "${1:-x}",
+      "args": [
+        "0"
+      ],
+      "output": "0"
+    },
+    {
+      "template": "${0:-zero}|${00:-doublezero}",
+      "args": [],
+      "output": "zero|doublezero"
+    }
+  ],
+  "frontmatter": [
+    {
+      "name": "plain",
+      "raw": "\nPlain body\n",
+      "loaded": [
+        {
+          "name": "plain",
+          "description": "Plain body",
+          "argumentHint": null,
+          "content": "\nPlain body\n"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "simple",
+      "raw": "---\ndescription: Help\nargument-hint: \"[name]\"\n---\nHello $1\n",
+      "loaded": [
+        {
+          "name": "simple",
+          "description": "Help",
+          "argumentHint": "[name]",
+          "content": "Hello $1"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "bom",
+      "raw": "﻿---\r\ndescription: >-\r\n  Folded\r\n  description\r\n---\r\nBody\r\n",
+      "loaded": [
+        {
+          "name": "bom",
+          "description": "Folded description",
+          "argumentHint": null,
+          "content": "Body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "quotes",
+      "raw": "---\ndescription: \"λ \\n line\"\nargument-hint: 'say \"hi\"'\n---\nbody",
+      "loaded": [
+        {
+          "name": "quotes",
+          "description": "λ \n line",
+          "argumentHint": "say \"hi\"",
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "literal",
+      "raw": "---\ndescription: |\n  one\n  two\n---\nbody",
+      "loaded": [
+        {
+          "name": "literal",
+          "description": "one\ntwo\n",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "boolean",
+      "raw": "---\ndescription: true\n---\n  first nonempty\nsecond",
+      "loaded": [
+        {
+          "name": "boolean",
+          "description": "first nonempty",
+          "argumentHint": null,
+          "content": "first nonempty\nsecond"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "yes",
+      "raw": "---\ndescription: yes\n---\nbody",
+      "loaded": [
+        {
+          "name": "yes",
+          "description": "yes",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "date",
+      "raw": "---\ndescription: 2026-11-01\n---\nbody",
+      "loaded": [
+        {
+          "name": "date",
+          "description": "2026-11-01",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "empty",
+      "raw": "---\n---\n  body  \n",
+      "loaded": [
+        {
+          "name": "empty",
+          "description": "body",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "open",
+      "raw": "---\ndescription: missing close",
+      "loaded": [
+        {
+          "name": "open",
+          "description": "---",
+          "argumentHint": null,
+          "content": "---\ndescription: missing close"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "array",
+      "raw": "---\n[one,two]\n---\nbody",
+      "loaded": [
+        {
+          "name": "array",
+          "description": "body",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "null",
+      "raw": "---\nnull\n---\nbody",
+      "loaded": [
+        {
+          "name": "null",
+          "description": "body",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "duplicate",
+      "raw": "---\ndescription: a\ndescription: b\n---\nbody",
+      "loaded": [],
+      "warnings": 1
+    },
+    {
+      "name": "invalid",
+      "raw": "---\ndescription: [unclosed\n---\nbody",
+      "loaded": [],
+      "warnings": 1
+    },
+    {
+      "name": "alias",
+      "raw": "---\nfirst: &text \"alias text\"\ndescription: *text\n---\nbody",
+      "loaded": [
+        {
+          "name": "alias",
+          "description": "alias text",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "unknown-tag",
+      "raw": "---\ndescription: !include /no/such/private/file\n---\nbody",
+      "loaded": [
+        {
+          "name": "unknown-tag",
+          "description": "/no/such/private/file",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "unicode",
+      "raw": "---\nother: key\n---\n🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂ab",
+      "loaded": [
+        {
+          "name": "unicode",
+          "description": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂...",
+          "argumentHint": null,
+          "content": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂ab"
+        }
+      ],
+      "warnings": 0
+    },
+    {
+      "name": "scalar",
+      "raw": "---\nscalar\n---\nbody",
+      "loaded": [
+        {
+          "name": "scalar",
+          "description": "body",
+          "argumentHint": null,
+          "content": "body"
+        }
+      ],
+      "warnings": 0
+    }
+  ],
+  "skills": [
+    {
+      "input": "/skill:fixture",
+      "output": "<skill name=\"fixture\" location=\"ROOT/SKILL.md\">\nReferences are relative to ROOT.\n\nUse relative references.\n</skill>"
+    },
+    {
+      "input": "/skill:fixture  exact \"raw arguments\"  ",
+      "output": "<skill name=\"fixture\" location=\"ROOT/SKILL.md\">\nReferences are relative to ROOT.\n\nUse relative references.\n</skill>\n\nexact \"raw arguments\""
+    },
+    {
+      "input": "/skill:fixture\targ",
+      "output": "/skill:fixture\targ"
+    },
+    {
+      "input": "/skill:missing x",
+      "output": "/skill:missing x"
+    }
+  ],
+  "commands": [
+    {
+      "input": "/demo λ",
+      "output": "Hello λ default"
+    },
+    {
+      "input": "/demo \"\" x",
+      "output": "Hello  x"
+    },
+    {
+      "input": "/demo\t\"two words\"",
+      "output": "Hello two words default"
+    },
+    {
+      "input": "/demox",
+      "output": "/demox"
+    },
+    {
+      "input": " /demo x",
+      "output": " /demo x"
+    },
+    {
+      "input": "/unknown x",
+      "output": "/unknown x"
+    },
+    {
+      "input": "/demo",
+      "output": "Hello  default"
+    },
+    {
+      "input": "/demo\nline",
+      "output": "Hello line default"
+    },
+    {
+      "input": "/demo /demo",
+      "output": "Hello /demo default"
+    }
+  ],
+  "skillMissing": {
+    "output": "/skill:fixture x",
+    "errors": [
+      {
+        "event": "skill_expansion",
+        "path": "ROOT/SKILL.md"
+      }
+    ]
+  },
+  "menuHints": [
+    {
+      "item": {
+        "name": "demo",
+        "description": "Explanation",
+        "argumentHint": "[name]"
+      },
+      "description": "[name] — Explanation"
+    },
+    {
+      "item": {
+        "name": "demo",
+        "description": "",
+        "argumentHint": "<input>"
+      },
+      "description": "<input>"
+    },
+    {
+      "item": {
+        "name": "demo",
+        "description": "No arguments"
+      },
+      "description": "No arguments"
+    }
+  ]
+}

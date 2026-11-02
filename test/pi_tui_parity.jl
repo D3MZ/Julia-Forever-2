@@ -1,0 +1,105 @@
+using Tachikoma
+using CommonMark
+using JSON
+
+@testset "Pinned Pi interactive menu parity (red → green)" begin
+    reference = get(ENV, "PI_REFERENCE", "")
+    @test !isempty(reference) && isdir(reference)
+    if !isempty(reference) && isdir(reference)
+        oracle = joinpath(@__DIR__, "..", "parity", "pi_tui_oracle.mjs")
+        result = JSON.parse(read(`node $oracle $reference`, String))
+        terminal = Base.get_extension(JuliaForever2, :JuliaForever2TerminalExt)
+        @test !isnothing(terminal)
+        if !isnothing(terminal)
+            app = terminal.App(JuliaForever2.default_kernel(); settings_dir=mktempdir())
+            pi_names = [item["name"] for item in result["commands"]]
+            visible = [command.name for command in app.commands
+                if !hasproperty(command, :visible) || command.visible]
+            @test visible[1:length(pi_names)] == pi_names
+            @test all(name -> name in visible, ["components", "julia", "clear", "cancel"])
+            @test isdefined(terminal, :menu_snapshot)
+            @test isdefined(terminal, :register_prompt!)
+            @test isdefined(terminal, :register_skill!)
+            @test isdefined(terminal, :menu_action)
+            @test isdefined(terminal, :complete_input!)
+            if all(name -> isdefined(terminal, name),
+                    (:menu_snapshot, :register_prompt!, :register_skill!, :menu_action, :complete_input!))
+                for images in (false, true)
+                    app.menus.images = images
+                    expected = result["settings"][images ? "withImages" : "noImages"]
+                    actual = terminal.menu_snapshot(app; images,
+                        models=[(provider="demo", id="alpha", reasoning=true)])
+                    @test actual == expected
+
+                    function check_actions(nodes, trail=String[])
+                        for node in nodes
+                            path = [trail; node["id"]]
+                            @test terminal.menu_action(app, path;
+                                models=[(provider="demo", id="alpha", reasoning=true)]) isa Function
+                            if haskey(node, "choices")
+                                for value in node["choices"]
+                                    @test terminal.menu_action(app, [path; String(value)];
+                                        models=[(provider="demo", id="alpha", reasoning=true)]) isa Function
+                                end
+                            end
+                            haskey(node, "children") && check_actions(node["children"], path)
+                        end
+                    end
+                    check_actions(actual, ["settings"])
+                end
+
+                @test [command.name for command in terminal.discover_commands(app) if !(command.name in ("providers", "components", "julia", "clear", "cancel"))] ==
+                    result["scenarios"]["default"]["names"]
+
+                @test terminal.menu_action(app, ["settings", "skill-commands", "false"]) isa Function
+                terminal.menu_action(app, ["settings", "skill-commands", "false"])()
+                @test !app.menus.skill_commands_enabled
+                terminal.menu_action(app, ["settings", "skill-commands", "true"])()
+                @test app.menus.skill_commands_enabled
+
+                terminal.register_prompt!(app, "prompt-example", "Example prompt")
+                terminal.register_command!(app, terminal.CommandSpec("ext-example",
+                    "Extension command", (app, args) -> (app.status = String(args))))
+                terminal.register_skill!(app, "example", "/fixture/SKILL.md"; description="Example skill")
+                @test [command.name for command in terminal.discover_commands(app) if !(command.name in ("providers", "components", "julia", "clear", "cancel"))] ==
+                    result["scenarios"]["installed"]["names"]
+                @test "skill:example" in [command.name for command in terminal.discover_commands(app)]
+                contributed = terminal.CommandSpec("plugin-example", "Plugin command",
+                    (app, arguments) -> (app.status = String(arguments)))
+                JuliaForever2.install!(app.session.kernel,
+                    JuliaForever2.ComponentSpec(:slash_commands, [contributed]))
+                @test "plugin-example" in [command.name for command in terminal.discover_commands(app)]
+                JuliaForever2.remove!(app.session.kernel, :slash_commands)
+                @test !("plugin-example" in [command.name for command in terminal.discover_commands(app)])
+                terminal.set_skill_commands!(app, false)
+                @test [command.name for command in terminal.discover_commands(app) if !(command.name in ("providers", "components", "julia", "clear", "cancel"))] ==
+                    result["scenarios"]["disabledSkills"]["names"]
+                terminal.set_skill_commands!(app, true)
+
+                app.menus.images = false
+                Tachikoma.set_text!(app.input, "/set")
+                terminal.refresh_command_menu!(app)
+                Tachikoma.update!(app, Tachikoma.KeyEvent(:tab))
+                @test Tachikoma.text(app.input) == result["scenarios"]["default"]["completed"]
+                terminal.command!(app, "new")
+                @test occursin("New session started", app.status)
+
+                mktempdir() do directory
+                    skill_dir = joinpath(directory, ".pi", "skills", "discovered")
+                    mkpath(skill_dir)
+                    write(joinpath(skill_dir, "SKILL.md"),
+                        "---\nname: discovered\ndescription: Discovered dynamically\n---\nInstructions")
+                    local_app = terminal.App(JuliaForever2.default_kernel(); settings_dir=directory)
+                    terminal.discover_disk_resources!(local_app;
+                        directory, agent_dir=joinpath(directory, "agent"))
+                    @test "skill:discovered" in [command.name
+                        for command in terminal.discover_commands(local_app)]
+                    rm(joinpath(skill_dir, "SKILL.md"))
+                    terminal.remove_skill!(local_app, "discovered")
+                    @test !("skill:discovered" in [command.name
+                        for command in terminal.discover_commands(local_app)])
+                end
+            end
+        end
+    end
+end

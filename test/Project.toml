@@ -1,4 +1,5 @@
 [deps]
+Artifacts = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 CommonMark = "a80b9123-70ca-4bc0-993e-6e3bcb318db6"
@@ -19,6 +20,7 @@ UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 JuliaForever2 = {path = ".."}
 
 [compat]
+Artifacts = "1.11"
 Aqua = "0.8"
 Base64 = "1.11"
 CommonMark = "0.8, 1"

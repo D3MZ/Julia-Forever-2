@@ -1,0 +1,47 @@
+// Test-only, unmodified exact-revision Pi components. Synthetic options are not provider support claims.
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {resolve,join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {pathToFileURL,fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+const [rootArg,provenanceArg,outputArg]=process.argv.slice(2),root=resolve(rootArg);
+const pin='2c8d1feb147f6b3d97e855da803bfe7b19f3c403',sha=data=>createHash('sha256').update(data).digest('hex');
+const prior=JSON.parse(readFileSync(provenanceArg));assert.equal(execFileSync('git',['-C',root,'rev-parse','HEAD'],{encoding:'utf8'}).trim(),pin);
+assert.equal(prior.reference.commit,pin);for(const [path,hash]of Object.entries(prior.reference.sourceHashes))assert.equal(sha(readFileSync(join(root,path))),hash,path);
+const temporary=mkdtempSync(join(tmpdir(),'pi-auth-selector-'));process.env.PI_CODING_AGENT_DIR=temporary;process.env.PI_OFFLINE='1';process.env.COLORTERM='truecolor';process.env.FORCE_COLOR='1';delete process.env.NO_COLOR;
+globalThis.fetch=()=>{throw Error('Network forbidden in auth selector oracle');};
+const load=path=>import(pathToFileURL(join(root,path)).href);await load('packages/coding-agent/src/experimental/source-resolver.ts');
+const tui=await load('packages/tui/src/index.ts');const th=await load('packages/coding-agent/src/modes/interactive/theme/theme.ts');
+const {OAuthSelectorComponent}=await load('packages/coding-agent/src/modes/interactive/components/oauth-selector.ts');
+const {ExtensionSelectorComponent}=await load('packages/coding-agent/src/modes/interactive/components/extension-selector.ts');
+const {KeybindingsManager}=await load('packages/coding-agent/src/core/keybindings.ts');
+tui.setKeybindings(new KeybindingsManager());tui.setCapabilityOverrides({images:false,trueColor:true,hyperlinks:false});
+const renderer=Object.create(tui.TuiMainScreen.prototype);renderer.showHardwareCursor=false;
+const normalize=rows=>{const out=renderer.resolveFakeCursors(rows);renderer.extractCursorPosition(out,out.length);return out;};
+const cases=[],widths=[100,60,30,10,5],themes=['dark','light'];
+const base=Array.from({length:13},(_,i)=>({id:`fixture-${i+1}`,name:`Provider ${i+1}`,authType:i%2?'api_key':'oauth',subscription:i%3===0,method:{name:i%2?'API key':'Browser sign in'}}));
+base[0].status={type:'oauth',source:'OAuth'};base[1].status={type:'api_key',source:'stored credential'};base[2].status={type:'api_key',source:'OPENAI_API_KEY'};base[3].status={type:'api_key',source:'FOO_KEY, BAR_TOKEN'};base[4].status={type:'oauth',source:'system keychain'};base[5].status={type:'oauth'};base[6].name='Long provider 世界 🤖 with many descriptive words';
+function capture(id,kind,config,events){for(const theme of themes)for(const width of widths){th.initTheme(theme);const callbacks=[];
+ const component=kind==='provider'?new OAuthSelectorComponent(config.mode,structuredClone(config.providers),(id,type)=>callbacks.push({kind:'select',id,type}),()=>callbacks.push({kind:'cancel'}),config.query):new ExtensionSelectorComponent(config.title,config.options,value=>callbacks.push({kind:'select',value}),()=>callbacks.push({kind:'cancel'}),{description:config.description});
+ if(kind==='provider')component.focused=true;
+ const state=()=>({selected:component.selectedIndex,query:component.searchInput?.getValue()??'',filtered:kind==='provider'?component.filteredProviders.map(p=>`${p.id}/${p.authType}`):config.options,callbacks:structuredClone(callbacks)});
+ const snapshot=()=>({state:state(),terminalAnsiLines:normalize(component.render(width))});const initial=snapshot(),transitions=[];
+ for(const data of events){component.handleInput(data);transitions.push({data,after:snapshot()});}
+ component.dispose?.();cases.push({id,kind,config,theme,width,initial,transitions});}}
+capture('provider.navigation','provider',{mode:'login',providers:base},['\x1b[A','\x1b[B','\x1b[6~','\x1b[6~','\x1b[B','\x1b[5~','\r']);
+capture('provider.statuses','provider',{mode:'logout',providers:base},['\x1b[B','\x1b[B','\x1b[B','\x1b[B','\x1b[B','\x1b[B','\x03']);
+capture('provider.search','provider',{mode:'login',providers:base},['key','\x1b[B','\x1b[B','\x7f','\x01','Pro','\x05','\x15','Provider 1','\r']);
+capture('provider.initial-search','provider',{mode:'login',providers:base,query:'browser'},['\x1b[6~','\x03']);
+capture('provider.no-matches','provider',{mode:'login',providers:base},['notafixture','\x1b[B','\r','\x1b']);
+capture('provider.uniform-oauth','provider',{mode:'login',providers:base.filter(p=>p.authType==='oauth')},['\x1b[6~','\r']);
+capture('provider.empty-login','provider',{mode:'login',providers:[]},['\x1b[A','\x1b[B','\x1b[6~','\r','\x1b']);
+capture('provider.empty-logout','provider',{mode:'logout',providers:[]},['x','\r','\x03']);
+capture('method.top','method',{title:'Select authentication method:',options:['Sign in with an account','Sign in with an API key']},['\x1b[A','j','j','k','\x1b[B','\r']);
+capture('method.provider','method',{title:'Select authentication method for OpenAI:',options:['Sign in with ChatGPT','Sign in with an API key']},['j','\x1b[5~','x','\x03']);
+capture('method.description','method',{title:'Authentication method for a long provider name',description:'Select a supported native authentication method. Credentials are not transmitted by selecting a row.',options:['A long method label with spaces and 世界','Second method']},['j','k','\n','\x1b']);
+capture('method.empty','method',{title:'Select authentication method:',options:[]},['j','k','\r','\x03']);
+const snapshots=cases.flatMap(c=>[{after:c.initial},...c.transitions].map((stage,i)=>({id:c.theme+'.'+c.id+'.'+(i+1),width:c.width,terminalAnsiLines:stage.after.terminalAnsiLines})));
+writeFileSync(outputArg,JSON.stringify({reference:prior.reference,capabilities:{trueColor:true,bold:true,hyperlinks:false,images:false},snapshots,pin,sourceHashes:prior.reference.sourceHashes,runnerSha256:sha(readFileSync(fileURLToPath(import.meta.url))),cases,frames:cases.reduce((n,c)=>n+1+c.transitions.length,0),method:'Original Pi components, isolated fixture callbacks, no real authentication/provider/network activity.'}));
+th.stopThemeWatcher();rmSync(temporary,{recursive:true,force:true});console.log(JSON.stringify({cases:cases.length,frames:cases.reduce((n,c)=>n+1+c.transitions.length,0)}));

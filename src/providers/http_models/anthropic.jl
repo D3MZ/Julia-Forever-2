@@ -8,21 +8,27 @@ function anthropic_wire_message(message::Message)
     return Dict{String,Any}("role" => role,
         "content" => role == "assistant" ? [Dict("type" => "text", "text" => content)] : content)
 end
-anthropic_wire_message(message::AbstractDict) = deepcopy(message)
+function anthropic_wire_message(message::AbstractDict)
+    wire=Dict{String,Any}("role"=>message["role"],"content"=>deepcopy(message["content"]))
+    haskey(message,"output_config") && (wire["output_config"]=deepcopy(message["output_config"]))
+    wire
+end
+
 anthropic_sendable(message) = true
 anthropic_sendable(message::Message) = !isempty(strip(wire_content(message)))
 
 function model_payload(::AnthropicMessagesProtocol, model::ModelSpec, request::ModelRequest, options)
-    messages = [anthropic_wire_message(message) for message in request.messages if anthropic_sendable(message)]
+    messages = anthropic_context_messages(model,request,options)
     payload = Dict{String,Any}("model" => model.id, "messages" => messages,
         "max_tokens" => get(options, "maxTokens", get(model_metadata(model), "maxTokens", 4096)), "stream" => true)
     if !isempty(request.instructions)
         payload["system"] = [Dict("type" => "text", "text" => request.instructions)]
     end
     for (option, wire) in (("temperature", "temperature"), ("tools", "tools"),
-            ("toolChoice", "tool_choice"), ("thinking", "thinking"))
+            ("toolChoice", "tool_choice"), ("thinking", "thinking"), ("outputConfig", "output_config"))
         haskey(options, option) && (payload[wire] = deepcopy(options[option]))
     end
+    anthropic_managed_payload!(payload,model,options)
     return payload
 end
 

@@ -1,6 +1,7 @@
 using JSON
 
 wire_metadata(metadata) = metadata
+wire_metadata(metadata::ProviderMessageMetadata) = wire_metadata(metadata.original)
 wire_metadata(result::ExecutionResult) = (ok=result.ok,)
 
 function wire_content(message)

@@ -393,3 +393,37 @@ JuliaForever2.session_markdown_entry(::Val{:markdown_test_notice}, content::Abst
     @test_throws MethodError JuliaForever2.session_api_request!(api, "session/markdown", Dict("session" => "invalid-markdown"))
     close(api)
 end
+
+@testset "Saved-detail errors retain identity for string identifiers" begin
+    JF = JuliaForever2
+    failure = JF.RpcError(-32601, "No persistent session store is configured")
+    for name in ("fixture", "", SubString("fixture", 1, 3), nothing, 7)
+        @test JF.saved_summary(failure, name) === failure
+    end
+    api = JF.SessionAPI()
+    unavailable = JF.session_api_request!(api, "session/describe/saved", Dict("session" => "fixture"))
+    @test unavailable isa JF.RpcError
+    @test unavailable.code == -32601
+    close(api)
+    closed = JF.session_api_request!(api, "session/describe/saved", Dict("session" => "fixture"))
+    @test closed isa JF.RpcError
+    @test closed.code == -32000
+end
+
+@testset "Saved summaries retain absent and durable-record behavior" begin
+    JF = JuliaForever2
+    mktempdir() do directory
+        store = JF.SessionStore(directory)
+        @test isnothing(JF.session_summary(store, "missing"))
+        @test isnothing(JF.session_summary(store, "../invalid"))
+        session = Session(Kernel(); owns_kernel=true, working_directory=directory)
+        JF.append_message!(session, Message(:user, "stored summary fixture"))
+        @test JF.save_session!(store, "fixture", session).ok
+        summary = JF.session_summary(store, "fixture")
+        @test summary["session"] == "fixture"
+        @test summary["id"] == string(JF.session_lineage(session).id)
+        @test summary["workingDirectory"] == directory
+        @test summary["messages"] == 1
+        close(session)
+    end
+end
