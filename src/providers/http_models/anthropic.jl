@@ -112,7 +112,12 @@ function appenddelta!(state::ModelStreamState, index, delta)
     kind = delta["type"]
     if kind == "text_delta" || kind == "thinking_delta"
         field = kind == "text_delta" ? "text" : "thinking"
-        block[field] *= delta[field]
+        buffer = get!(state.text_buffers, index) do
+            output = IOBuffer()
+            write(output, block[field])
+            output
+        end
+        write(buffer, delta[field])
         model_event!(state, kind; contentIndex=index - 1, delta=delta[field])
     elseif kind == "signature_delta"
         block["thinkingSignature"] = get(block, "thinkingSignature", "") * delta["signature"]
