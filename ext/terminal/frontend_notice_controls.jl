@@ -1,7 +1,8 @@
 """Render dim, padded notices with safe native text and one preceding spacer."""
 function frontend_notice_rows(notice::FrontendNotice,width::Int)
     rows=SessionDisplayRows([session_display_blank(width)])
-    rich=startup_rich(join(startup_safe_text.(split(notice.message,'\n';keepempty=true)),"\n"),session_display_style(:dim))
+    text=(notice.kind==:warning ? "Warning: " : "")*notice.message
+    rich=startup_rich(join(startup_safe_text.(split(text,'\n';keepempty=true)),"\n"),session_display_style(notice.kind==:warning ? :warning : :dim))
     append!(rows,startup_text_lines(rich,width;padding=1))
     rows
 end
@@ -29,11 +30,11 @@ function frontend_notice_snapshot(app::App)
     end
 end
 
-function frontend_notice!(app::App,message::AbstractString)
+function frontend_notice!(app::App,message::AbstractString;kind::Symbol=:notice)
     snapshot=frontend_notice_snapshot(app)
     if !isnothing(snapshot)
         operation=isnothing(app.transcript.preview) ? UInt64(0) : app.transcript.preview_operation_id
-        frontend_notice!(app.transcript.notices,snapshot.id,snapshot.anchor,message;documents=frontend_command_count(app),operation)
+        frontend_notice!(app.transcript.notices,snapshot.id,snapshot.anchor,message;documents=frontend_command_count(app),operation,kind)
         app.transcript.display_key=nothing
         app.scroll=0
     end
@@ -84,7 +85,7 @@ function frontend_notice_commit_preview!(app::App)
         changed=false
         for (index,notice) in enumerate(state.notices)
             if notice.operation!=0 && notice.operation==app.transcript.preview_operation_id
-                state.notices[index]=FrontendNotice(;anchor=snapshot.anchor,message=notice.message,preceding_documents=notice.preceding_documents)
+                state.notices[index]=FrontendNotice(;anchor=snapshot.anchor,message=notice.message,preceding_documents=notice.preceding_documents,kind=notice.kind)
                 changed=true
             end
         end

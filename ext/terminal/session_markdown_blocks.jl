@@ -47,6 +47,8 @@ Base.@kwdef struct SessionMarkdownBlocks{H}
     kind::Symbol = :default
     italic::Bool = false
     terminal_newline::Bool = false
+    quote_context::Bool = false
+    hyperlinks::Bool = false
 end
 
 function session_markdown_plain(text::String,width::Int;kind::Symbol=:default,italic::Bool=false)
@@ -96,7 +98,7 @@ end
 
 function session_markdown_quote_style(style::Tachikoma.Style)
     fg=style.fg isa Tachikoma.NoColor ? session_display_style(:muted).fg : style.fg
-    Tachikoma.Style(;fg,bg=style.bg,bold=style.bold,dim=style.dim,italic=true,underline=style.underline,strikethrough=style.strikethrough)
+    Tachikoma.Style(;fg,bg=style.bg,bold=style.bold,dim=style.dim,italic=true,underline=style.underline,strikethrough=style.strikethrough,hyperlink=style.hyperlink)
 end
 
 """Reapply quote style only until a real foreground scope closes, matching code-token resets."""
@@ -107,7 +109,7 @@ function session_markdown_quote_spans(line::Vector{Tachikoma.Span})
             old=span.style
             fg=old.fg isa Tachikoma.NoColor && !colored ? session_display_style(:muted).fg : old.fg
             colored|=!(old.fg isa Tachikoma.NoColor)
-            style=Tachikoma.Style(;fg,bg=old.bg,bold=old.bold,dim=old.dim,italic=true,underline=old.underline,strikethrough=old.strikethrough)
+            style=Tachikoma.Style(;fg,bg=old.bg,bold=old.bold,dim=old.dim,italic=true,underline=old.underline,strikethrough=old.strikethrough,hyperlink=old.hyperlink)
             push!(result,Tachikoma.Span(span.content,style))
         end
     end
@@ -116,7 +118,7 @@ end
 
 function session_markdown_quote(node::CommonMark.Node,context::SessionMarkdownBlocks,terminal::Bool)
     width=context.width
-    inner=SessionMarkdownBlocks(;width=width<3 ? width : width-2,highlighter=context.highlighter,kind=:muted,terminal_newline=context.terminal_newline)
+    inner=width<3 ? context : SessionMarkdownBlocks(;width=width-2,highlighter=context.highlighter,kind=:default,terminal_newline=context.terminal_newline,quote_context=true,hyperlinks=context.hyperlinks)
     content=session_markdown_sequence(node,inner,terminal)
     rows=SessionDisplayRows()
     for line in content
@@ -144,7 +146,7 @@ function session_markdown_list(node::CommonMark.Node,context::SessionMarkdownBlo
         firstprefix=[Tachikoma.Span(indent,Tachikoma.Style()),Tachikoma.Span(marker,session_display_style(:accent))]
         continuation=[Tachikoma.Span(indent*repeat(" ",textwidth(marker)),Tachikoma.Style())]
         itemwidth=max(1,context.width-textwidth(indent)-textwidth(marker))
-        inner=SessionMarkdownBlocks(;width=itemwidth,highlighter=context.highlighter,kind=context.kind,italic=context.italic,terminal_newline=context.terminal_newline)
+        inner=SessionMarkdownBlocks(;width=itemwidth,highlighter=context.highlighter,kind=context.kind,italic=context.italic,terminal_newline=context.terminal_newline,quote_context=context.quote_context,hyperlinks=context.hyperlinks)
         children=session_markdown_children(item)
         rendered=false
         for (childindex,child) in enumerate(children)
@@ -177,8 +179,16 @@ function session_markdown_block(node::CommonMark.Node,context::SessionMarkdownBl
         session_markdown_quote(node,context,terminal)
     elseif node.t isa CommonMark.List
         session_markdown_list(node,context,terminal)
+    elseif node.t isa CommonMark.ReferenceDefinition
+        SessionDisplayRows()
+    elseif node.t isa CommonMark.Heading
+        level=node.t.level
+        style=session_markdown_inline_style(session_display_style(:heading;bold=true);underline=level==1)
+        rows=session_markdown_paragraph(node,:heading,false;base_style=style,hyperlinks=context.hyperlinks)
+        level>=3&&!isempty(rows)&&pushfirst!(first(rows),Tachikoma.Span(repeat("#",level)*" ",style))
+        rows
     elseif node.t isa CommonMark.Paragraph
-        session_markdown_paragraph(node,context.kind,context.italic)
+        session_markdown_paragraph(node,context.kind,context.italic;restore_style=context.quote_context ? session_display_style(:muted;italic=true) : nothing,hyperlinks=context.hyperlinks)
     else
         session_markdown_plain(String(CommonMark.markdown(node)),context.width;kind=context.kind,italic=context.italic)
     end
@@ -192,7 +202,7 @@ function session_markdown_sequence(node::CommonMark.Node,context::SessionMarkdow
         if index<length(children)
             next=children[index+1]
             gap=next.sourcepos[1][1]>child.sourcepos[2][1]+1 || child.last_line_blank
-            spacing=gap||!(child.t isa CommonMark.List)&&!(child.t isa CommonMark.Paragraph&&next.t isa CommonMark.List)
+            spacing=gap||!(child.t isa CommonMark.List)&&!(child.t isa CommonMark.ReferenceDefinition)&&!(child.t isa CommonMark.Paragraph&&next.t isa CommonMark.List)
             spacing&&push!(rows,Tachikoma.Span[])
         end
     end
@@ -200,13 +210,18 @@ function session_markdown_sequence(node::CommonMark.Node,context::SessionMarkdow
 end
 
 """Return logical native Markdown rows with explicit, whole-block code rendering."""
-function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:default,italic=false,highlighter=SessionMarkdownSyntax())
+function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:default,italic=false,highlighter=SessionMarkdownSyntax(),hyperlinks::Bool=session_markdown_hyperlinks())
     text=String(session_display_safe(raw))
     parser=CommonMark.Parser()
+    CommonMark.disable!(parser,CommonMark.HtmlEntityRule())
+    CommonMark.enable!(parser,SessionMarkdownReferenceRule(String.(split(text,'\n';keepempty=true))))
+    CommonMark.enable!(parser,SessionMarkdownLabelRule())
+    CommonMark.enable!(parser,CommonMark.StrikethroughRule())
     CommonMark.enable!(parser,CommonMark.TableRule())
     CommonMark.enable!(parser,CommonMark.TaskListRule())
     ast=parser(text)
-    context=SessionMarkdownBlocks(;width=max(1,width),highlighter,kind,italic,terminal_newline=endswith(text,'\n'))
+    session_markdown_resolve_references!(ast)
+    context=SessionMarkdownBlocks(;width=max(1,width),highlighter,kind,italic,terminal_newline=endswith(text,'\n'),hyperlinks)
     rows=SessionDisplayRows()
     for line in session_markdown_sequence(ast,context,true)
         append!(rows,session_markdown_wrap(line,max(1,width);boundaries=true))

@@ -42,6 +42,7 @@ Base.@kwdef mutable struct StartupDocument
     resources::Vector{StartupResource} = StartupResource[]
     diagnostics::Vector{StartupDiagnostic} = StartupDiagnostic[]
     statuses::Vector{StartupStatus} = StartupStatus[]
+    update::Union{Nothing,StartupUpdateNotice} = nothing
     force_resources::Bool = false
     diagnostics_when_quiet::Bool = false
 end
@@ -164,6 +165,7 @@ function startup_document_lines(doc::StartupDocument,runtime,width::Integer)
         append!(lines,startup_text_lines(rich,columns;padding=1));push!(lines,blank())
     end
     append!(lines,startup_resource_lines(doc,runtime,columns))
+    append!(lines,startup_update_rows(doc.update,runtime,columns))
     if !isempty(doc.statuses)
         managed=false
         for status in doc.statuses

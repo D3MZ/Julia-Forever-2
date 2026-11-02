@@ -73,6 +73,7 @@ function authenticated!(app::App, flow, task)
         end
     end
     refresh_settings!(app)
+    result.ok && active_auth(flow) && maybe_warn_anthropic_subscription!(app)
     control=app.menus.auth_menu_control
     control isa AuthMenuControl && auth_menu_finish!(app,control,flow;ok=result.ok && active_auth(flow))
     return nothing
@@ -89,6 +90,7 @@ end
 function select!(app::App, descriptor::ProviderDescriptor)
     result = JuliaForever2.select_provider!(app.session.kernel, descriptor.id; dir=app.settings.directory, registry=app.settings.registry)
     if result.ok
+        maybe_warn_anthropic_subscription!(app)
         app.status = descriptor.label * (isnothing(descriptor.auth) ? " selected" : " selected — sign in from settings with s")
         app.page = :chat
     else

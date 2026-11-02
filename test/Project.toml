@@ -12,7 +12,7 @@ JuliaForever2 = {path = ".."}
 
 [compat]
 Aqua = "0.8"
-CommonMark = "0.8, 1"
+CommonMark = "1.0.4"
 JET = "0.13"
 JuliaForever2 = "0.3"
 Pkg = "1"

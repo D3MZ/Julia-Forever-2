@@ -5,7 +5,9 @@ Base.@kwdef struct FrontendNotice
     message::String
     preceding_documents::Int = 0
     operation::UInt64 = UInt64(0)
+    kind::Symbol = :notice
 end
+FrontendNotice(anchor,message,preceding_documents,operation)=FrontendNotice(anchor,message,preceding_documents,operation,:notice)
 Base.@kwdef mutable struct FrontendNoticeState
     owner::Union{Nothing,String} = nothing
     notices::Vector{FrontendNotice} = FrontendNotice[]
@@ -22,11 +24,11 @@ function frontend_notice_owner!(state::FrontendNoticeState,id::String)
 end
 
 """Coalesce only the last display component, never across a new message or command document."""
-function frontend_notice!(state::FrontendNoticeState,id::String,anchor,message::AbstractString;documents::Int=0,operation::UInt64=UInt64(0))
+function frontend_notice!(state::FrontendNoticeState,id::String,anchor,message::AbstractString;documents::Int=0,operation::UInt64=UInt64(0),kind::Symbol=:notice)
     frontend_notice_owner!(state,id)
-    notice=FrontendNotice(;anchor,message=String(message),preceding_documents=documents,operation)
+    notice=FrontendNotice(;anchor,message=String(message),preceding_documents=documents,operation,kind)
     previous=isempty(state.notices) ? nothing : last(state.notices)
-    if !isnothing(previous) && previous.anchor==anchor && previous.preceding_documents==documents && previous.operation==operation
+    if kind==:notice && !isnothing(previous) && previous.kind==:notice && previous.anchor==anchor && previous.preceding_documents==documents && previous.operation==operation
         state.notices[end]=notice
     else
         push!(state.notices,notice)
