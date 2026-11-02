@@ -110,6 +110,14 @@ struct BackgroundUpdateResult
     check::UpdateCheck
 end
 
+"""A stopped monitor carries the task and authority of its failed check."""
+struct BackgroundMonitorFailure
+    task::Task
+    permission::UInt64
+    manual::UInt64
+    sequence::UInt64
+end
+
 """A manual check completion carries the exact task that produced it."""
 struct ManualUpdateCompletion
     task::Task

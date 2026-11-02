@@ -79,6 +79,20 @@ function update_checked!(app::App, result::BackgroundUpdateResult; installer=app
     nothing
 end
 
+"""Report only the failed check of the currently authorized background monitor."""
+function update_checked!(app::App, result::BackgroundMonitorFailure)
+    state = app.updates
+    current = state.monitor === result.task && state.automatic && state.monitor_enabled[] && !app.operations.closing[] &&
+        !state.checking && !state.requested_install && state.permission_generation[] == result.permission &&
+        state.manual_generation[] == result.manual && state.background_sequence[] == result.sequence &&
+        state.accepted_background < result.sequence
+    if current
+        state.accepted_background = result.sequence
+        app.status = "Automatic update monitor stopped after a check failure."
+    end
+    nothing
+end
+
 function update_check_finished!(app::App, task::Task)
     if haskey(app.updates.check_tasks, task)
         update_check_finished!(app, ManualUpdateCompletion(task))
@@ -89,6 +103,7 @@ function update_check_finished!(app::App, task::Task)
 end
 update_check_finished!(app::App, check::UpdateCheck) = update_checked!(app, check)
 update_check_finished!(app::App, result::BackgroundUpdateResult) = update_checked!(app, result)
+update_check_finished!(app::App, result::BackgroundMonitorFailure) = update_checked!(app, result)
 
 function update_check_finished!(app::App, completion::ManualUpdateCompletion)
     task = completion.task
@@ -196,19 +211,34 @@ function start_update_monitor!(app::App; root::AbstractString=installation_root(
         checker=check_for_updates)
     monitor = app.updates.monitor
     if ispath(joinpath(root, ".git")) && (isnothing(monitor) || istaskdone(monitor))
-        app.updates.monitor = Threads.@spawn begin
+        permission = Threads.Atomic{UInt64}(0)
+        manual = Threads.Atomic{UInt64}(0)
+        sequence = Threads.Atomic{UInt64}(0)
+        checking = Threads.Atomic{Bool}(false)
+        task = Threads.@spawn begin
             while !app.operations.closing[]
                 enabled = app.updates.monitor_enabled[]
                 if enabled
-                    permission = app.updates.permission_generation[]
-                    manual = app.updates.manual_generation[]
-                    sequence = Threads.atomic_add!(app.updates.background_sequence, UInt64(1)) + UInt64(1)
+                    permission[] = app.updates.permission_generation[]
+                    manual[] = app.updates.manual_generation[]
+                    sequence[] = Threads.atomic_add!(app.updates.background_sequence, UInt64(1)) + UInt64(1)
+                    checking[] = true
                     check = checker(root)
-                    result = BackgroundUpdateResult(permission, manual, sequence, check)
+                    checking[] = false
+                    result = BackgroundUpdateResult(permission[], manual[], sequence[], check)
                     app.updates.monitor_enabled[] && !app.operations.closing[] && enqueue_event!(app, TaskEvent(:update_checked, result))
                 end
                 timedwait(() -> app.operations.closing[] || app.updates.monitor_enabled[] != enabled, interval_seconds; pollint=0.5)
             end
+        end
+        app.updates.monitor = task
+        Threads.@spawn begin
+            wait(task; throw=false)
+            if istaskfailed(task) && checking[]
+                failure = BackgroundMonitorFailure(task, permission[], manual[], sequence[])
+                enqueue_event!(app, TaskEvent(:update_checked, failure))
+            end
+            nothing
         end
     end
     return app.updates.monitor
