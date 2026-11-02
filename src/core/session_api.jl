@@ -153,7 +153,7 @@ end
 
 """Reject missing status without inspecting custom persistence results on another task."""
 normalize_close_save(::Nothing) = (ok=false, reason="Persistence failed")
-normalize_close_save(saved::NamedTuple) = haskey(saved, :ok) ? saved : (ok=false, reason="Persistence failed")
+normalize_close_save(saved::NamedTuple) = haskey(saved, :ok) && applicable(!, saved.ok) ? saved : (ok=false, reason="Persistence failed")
 normalize_close_save(saved) = saved
 
 persist_before_close!(::Nothing, name, session::Session, handle) = (ok=true, reason="")
