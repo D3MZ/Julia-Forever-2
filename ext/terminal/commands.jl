@@ -81,6 +81,26 @@ function skills_command!(app::App, arguments::AbstractString)
     nothing
 end
 
+"""Submit user-invoked skills through the replaceable Julia service, never as a tool or process adapter."""
+function use_skill_command!(app::App, arguments::AbstractString)
+    parts = split(strip(arguments); limit=2)
+    if isempty(parts)
+        app.status = "Usage: /use-skill <name> [request]"
+        (ok=false, reason=app.status)
+    else
+        request = length(parts) == 2 ? parts[2] : ""
+        prepared = JuliaForever2.skill_request(app.session, first(parts); request)
+        if !prepared.ok
+            app.status = prepared.reason
+            (ok=false, reason=prepared.reason)
+        else
+            result = submit_literal_input!(app, prepared.text)
+            result.ok || (app.status = result.reason)
+            result
+        end
+    end
+end
+
 """Compact earlier session context without blocking terminal input or losing archival history."""
 function compact_command!(app::App, instructions::AbstractString)
     if app.busy || app.operations.closing[]
@@ -257,6 +277,8 @@ function register_default_commands!(app::App)
         components_command!))
     register_command!(app, CommandSpec("skills", "List or preview Julia plugin skills (no model call)",
         skills_command!))
+    register_command!(app, CommandSpec("use-skill", "Apply a Julia skill to a user request",
+        use_skill_command!))
     register_command!(app, CommandSpec("julia", "Run a Julia expression",
         julia_command!))
     register_command!(app, CommandSpec("clear", "Clear conversation",
