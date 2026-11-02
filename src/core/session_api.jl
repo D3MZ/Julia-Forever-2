@@ -12,19 +12,14 @@ mutable struct SessionAPI{F,S,Q,T,W}
     closed::Bool
 end
 
+api_default_workspaces(::Any) = nothing
+api_default_workspaces(store::SessionStore) = WorkspaceRegistry(store)
+
 """Construct a native session API; factories return a Kernel or AgentDefinition."""
-SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing,
-    workspaces=store isa SessionStore ? WorkspaceRegistry(store) : nothing) =
-    SessionAPI(factory, store, query, titles, workspaces, ReentrantLock(),
-        Dict{String,Session}(), Dict{String,TaskHandle}(), Set{String}(), false)
+SessionAPI(; factory=Kernel, store=nothing, query=nothing, titles=nothing, workspaces=api_default_workspaces(store)) = SessionAPI(factory, store, query, titles, workspaces, ReentrantLock(), Dict{String,Session}(), Dict{String,TaskHandle}(), Set{String}(), false)
 
 """Preserve the existing positional SessionAPI constructor for callers not using workspaces."""
-SessionAPI(factory, store, query, titles, lock::ReentrantLock,
-    sessions::Dict{String,Session}, handles::Dict{String,TaskHandle},
-    closing::Set{String}, closed::Bool) =
-    SessionAPI(factory, store, query, titles,
-        store isa SessionStore ? WorkspaceRegistry(store) : nothing,
-        lock, sessions, handles, closing, closed)
+SessionAPI(factory, store, query, titles, lock::ReentrantLock, sessions::Dict{String,Session}, handles::Dict{String,TaskHandle}, closing::Set{String}, closed::Bool) = SessionAPI(factory, store, query, titles, api_default_workspaces(store), lock, sessions, handles, closing, closed)
 
 api_create_session(target::Kernel; kwargs...) = Session(target; owns_kernel=true, kwargs...)
 api_create_session(target::AgentDefinition; kwargs...) = Session(target; kwargs...)
@@ -756,8 +751,7 @@ function session_api_plugin(; name=:session_api, service_name=:session_api,
         store = isnothing(store_service) ? nothing : service(context, Symbol(store_service))
         query = isnothing(query_service) ? nothing : service(context, Symbol(query_service))
         titles = isnothing(title_service) ? nothing : service(context, Symbol(title_service))
-        workspaces = isnothing(workspace_service) ?
-            (store isa SessionStore ? WorkspaceRegistry(store) : nothing) :
+        workspaces = isnothing(workspace_service) ? api_default_workspaces(store) :
             service(context, Symbol(workspace_service))
         provide!(context, contract, SessionAPI(; factory, store, query, titles, workspaces);
             requires=dependencies, cleanup=close)
