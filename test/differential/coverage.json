@@ -2909,6 +2909,14 @@
       "upstream_reference": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447:packages/workspace/workspace/src/index.ts (pinnedSessionIds, pinSession, unpinSession, archiveSession); packages/api/workspace-controller/README.md (pin order and durable registry semantics)",
       "evidence": "Pinned upstream implementation and API documentation inspected. No executed Julia pin scenario, DSH runtime trace, differential comparison, or scheduled-quality execution is available for this change.",
       "limits": "Only already-persisted Julia sessions are pinnable. Upstream live/unsaved session pins, workspace membership/order, browser pin controls, follow-feed events, remote access filtering, concurrent multi-process writes, and full DSH SDK/API equivalence remain unverified. Pin and archive metadata are separately atomically persisted, not a multi-file transaction."
+    },
+    {
+      "family": "sessions.unified-inventory",
+      "status": "native-implementation-unverified",
+      "implementation": "Independent Julia SessionAPI session/list/all enumerates live and saved session summaries without starting/resuming agents; merges only matching durable UUIDs, with current live summaries taking precedence, and reports live, persisted and archived availability. Saved and live name collisions with different UUIDs remain distinct. Optional archive selection and persistence-free live listing are supported; durable discovery delegates to replaceable Julia session_summaries dispatch.",
+      "upstream_reference": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447:packages/session-query/session-query/src/corpus.ts (SessionCorpus.listSessions, live/persisted flags); packages/api/session-controller/src/list.ts (ApiSessionList.list, cold-safe user-facing summaries)",
+      "evidence": "Pinned DSH source and existing Julia SessionStore/SessionAPI source inspected. No executed Julia scenario, DSH runtime trace or differential comparison was available; this is an unverified native implementation, not verified parity.",
+      "limits": "Julia list/all is intentionally a distinct RPC shape, name/UUID ordered rather than DSH activity ordered, and does not implement the complete DSH event-log projection, formatStatus, authorization, indexed metadata, consistent cross-process snapshots or unified browser feed. Existing named session/list and session/list/saved operations are unchanged."
     }
   ]
 }
