@@ -56,7 +56,11 @@ function update_installed!(app::App, task::Task)
     elseif result == :compile_failed
         app.status = "Update downloaded but Julia precompilation did not complete."
     elseif result == :merge_failed
-        app.status = "Git could not fast-forward the installation."
+        app.status = "Git could not safely fast-forward the installation."
+    elseif result == :dirty
+        app.status = "Local changes prevent an update; preserve them before retrying."
+    elseif result == :changed
+        app.status = "The installation changed after the update check; check again."
     else
         app.status = "Already up to date."
     end

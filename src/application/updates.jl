@@ -66,12 +66,27 @@ function precompile_update!(root::AbstractString)
     return success(run(pipeline(ignorestatus(command), stdout=devnull, stderr=devnull)))
 end
 
-"""Fast-forward the installed checkout to the checked revision, then precompile."""
+"""Verify that a checked installation has no tracked or untracked local changes."""
+function update_worktree_clean(root::AbstractString)
+    output = IOBuffer()
+    command = `git -C $root status --porcelain=v1 --untracked-files=all --ignore-submodules=none`
+    process = run(pipeline(ignorestatus(command), stdout=output, stderr=devnull))
+    success(process) && isempty(take!(output))
+end
+
+"""Fast-forward only the unchanged, clean installation, without overwriting ignored files."""
 function apply_update!(check::UpdateCheck; rebuild=precompile_update!)
-    if update_available(check)
-        advanced = success(run(pipeline(ignorestatus(`git -C $(check.root) merge --ff-only $(check.latest)`), stdout=devnull, stderr=devnull)))
-        advanced ? (rebuild(check.root) ? :installed : :compile_failed) : :merge_failed
-    else
+    if !update_available(check)
         :current
+    elseif !update_worktree_clean(check.root)
+        :dirty
+    else
+        actual = strip(read(pipeline(ignorestatus(`git -C $(check.root) rev-parse --verify HEAD`), stderr=devnull), String))
+        if actual != check.current
+            :changed
+        else
+            advanced = success(run(pipeline(ignorestatus(`git -C $(check.root) merge --ff-only --no-overwrite-ignore $(check.latest)`), stdout=devnull, stderr=devnull)))
+            advanced ? (rebuild(check.root) ? :installed : :compile_failed) : :merge_failed
+        end
     end
 end
