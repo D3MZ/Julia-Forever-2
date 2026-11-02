@@ -33,6 +33,7 @@ RegisteredPrompt(name::String,description::String) = RegisteredPrompt(name,descr
 
 Base.@kwdef mutable struct MenusState
     keybindings::NativeKeybindings=NativeKeybindings()
+    selector_paste::NativeSelectorPaste=NativeSelectorPaste()
     project_trust::Union{Nothing,ProjectTrustState}=nothing
     viewport::Union{Nothing,TerminalViewport}=nothing
     bug_report::Union{Nothing,BugReportControl} = nothing

@@ -42,7 +42,7 @@ function thinking_defaults_row(menu,item,selected,width,primary)
 end
 
 """Render the actual per-model submenu, preserving its fixed step text and live list palette."""
-function thinking_defaults_lines(menu::ThinkingDefaultsMenu,width::Integer;outer_border=true)
+function thinking_defaults_lines(menu::ThinkingDefaultsMenu,width::Integer;outer_border=true,selectors::NativeSelectorBindings=NativeSelectorBindings())
     columns=Int(width)
     theme=menu.runtime.active
     lines=Vector{Tachikoma.Span}[]
@@ -79,7 +79,7 @@ function thinking_defaults_lines(menu::ThinkingDefaultsMenu,width::Integer;outer
         end
     end
     push!(lines,theme_line("",theme))
-    hint=menu.step==:model ? "  Type to filter · Enter to select · Esc to go back" : "  Enter to select · Esc to go back"
+    hint=(menu.step==:model ? "  Type to filter · " : "  ")*native_selector_hint(selectors,:confirm,"Enter";capitalize=true)*" to select · "*native_selector_hint(selectors,:cancel,"Esc";capitalize=true)*" to go back"
     append!(lines,theme_text_lines(hint,columns,menu.baked_theme,:text_dim))
     if outer_border
         push!(lines,theme_line(repeat("─",max(1,columns)),theme,:menu_border))

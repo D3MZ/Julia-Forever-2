@@ -1,5 +1,6 @@
 include("terminal/keybindings/model.jl")
 include("terminal/keybindings/keys.jl")
+include("terminal/keybindings/selectors.jl")
 include("terminal/editor_text_actions.jl")
 include("terminal/menu_search_input.jl")
 include("terminal/footer_native.jl")

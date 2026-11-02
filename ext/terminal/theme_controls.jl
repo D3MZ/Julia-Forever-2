@@ -112,19 +112,19 @@ end
 theme_controls_active(app::App) = app.menus.path in (["theme"], ["settings", "theme"])
 function theme_controls_input!(app::App, event::KeyEvent, raw)
     menu = app.menus.theme_menu
-    isnothing(menu) || theme_menu_input!(menu, menu_packet(event, raw))
+    isnothing(menu) || theme_menu_input!(menu,menu_packet(event,raw);selectors=native_selector_context(app))
     nothing
 end
 function theme_controls_lines(app::App, width)
     menu = app.menus.theme_menu
-    isnothing(menu) ? SessionDisplayRows() : theme_menu_lines(menu, width)
+    isnothing(menu) ? SessionDisplayRows() : theme_menu_lines(menu,width;selectors=native_selector_context(app))
 end
 function theme_controls_mouse!(app::App, event::MouseEvent)
     menu = app.menus.theme_menu
     result=nothing
     if !isnothing(menu)
         area = app.area
-        lines = theme_menu_lines(menu, area.width)
+        lines = theme_menu_lines(menu,area.width;selectors=native_selector_context(app))
         geometry=startup_editor_geometry(app,lines)
         local_row=startup_editor_row(app,event,geometry)
         wheel_delta = terminal_viewport_wheel(app,event)

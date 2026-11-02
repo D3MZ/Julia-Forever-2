@@ -215,13 +215,13 @@ function auth_menu_input!(app,control::AuthMenuControl,event::KeyEvent,raw::Abst
     selector=control.selector
     if auth_menu_active(app,control) && !isnothing(selector)
         packet=menu_packet(event,raw)
-        isempty(packet) || auth_selector_input!(selector,packet)
+        isempty(packet) || auth_selector_input!(selector,packet;selectors=native_selector_context(app))
     end
     nothing
 end
 function auth_menu_lines(app,control::AuthMenuControl,width::Integer)
     selector=control.selector
-    auth_menu_active(app,control) && !isnothing(selector) ? auth_selector_lines(selector,width) : Vector{Tachikoma.Span}[]
+    auth_menu_active(app,control) && !isnothing(selector) ? auth_selector_lines(selector,width;selectors=native_selector_context(app)) : Vector{Tachikoma.Span}[]
 end
 auth_menu_cursor(::Nothing)=nothing
 auth_menu_cursor(control::AuthMenuControl)=auth_menu_cursor(control.selector)
@@ -282,7 +282,7 @@ function auth_menu_manual_input!(app,control::AuthMenuControl,event::KeyEvent,ra
     flow=control.flow
     handled=!isnothing(flow) && auth_menu_manual_active(app,control) && control.flow===flow
     if handled && !isnothing(flow)
-        action=auth_callback_input!(control.callback_input,menu_packet(event,raw))
+        action=auth_callback_input!(control.callback_input,menu_packet(event,raw);selectors=native_selector_context(app),escape_key=event.key==:escape)
         if action==:cancel
             auth_menu_cancel_auth!(app,control)
         elseif action==:submit
@@ -293,7 +293,7 @@ function auth_menu_manual_input!(app,control::AuthMenuControl,event::KeyEvent,ra
     handled
 end
 function auth_menu_manual_lines(app,control::AuthMenuControl,width::Integer)
-    auth_menu_manual_active(app,control) ? auth_callback_lines(control.callback_input,width;style=token->auth_menu_style(app,token)) : Vector{Tachikoma.Span}[]
+    auth_menu_manual_active(app,control) ? auth_callback_lines(control.callback_input,width;style=token->auth_menu_style(app,token),selectors=native_selector_context(app)) : Vector{Tachikoma.Span}[]
 end
 auth_menu_manual_cursor(control::AuthMenuControl)=auth_callback_cursor(control.callback_input)
 

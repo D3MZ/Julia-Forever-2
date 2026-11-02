@@ -2,7 +2,7 @@
 function resume_hint(menu::ResumeMenu,key::AbstractString,label::AbstractString)
     [session_span(menu,key,:dim),session_span(menu," "*label,:muted)]
 end
-function resume_header(menu::ResumeMenu,width::Int)
+function resume_header(menu::ResumeMenu,width::Int;selectors::NativeSelectorBindings=NativeSelectorBindings())
     title=menu.header_scope==:current ? "Resume Session (Current Folder)" : "Resume Session (All)"
     right=Tachikoma.Span[]
     if menu.loading
@@ -20,8 +20,8 @@ function resume_header(menu::ResumeMenu,width::Int)
     firstline=[left;session_span(menu,repeat(" ",max(0,width-tree_width(left)-tree_width(right))));right]
     second,third=Tachikoma.Span[],Tachikoma.Span[]
     if !isnothing(menu.confirming_delete)
-        second=[session_span(menu,"Delete session? ",:error);resume_hint(menu,"enter","confirm");
-            session_span(menu," · ");resume_hint(menu,"escape/ctrl+c","cancel")]
+        second=[session_span(menu,"Delete session? ",:error);resume_hint(menu,native_selector_text(selectors,:confirm),"confirm");
+            session_span(menu," · ");resume_hint(menu,native_selector_text(selectors,:cancel),"cancel")]
         second=session_clip(second,width;marker="…")
     elseif !isnothing(menu.status)
         kind,message=menu.status
@@ -95,7 +95,7 @@ function resume_list_lines(menu::ResumeMenu,width::Int)
     lines
 end
 
-function resume_lines(menu::ResumeMenu,width::Integer)
+function resume_lines(menu::ResumeMenu,width::Integer;selectors::NativeSelectorBindings=NativeSelectorBindings())
     columns=Int(width)
     menu.width=columns
     border=session_line(menu,repeat("─",max(0,columns)),:accent)
@@ -105,9 +105,9 @@ function resume_lines(menu::ResumeMenu,width::Integer)
         push!(lines,session_line(menu))
         menu.input_row=length(lines)
         push!(lines,menu_search_spans(menu.rename_input,columns),session_line(menu))
-        append!(lines,session_text(menu,"enter to save · escape/ctrl+c to cancel",columns;token=:muted))
+        append!(lines,session_text(menu,"enter to save · "*native_selector_text(selectors,:cancel)*" to cancel",columns;token=:muted))
     else
-        append!(lines,resume_header(menu,columns))
+        append!(lines,resume_header(menu,columns;selectors))
         push!(lines,session_line(menu))
         menu.input_row=length(lines)
         append!(lines,resume_list_lines(menu,columns))

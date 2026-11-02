@@ -89,7 +89,7 @@ function api_key_dialog_layout(app,control::AuthMenuControl,columns::Int)
         if input.warning!=:none
             append!(lines,auth_dialog_text([auth_dialog_span(app,api_key_input_notice(Val(input.warning)),:error)],columns))
         end
-        hint=[auth_dialog_span(app,"("),auth_dialog_span(app,"escape/ctrl+c",:dim),auth_dialog_span(app," to cancel,",:muted),
+        hint=[auth_dialog_span(app,"("),auth_dialog_span(app,native_selector_text(native_selector_context(app),:cancel),:dim),auth_dialog_span(app," to cancel,",:muted),
             auth_dialog_span(app," "),auth_dialog_span(app,"enter",:dim),auth_dialog_span(app," to submit",:muted),auth_dialog_span(app,")")]
         append!(lines,auth_dialog_text(hint,columns))
     end
@@ -104,10 +104,10 @@ function api_key_dialog_input!(app,control::AuthMenuControl,event::KeyEvent,raw:
     flow=control.flow
     method=control.key_method
     input=control.callback_input
-    if !input.pasting && packet in ("\e","\x03")
+    if !input.pasting && isempty(input.opening) && native_selector_matches(native_selector_context(app),:cancel,packet)
         auth_menu_cancel_auth!(app,control)
     elseif (status.available || input.received) && !isnothing(flow) && !isnothing(method)
-        action=auth_callback_input!(input,packet)
+        action=auth_callback_input!(input,packet;selectors=native_selector_context(app),escape_key=event.key==:escape)
         if action==:cancel
             auth_menu_cancel_auth!(app,control)
         elseif action==:submit
