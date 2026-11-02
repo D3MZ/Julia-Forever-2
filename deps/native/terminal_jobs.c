@@ -164,3 +164,43 @@ int jf2_terminal_release(struct jf2_terminal_job *job) {
 }
 
 unsigned int jf2_terminal_abi(void) { return 0x00010000u; }
+
+/* A self-only job-control request, never a caller-selected process/group signal. */
+int jf2_terminal_self_state(int input, int output, int *parent, int *group,
+        int *session, int *foreground) {
+    if (!parent || !group || !session || !foreground) return EINVAL;
+    if (!isatty(input) || !isatty(output)) return ENOTTY;
+    pid_t own = getpid(), owner = getppid(), current = getpgrp(), sid = getsid(0);
+    if (own <= 1 || owner <= 1 || current <= 1 || sid <= 1) return EPERM;
+    /* A live job-control parent must remain outside this job but in its session. */
+    pid_t parent_session = getsid(owner), parent_group = getpgid(owner);
+    if (parent_session <= 1 || parent_group <= 1 || parent_session != sid || parent_group == current) return ENOTSUP;
+    if (tcgetsid(input) != sid || tcgetsid(output) != sid) return ENOTTY;
+    pid_t input_group = tcgetpgrp(input), output_group = tcgetpgrp(output);
+    if (input_group < 0 || output_group < 0) return errno;
+    if (input_group != output_group) return ENOTTY;
+    *parent = owner; *group = current; *session = sid;
+    *foreground = input_group == current;
+    return 0;
+}
+
+int jf2_terminal_self_suspend(int input, int output, int parent, int group, int session) {
+    int actual_parent, actual_group, actual_session, foreground;
+    int code = jf2_terminal_self_state(input, output, &actual_parent, &actual_group,
+        &actual_session, &foreground);
+    if (code) return code;
+    if (!foreground || actual_parent != parent || actual_group != group || actual_session != session) return ESTALE;
+    struct sigaction action;
+    if (sigaction(SIGTSTP, NULL, &action) < 0) return errno;
+    if (action.sa_handler != SIG_DFL) return ENOTSUP;
+    sigset_t mask;
+    code = pthread_sigmask(SIG_SETMASK, NULL, &mask);
+    if (code) return code;
+    if (sigismember(&mask, SIGTSTP)) return ENOTSUP;
+    struct termios modes;
+    if (tcgetattr(input, &modes) < 0) return errno;
+    if (!(modes.c_lflag & ICANON) || !(modes.c_lflag & ISIG)) return EBUSY;
+    /* raise targets this calling process only; never stop sibling pipeline jobs. */
+    code = raise(SIGTSTP);
+    return code == 0 ? 0 : errno ? errno : EIO;
+}

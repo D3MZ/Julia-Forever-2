@@ -324,6 +324,28 @@ function theme_input_attach!(lifecycle::ThemeLifecycle)
     result
 end
 
+"""Keep the framework monitor's original adapter identity across a temporary terminal lease."""
+function theme_input_restore!(input::ThemeTerminalInput,lifecycle::ThemeLifecycle)
+    lock(input.lock) do
+        valid=Tachikoma.INPUT_ACTIVE[] && !Sys.iswindows() && !lifecycle.closed && input.lifecycle.closed &&
+            input.closed && !input.installed && Tachikoma.INPUT_IO[]===input.previous_input &&
+            something(Tachikoma.INPUT_IO[],stdin)===input.source && typeof(lifecycle)===typeof(input.lifecycle) && isopen(input.source)
+        if valid
+            input.lifecycle=lifecycle
+            input.ready=PipeBuffer()
+            empty!(input.pending);empty!(input.reports);empty!(input.paste_buffer)
+            input.paste=false;input.reserved_da1=0;input.last_input=0.0
+            input.closed=false;input.installed=true
+            Tachikoma.INPUT_IO[]=input
+            (ok=true,input,reason="")
+        else
+            (ok=false,input=nothing,reason="The original terminal input owner cannot be restored")
+        end
+    end
+end
+
+theme_input_restore!(::Nothing,lifecycle::ThemeLifecycle)=theme_input_attach!(lifecycle)
+
 """Restore only our own input binding; never close the caller-owned stream or overwrite a newer owner."""
 function theme_input_detach!(input::ThemeTerminalInput)
     restored = false
@@ -344,4 +366,15 @@ function theme_input_detach!(input::ThemeTerminalInput)
         end
     end
     (restored=restored,ok=stopped.ok,reason=stopped.reason)
+end
+
+"""Retire a failed terminal adapter without reading bytes or closing its caller-owned source."""
+function theme_input_abandon!(input::ThemeTerminalInput)
+    lock(input.lock) do
+        input.installed && Tachikoma.INPUT_IO[]===input && (Tachikoma.INPUT_IO[]=input.previous_input)
+        input.installed=false
+        input.closed=true
+        theme_lifecycle_close!(input.lifecycle)
+    end
+    nothing
 end

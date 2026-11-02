@@ -1,4 +1,4 @@
-"""Advertise only implemented host bindings, preserving absent suspend and clipboard capabilities."""
+"""Advertise implemented host bindings; suspension retains local idle-terminal admission guards."""
 function startup_host_bindings(app::App)
     bindings=native_app_keybinding_labels(app)
     bindings["tui.editor.deleteToLineEnd"]="ctrl+k"
