@@ -79,6 +79,14 @@ function title_hidden(character::Char)
         0x2066 <= code <= 0x206f
 end
 
+"""Recognize browser whitespace without dropping Julia's existing space characters."""
+function title_whitespace(character::Char)
+    code = Int(character)
+    isspace(character) || character in (' ', '\t', '\n', '\v', '\f', '\r') ||
+        code in (0x00a0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000) ||
+        0x2000 <= code <= 0x200a
+end
+
 function clean_session_title(input::AbstractString)
     characters = collect(String(input))
     output = IOBuffer()
@@ -94,7 +102,7 @@ function clean_session_title(input::AbstractString)
         elseif code == 0x9d
             index = skip_title_osc(characters, index + 1)
         else
-            if isspace(character) && !title_hidden(character)
+            if title_whitespace(character) && !title_hidden(character)
                 pending_space = position(output) > 0
             elseif !title_hidden(character)
                 pending_space && print(output, ' ')
@@ -153,7 +161,7 @@ function load_title_record(store::SessionStore, identity::UUID)
     else
         data = JSON.parsefile(path)
         if get(data, "format", nothing) != "JuliaForever2.title" ||
-                get(data, "version", nothing) != 1 ||
+                !metadata_version(get(data, "version", nothing), (1,)) ||
                 get(data, "session_id", nothing) != string(identity)
             error("Invalid session title record")
         end
