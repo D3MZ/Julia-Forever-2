@@ -114,7 +114,8 @@ end
 
 saved_summaries(error::RpcError) = error
 saved_summaries(store) = session_summaries(store)
-saved_summaries(error::RpcError, archived) = error
+saved_summaries(error::RpcError, ::Nothing) = error
+saved_summaries(error::RpcError, ::Bool) = error
 saved_summaries(store, ::Nothing) = session_summaries(store)
 saved_summaries(store, archived::Bool) = archived ?
     RpcError(-32601, "Session archive service is not configured") : session_summaries(store)
