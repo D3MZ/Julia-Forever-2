@@ -433,6 +433,7 @@ function model_controls_mouse!(app::App, event::MouseEvent)
     area = app.area
     name = first(app.menus.path)
     menu = name == "model" ? app.menus.model_menu : name == "scoped-models" ? app.menus.scoped_menu : app.menus.thinking_menu
+    result=nothing
     if !isnothing(menu)
         lines = model_controls_lines(app, area.width)
         geometry=startup_editor_geometry(app,lines)
@@ -440,16 +441,16 @@ function model_controls_mouse!(app::App, event::MouseEvent)
         action = event.action == Tachikoma.mouse_press ? :press : event.action == Tachikoma.mouse_release ? :click : :move
         button = event.button == Tachikoma.mouse_left ? :left : :other
         if menu isa ThinkingMenu
-            delta = event.button == Tachikoma.mouse_scroll_up ? -1 : event.button == Tachikoma.mouse_scroll_down ? 1 : 0
+            delta = terminal_viewport_wheel(app,event)
             action = delta != 0 ? :wheel : action == :click && isnothing(menu.pressed) ? :move : action
-            thinking_mouse!(menu, event.x - area.x, local_row; action, button, wheel_delta=delta)
+            result=thinking_mouse!(menu, event.x - area.x, local_row; action, button, wheel_delta=delta)
             event.action==Tachikoma.mouse_release && local_row<0 && (menu.pressed=nothing)
         else
-            model_selector_mouse!(menu, event.x - area.x, local_row; action, button,
+            result=model_selector_mouse!(menu, event.x - area.x, local_row; action, button,
                 width=area.width, height=length(lines))
         end
     end
-    nothing
+    !isnothing(result) && get(result,:handled,false)
 end
 
 """Cycle the configured available snapshot, retaining explicit scope order and unavailable IDs."""

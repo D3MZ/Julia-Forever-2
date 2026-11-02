@@ -13,6 +13,7 @@ function initialize_terminal_presentation!(app::App,terminal::Tachikoma.Terminal
     output=PresentationIO(terminal.io,state)
     terminal.io=output
     presentation_switch!(output,desired)
+    terminal_viewport_tracking!(app,desired;force=true)
     nothing
 end
 
@@ -29,7 +30,9 @@ function apply_setting_effect!(app::App,::Val{Symbol("tui-mode")},value::Abstrac
     else
         (ok=false,reason="Terminal presentation backend is not attached")
     end
+    result.ok && terminal_viewport_mode!(app,mode)
     if result.ok && !isnothing(terminal)
+        terminal_viewport_tracking!(app,mode)
         terminal.frame_count=0
         foreach(Tachikoma.reset!,terminal.buffers)
     end
@@ -49,7 +52,9 @@ end
 function terminal_presentation_pause!(app::App)
     terminal=app.settings.terminal
     if !isnothing(terminal) && terminal.io isa PresentationIO
-        presentation_pause!(terminal.io)
+        result=presentation_pause!(terminal.io)
+        result.ok && terminal_viewport_tracking!(app,:off)
+        result
     else
         (ok=false,reason="Terminal presentation backend is not attached")
     end
@@ -63,6 +68,7 @@ function terminal_presentation_resume!(app::App)
         (ok=false,reason="Terminal presentation backend is not attached")
     end
     if result.ok && !isnothing(terminal)
+        terminal_viewport_tracking!(app;force=true)
         terminal.frame_count=0
         foreach(Tachikoma.reset!,terminal.buffers)
     end

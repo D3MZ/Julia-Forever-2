@@ -92,6 +92,7 @@ function chat_host_submit!(app::App,editor::ChatEditorState,text::AbstractString
             end
         end
         if accepted
+            terminal_viewport_end!(app)
             chat_add_history!(editor,value)
             chat_accept!(editor)
             app.menu=false

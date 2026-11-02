@@ -65,7 +65,7 @@ function julia_command!(app::App, code::AbstractString)
 end
 function submit!(app::App, prompt::AbstractString)
     if !isempty(strip(prompt)) && !app.operations.closing[]
-        app.scroll = 0
+        terminal_viewport_end!(app)
         dispatch!(app, strip(prompt))
     end
 end
@@ -104,6 +104,7 @@ function operation_finished!(app::App, handle::TaskHandle)
     nothing
 end
 function cleanup!(app::App)
+    close_terminal_viewport!(app)
     close_chat_completion!(app)
     auth_menu_dispose!(app.menus.auth_menu_control)
     close_terminal_output!(app)

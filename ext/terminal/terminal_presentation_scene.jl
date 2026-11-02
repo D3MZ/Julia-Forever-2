@@ -42,7 +42,7 @@ function terminal_presentation_publish!(app::App,width::Int,height::Int;scene=no
     natural=isnothing(scene) ? terminal_regular_scene(app,width,height) : scene
     state.lines=natural.lines;state.cursor=terminal_regular_cursor(natural)
     cursor=state.cursor
-    if !isnothing(cursor) && menu_preference(app,"show-hardware-cursor","false")=="true"
+    if !isnothing(cursor) && 1<=cursor[2]<=length(state.lines) && menu_preference(app,"show-hardware-cursor","false")=="true"
         row=cursor[2]
         state.lines=copy(state.lines)
         state.lines[row]=[Tachikoma.Span(span.content,span.style.fg isa MenuSearchInverseColor ? Tachikoma.Style() : span.style) for span in state.lines[row]]
@@ -54,6 +54,7 @@ end
 
 """Prepare actual chat content for shutdown rather than printing a stale selector or fictitious transcript."""
 function terminal_presentation_exit_rows!(app::App)
+    terminal_viewport_tracking!(app,:off)
     state=app.settings.presentation
     editor=chat_editor_lines(chat_editor_state!(app),state.width,state.height;runtime=app.menus.theme_runtime,
         padding=terminal_integer(app,"editor-padding",0,0,3),hardware_cursor=state.hardware_cursor)

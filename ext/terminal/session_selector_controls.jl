@@ -218,13 +218,14 @@ selector_lines(menu::ForkMenu, width) = fork_lines(menu, width)
 
 function session_selector_mouse!(app::App, event::MouseEvent)
     menu = app.menus.resume_menu
+    result=nothing
     if app.menus.path == ["resume"] && !isnothing(menu)
         lines = resume_lines(menu, app.area.width)
         geometry=startup_editor_geometry(app,lines)
         local_row=startup_editor_row(app,event,geometry)
         action = event.action == Tachikoma.mouse_press ? :press : :other
         button = event.button == Tachikoma.mouse_left ? :left : :other
-        resume_mouse!(menu, event.x - app.area.x, local_row; action, button)
+        result=resume_mouse!(menu, event.x - app.area.x, local_row; action, button)
     end
-    nothing
+    !isnothing(result) && get(result,:handled,false)
 end
