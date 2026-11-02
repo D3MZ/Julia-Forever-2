@@ -555,6 +555,11 @@ function tool_admitted(scope::ExtensionScope, name::Symbol)
     end
 end
 function tool_view(scope::ExtensionScope)
+    isopen(scope) ? open_tool_view(scope) :
+        (names=Symbol[], entries=Dict{Symbol,AbstractToolEntry}(), restrictable=Set{Symbol}())
+end
+
+function open_tool_view(scope::ExtensionScope)
     chain = reverse(extension_chain(scope))
     inherited_names = Symbol[]
     inherited = Dict{Symbol,AbstractToolEntry}()
@@ -573,6 +578,10 @@ The caller holds the scope lock. A local tool overrides inherited restrictions,
 while an inherited match must satisfy restrictions from every visible layer.
 """
 function visible_tool_entry(scope::ExtensionScope, name::Symbol)
+    isopen(scope) ? visible_open_tool_entry(scope, name) : nothing
+end
+
+function visible_open_tool_entry(scope::ExtensionScope, name::Symbol)
     current = scope
     selected = nothing
     while !isnothing(current) && isnothing(selected)
