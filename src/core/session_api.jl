@@ -126,7 +126,7 @@ function close_reserved_session!(api::SessionAPI, name::String, session::Session
     worker = spawn_scoped(() -> persist_before_close!(api.store, name, session, handle))
     wait(worker; throw=false)
     saved = istaskfailed(worker) ? (ok=false, reason="Persistence failed") : fetch(worker)
-    saved = saved === nothing ? (ok=false, reason="Persistence failed") : saved
+    saved = normalize_close_save(saved)
     if !saved.ok
         lock(() -> delete!(api.closing, name), api.lock)
         RpcError(-32000, "Session could not be saved: $(saved.reason)")
@@ -150,6 +150,11 @@ function close_reserved_session!(api::SessionAPI, name::String, session::Session
         end
     end
 end
+
+"""Reject missing status without inspecting custom persistence results on another task."""
+normalize_close_save(::Nothing) = (ok=false, reason="Persistence failed")
+normalize_close_save(saved::NamedTuple) = haskey(saved, :ok) ? saved : (ok=false, reason="Persistence failed")
+normalize_close_save(saved) = saved
 
 persist_before_close!(::Nothing, name, session::Session, handle) = (ok=true, reason="")
 
