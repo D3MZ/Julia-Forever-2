@@ -63,7 +63,6 @@ function setting_value(app::App, item::SettingSpec)
     end
 end
 
-"""Score ordered characters using proximity and word boundaries, with exact matches first."""
 """Share model and setting menu ranking; retain the original no-swap settings contract."""
 menu_alignment_score(text::Vector{Char}, positions::Vector{Int}) = selector_alignment(text, positions)
 menu_token_score(label::AbstractString, query::AbstractString) = selector_token_score(label, query; swap=false)
@@ -77,7 +76,6 @@ active_settings(app::App) = app.menus.path == ["settings", "warnings"] ? WARNING
 settings_searchable(app::App) = app.menus.path != ["settings", "warnings"]
 visible_settings(app::App) = search_settings(active_settings(app), settings_searchable(app) ? Tachikoma.text(app.menus.search) : "")
 
-"""Bound a string by terminal graphemes, never splitting combining or joined glyphs."""
 """Clip terminal text with Tachikoma's native grapheme-aware width calculation."""
 menu_clip(text::AbstractString, width::Integer; ellipsis::Bool=false) =
     Tachikoma.truncate_to_width(text, max(0, Int(width));
