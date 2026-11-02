@@ -87,6 +87,13 @@ function JuliaForever2.main(; settings_dir::AbstractString=config_dir(), registr
     schedule(terminal_task)
     wait(terminal_task; throw=false)
     capture_was_enabled || Tachikoma.disable_raw_capture!()
+    if terminal_lease_failed(app)
+        preference_attempt(()->finish_shutdown!(app))
+        preference_attempt(()->close_user_shell!(app))
+        preference_attempt(()->close(app.session))
+        preference_attempt(()->close(app.session.kernel))
+        return 1
+    end
     finish_shutdown!(app)
     close(app.session.kernel)
     if istaskfailed(terminal_task)

@@ -24,6 +24,7 @@ function native_app_keybinding_definitions(;windows::Bool=native_windows_keys())
         NativeKeybindingDefinition("app.interrupt",["escape"]),
         NativeKeybindingDefinition("app.clear",["ctrl+c"]),
         NativeKeybindingDefinition("app.exit",["ctrl+d"]),
+        NativeKeybindingDefinition("app.suspend",["ctrl+z"]),
         NativeKeybindingDefinition("app.thinking.cycle",["shift+tab"]),
         NativeKeybindingDefinition("app.model.cycleForward",["ctrl+p"]),
         NativeKeybindingDefinition("app.model.cycleBackward",[windows ? "alt+p" : "shift+ctrl+p"]),

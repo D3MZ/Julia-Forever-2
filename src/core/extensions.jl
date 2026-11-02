@@ -653,7 +653,13 @@ function resolve_tool_set(scope::ExtensionScope; model_selection=nothing, contex
     wait(worker; throw=false)
     cleanup = spawn_cleanup(() -> release_tool_activations!(acquired.invocations))
     wait(cleanup; throw=false)
-    resolve(worker, [cleanup])
+    outcome = resolve(worker, [cleanup])
+    if outcome.ok && cancelled(context)
+        close(outcome.tool_set)
+        selection_failure("Tool selection was cancelled")
+    else
+        outcome
+    end
 end
 
 function activate_tools(invocations, activation::ToolActivationContext)

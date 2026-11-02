@@ -25,9 +25,16 @@ struct PresentationIO <: IO
     state::TerminalPresentation
 end
 Base.isopen(io::PresentationIO)=isopen(io.sink)
-Base.flush(io::PresentationIO)=flush(io.sink)
+Base.flush(io::PresentationIO)=io.state.closed ? nothing : flush(io.sink)
 Base.displaysize(io::PresentationIO)=(io.state.height,io.state.width)
 Base.close(::PresentationIO)=nothing
+
+"""Never hide a short terminal control write as a successful complete transition."""
+function presentation_checked_write(io::IO,text::String)
+    written=write(io,text)
+    written==ncodeunits(text) || error("Incomplete terminal control write")
+    written
+end
 
 function presentation_frame!(io::PresentationIO)
     state=io.state
@@ -44,12 +51,12 @@ function presentation_write(io::PresentationIO,text::String)
         nothing
     elseif isframe
         if !state.leased && !state.closed && state.consistent
-            state.mode==:regular ? presentation_frame!(io) : write(io.sink,fullscreen_grapheme_frame(text;width=state.width,height=state.height).text)
+            state.mode==:regular ? presentation_frame!(io) : presentation_checked_write(io.sink,fullscreen_grapheme_frame(text;width=state.width,height=state.height).text)
         end
     else
         # A second DECRST 1049 restores an obsolete saved cursor even on the main screen.
         forwarded=state.attached && state.mode==:regular ? replace(text,"\e[?1049l"=>"") : text
-        write(io.sink,forwarded)
+        presentation_checked_write(io.sink,forwarded)
         if occursin("\e[?1049l",text) && state.attached && !state.leased && !state.closed
             state.before_exit()
             state.closed=true
@@ -105,16 +112,16 @@ function presentation_pause!(io::PresentationIO)
 end
 
 """Restore the saved backend after framework setup, then force a valid repaint of externally changed content."""
-function presentation_resume!(io::PresentationIO)
+function presentation_resume!(io::PresentationIO;release::Bool=true)
     state=io.state
     accepted=!state.closed && state.leased
     if accepted
-        state.leased=false
         if state.mode==:regular
             print(io.sink,"\e[?1049l",Tachikoma.MOUSE_OFF)
             regular_invalidate!(state.regular)
         end
         flush(io.sink)
+        release && (state.leased=false)
     end
     (ok=accepted,reason=accepted ? "" : "No active terminal lease")
 end
