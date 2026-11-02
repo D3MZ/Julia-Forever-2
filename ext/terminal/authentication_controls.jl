@@ -1,8 +1,15 @@
+"""Release revision and declared-kind selections together without changing stored credentials."""
+function clear_logout_controls!(app::App)
+    empty!(app.menus.logout_revisions)
+    empty!(app.menus.logout_kinds)
+    nothing
+end
+
 """Snapshot only app-owned credential revisions; a menu entry never grants provider access."""
 function open_logout_controls!(app::App)
-    empty!(app.menus.logout_revisions)
+    clear_logout_controls!(app)
     unavailable = false
-    for descriptor in app.settings.providers
+    for descriptor in provider_descriptors(app.settings.registry)
         probe = Task(() -> JuliaForever2.CredentialStorage.credential_revision(app.settings.directory, descriptor.id))
         schedule(probe)
         wait(probe; throw=false)
@@ -10,7 +17,11 @@ function open_logout_controls!(app::App)
             unavailable = true
         else
             revision = fetch(probe)
-            isnothing(revision) || (app.menus.logout_revisions[String(descriptor.id)] = revision)
+            if !isnothing(revision)
+                id=String(descriptor.id)
+                app.menus.logout_revisions[id]=revision
+                app.menus.logout_kinds[id]=auth_menu_stored_kind(descriptor)
+            end
         end
     end
     if unavailable
@@ -84,20 +95,31 @@ function start_logout!(app::App, selected::AbstractString)
     nothing
 end
 
-"""Report completed local removal only after file readback and active-cache invalidation."""
+"""Contain optional provider status failures without exposing callback errors or changing removal outcomes."""
+function refresh_logout_settings!(app::App)
+    refresh=Task(()->refresh_settings!(app))
+    schedule(refresh)
+    wait(refresh;throw=false)
+    if istaskfailed(refresh)
+        frontend_notice!(app,"Provider settings could not be refreshed. Reopen settings to retry.";kind=:warning)
+    end
+    nothing
+end
+
+"""Settle the verified removal outcome before refreshing optional provider status."""
 function logout_finished!(app::App, handle::TaskHandle)
     if app.operations.active === handle
+        clear_logout_controls!(app)
         app.operations.active = nothing
         app.operations.active_kind = :none
         app.busy = false
         result = session_action_result(handle)
-        refresh_settings!(app)
-        empty!(app.menus.logout_revisions)
         control=app.menus.auth_menu_control
         control isa AuthMenuControl && auth_menu_logout_finish!(app,control)
         app.menus.generation += UInt(1)
         app.page = :chat
         app.status = result.text
+        refresh_logout_settings!(app)
     end
     nothing
 end
