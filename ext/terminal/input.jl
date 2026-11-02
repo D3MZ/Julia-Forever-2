@@ -356,7 +356,10 @@ function ui_component(app::App, name::Symbol, fallback, argument)
 end
 
 update!(app::App, event::Union{KeyEvent,MouseEvent}) = ui_component(app, :input, default_input!, event)
-view(app::App, frame::Frame) = ui_component(app, :view, default_view!, frame)
+function view(app::App, frame::Frame)
+    app.area = frame.area
+    ui_component(app, :view, default_view!, frame)
+end
 
 """Complete the current slash command through the shared prompt editor."""
 complete_input!(app::App) = complete_command!(app, matching_commands(app))

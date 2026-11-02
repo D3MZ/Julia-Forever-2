@@ -32,7 +32,7 @@ const TERMINAL_SETTINGS = SettingSpec[
     SettingSpec("cache-miss-notices", "Cache miss notices", "Show transcript notices for cache costs and provider recovery diagnostics", "false", String["true", "false"]),
     SettingSpec("collapse-changelog", "Collapse changelog", "Show condensed changelog after updates", "false", String["true", "false"]),
     SettingSpec("quiet-startup", "Quiet startup", "Disable verbose printing at startup (header: keep only the startup header)", "false", String["true", "header", "false"]),
-    SettingSpec("install-telemetry", "Install telemetry", "Send an anonymous version/update ping after changelog-detected updates", "true", String["true", "false"]),
+    SettingSpec("install-telemetry", "Install telemetry", "Unavailable: Julia Forever 2 has no approved telemetry destination or privacy contract. No installation or update ping is sent.", "false", String["true", "false"]),
     SettingSpec("default-project-trust", "Default project trust", "Fallback behavior when no extension or saved trust decision decides project trust", "Ask", String["Ask", "Always trust", "Never trust"]),
     SettingSpec("double-escape-action", "Double-escape action", "Action when pressing Escape twice with empty editor", "tree", String["tree", "fork", "none"]),
     SettingSpec("tree-filter-mode", "Tree filter mode", "Default filter when opening /tree", "default", String["default", "no-tools", "user-only", "labeled-only", "all"]),
@@ -49,9 +49,19 @@ const TERMINAL_SETTINGS = SettingSpec[
 """Read only settings supported by the terminal's actual image capability."""
 settings_definitions(images::Bool) = filter(item -> images || !(item.id in ("show-images", "image-width-cells")), TERMINAL_SETTINGS)
 
-"""Use persisted state when present and the declared setting default otherwise."""
-setting_value(app::App, item::SettingSpec) = item.id == "model-thinking" ?
-    thinking_defaults_summary(get(app.menus.model_preferences, "thinkingDefaults", Dict{String,Any}())) : menu_preference(app, item.id, item.default)
+"""Describe unavailable native consumers without hiding the original menu entries."""
+setting_unavailable_reason(::Val) = ""
+setting_unavailable_reason(::Val{Symbol("install-telemetry")}) = "Install telemetry is unavailable: no approved Julia Forever 2 destination or privacy contract. No ping is sent."
+"""Show availability first; supported settings retain their persisted or declared value."""
+function setting_value(app::App, item::SettingSpec)
+    if !isempty(setting_unavailable_reason(Val(Symbol(item.id))))
+        "unavailable"
+    elseif item.id == "model-thinking"
+        thinking_defaults_summary(get(app.menus.model_preferences, "thinkingDefaults", Dict{String,Any}()))
+    else
+        menu_preference(app, item.id, item.default)
+    end
+end
 
 """Score ordered characters using proximity and word boundaries, with exact matches first."""
 function menu_alignment_score(text::Vector{Char}, positions::Vector{Int})
@@ -222,7 +232,8 @@ function settings_lines(app::App, width::Integer)
         end
     end
     push!(lines, menu_line())
-    hint = settings_searchable(app) ? "  Type to search · Enter/Space to change · Esc to cancel" : "  Enter/Space to change · Esc to cancel"
+    unavailable=!isempty(items) && !isempty(setting_unavailable_reason(Val(Symbol(items[clamp(app.menus.cursor,1,length(items))].id))))
+    hint = unavailable ? "  Unavailable in this build · Esc to cancel" : settings_searchable(app) ? "  Type to search · Enter/Space to change · Esc to cancel" : "  Enter/Space to change · Esc to cancel"
     push!(lines, menu_clipped_line(hint, width, :text_dim))
     push!(lines, menu_line(repeat("─", max(0, width)), :menu_border))
     lines
@@ -306,6 +317,18 @@ end
 
 """Commit private persistence and runtime effects together; publish only verified outcomes."""
 function set_setting_value!(app::App, name::AbstractString, value::AbstractString)
+    reason=setting_unavailable_reason(Val(Symbol(name)))
+    if isempty(reason)
+        commit_supported_setting_value!(app,name,value)
+    else
+        setting_status_outcome!(app,name,false,reason)
+        frontend_notice!(app,reason;kind=:warning)
+    end
+    nothing
+end
+
+"""Only supported consumers may persist a preference or invoke runtime callbacks."""
+function commit_supported_setting_value!(app::App, name::AbstractString, value::AbstractString)
     path = joinpath(app.settings.directory, "terminal-settings.json")
     previous = copy(app.menus.preferences)
     definitions = [TERMINAL_SETTINGS; WARNING_SETTINGS]

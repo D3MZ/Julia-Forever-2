@@ -3,6 +3,28 @@
   const $ = id => document.getElementById(id);
   let rpcId = 0, active = null, sessions = [], operation = null, busy = false, cancelling = false;
   let pollTimer = null, viewEpoch = 0, authorized = true, capabilities = {}, pendingSubmission = null, menuAnchor = null;
+  const fields = {
+    workspace: $("workspace"), workspaceTitle: $("workspace-title"), workspaceList: $("workspace-list"),
+    workspaceMember: $("workspace-member"), workspaceGroups: $("workspace-groups"),
+    workspaceCreate: $("workspace-create"), workspaceRename: $("workspace-rename"), workspaceDelete: $("workspace-delete"),
+    workspaceUp: $("workspace-up"), workspaceDown: $("workspace-down"), workspaceSessionUp: $("workspace-session-up"), workspaceSessionDown: $("workspace-session-down"),
+    savedSessions: $("saved-sessions"), sessionPin: $("session-pin"), sessionUnpin: $("session-unpin"), sessionArchive: $("session-archive"), sessionUnarchive: $("session-unarchive")
+  };
+  let workspaceRecords = [], workspaceGroups = [], workspaceRevision = null, savedRecords = [], pinnedNames = new Set();
+  function synchronizeWorkspaceControls() {
+    const unavailable = busy || !!operation || !authorized;
+    const registered = workspaceRecords.some(row => row.id === fields.workspaceList.value);
+    for (const field of [fields.workspace, fields.workspaceList, fields.workspaceTitle, fields.workspaceMember]) field.disabled = unavailable || workspaceRevision === null;
+    fields.workspaceCreate.disabled = unavailable || workspaceRevision === null;
+    for (const field of [fields.workspaceRename,fields.workspaceDelete,fields.workspaceUp,fields.workspaceDown]) field.disabled = unavailable || !registered;
+    for (const field of [fields.workspaceSessionUp,fields.workspaceSessionDown]) field.disabled = unavailable || !registered || !fields.workspaceMember.value;
+    const saved = savedRecords.find(row => row.session === fields.savedSessions.value);
+    fields.savedSessions.disabled = unavailable || savedRecords.length === 0;
+    fields.sessionPin.disabled = unavailable || !saved || saved.archived || pinnedNames.has(saved.session);
+    fields.sessionUnpin.disabled = unavailable || !saved || !pinnedNames.has(saved.session);
+    fields.sessionArchive.disabled = unavailable || !saved || saved.archived;
+    fields.sessionUnarchive.disabled = unavailable || !saved || !saved.archived;
+  }
   const preference = (name, fallback) => { try { return localStorage.getItem("jf2." + name) ?? fallback; } catch { return fallback; } };
   function setting(name, value) { try { localStorage.setItem("jf2." + name, value); } catch {} }
   function notice(text = "", error = false) { $("status").textContent = text; $("status").classList.toggle("error",error); }
@@ -17,6 +39,7 @@
     for (const id of ["save","export","export-settings","rename","rename-menu","close-session"])
       $(id).disabled = blocked || !active || !!operation || (id.includes("rename") && !capabilities.titles);
     $("prompt").disabled = !authorized;
+    synchronizeWorkspaceControls();
   }
   async function rpc(method, params = {}) {
     const response = await fetch("/api/rpc", {method:"POST",credentials:"same-origin",cache:"no-store",
@@ -79,6 +102,7 @@
     for (const entry of sessions) if (entry.live && capabilities.titles) {
       const title = await rpc("session/title/get",{session:entry.session}); entry.title = title.title;
     }
+    await refreshOptionalControls();
     drawSessions();
   }
   function message(role,content,kind) {
@@ -110,7 +134,7 @@
     if (operation) poll(operation,epoch); else $("working").hidden = true;
   }
   async function ensureSession() {
-    if (!active) { const result = await rpc("session/open"); active = result.session; ++viewEpoch; await refresh(); }
+    if (!active) { const directory = capabilities.workspaces ? fields.workspace.value.trim() : ""; const result = await rpc("session/open",directory ? {workingDirectory:directory} : {}); active = result.session; ++viewEpoch; await refresh(); }
     return active;
   }
   function preview(state) {
@@ -215,6 +239,174 @@
     catch (error) { $("end-dialog").close(); notice(error.message,true); }
     finally { $("end-confirm").disabled = false; }
   });
+  function selectedWorkspace() {
+    return workspaceRecords.find(row => row.id === fields.workspaceList.value);
+  }
+
+  function selectedWorkspaceGroup() {
+    return workspaceGroups.find(row => row.workspaceId === fields.workspaceList.value);
+  }
+
+  function renderWorkspaces(preferred = fields.workspaceList.value, preferredMember = fields.workspaceMember.value) {
+    fields.workspaceList.replaceChildren(new Option("Select a workspace", ""));
+    for (const row of workspaceRecords) {
+      fields.workspaceList.append(new Option(row.title + " — " + row.path, row.id));
+    }
+    fields.workspaceList.value = workspaceRecords.some(row => row.id === preferred) ? preferred : "";
+    const selected = selectedWorkspace();
+    if (selected) {
+      fields.workspaceTitle.value = selected.title;
+    }
+    fields.workspaceMember.replaceChildren(new Option("Select a session", ""));
+    const group = selectedWorkspaceGroup();
+    for (const row of group?.sessions || []) {
+      fields.workspaceMember.append(new Option(row.session + " — " + row.id, row.id));
+    }
+    fields.workspaceMember.value = (group?.sessions || []).some(row => row.id === preferredMember)
+      ? preferredMember : "";
+    fields.workspaceGroups.replaceChildren();
+    for (const item of workspaceGroups) {
+      const entry = document.createElement("li");
+      const label = document.createElement("strong");
+      label.textContent = (item.title || item.workingDirectory) +
+        (item.registered ? "" : " (not registered)") +
+        " — " + item.sessionCount + " session(s)";
+      const sessions = document.createElement("span");
+      sessions.textContent = " " + item.sessions.map(row => row.session).join(", ");
+      entry.append(label, sessions);
+      fields.workspaceGroups.append(entry);
+    }
+    synchronizeWorkspaceControls();
+  }
+
+  async function refreshWorkspaces(preferred = fields.workspaceList.value,
+      preferredMember = fields.workspaceMember.value) {
+    const snapshot = await rpc("workspace/list");
+    workspaceRecords = snapshot.workspaces;
+    workspaceRevision = snapshot.revision;
+    workspaceGroups = await rpc("session/list/workspaces");
+    renderWorkspaces(preferred, preferredMember);
+  }
+
+  async function refreshSavedSessions(preferred = fields.savedSessions.value) {
+    const [saved, archived, pinned] = await Promise.all([
+      rpc("session/list/saved"), rpc("session/list/saved", { archived: true }),
+      rpc("session/list/pinned"),
+    ]);
+    savedRecords = [
+      ...saved.map(row => ({ ...row, archived: false })),
+      ...archived.map(row => ({ ...row, archived: true })),
+    ];
+    pinnedNames = new Set(pinned);
+    fields.savedSessions.replaceChildren(new Option("Select a saved session", ""));
+    for (const row of savedRecords) {
+      const indicator = row.archived ? " (archived)" : pinnedNames.has(row.session) ? " (pinned)" : "";
+      fields.savedSessions.append(new Option(row.session + indicator, row.session));
+    }
+    fields.savedSessions.value = savedRecords.some(row => row.session === preferred) ? preferred : "";
+    synchronizeWorkspaceControls();
+  }
+
+  function workspaceMoveAnchor(direction) {
+    const index = workspaceRecords.findIndex(row => row.id === fields.workspaceList.value);
+    if (index < 0 || (direction < 0 && index === 0) ||
+        (direction > 0 && index === workspaceRecords.length - 1)) return null;
+    return direction < 0 ? workspaceRecords[index - 1].id :
+      workspaceRecords[index + 2]?.id ?? "";
+  }
+
+  function sessionMoveAnchor(direction) {
+    const sessions = selectedWorkspaceGroup()?.sessions || [];
+    const index = sessions.findIndex(row => row.id === fields.workspaceMember.value);
+    if (index < 0 || (direction < 0 && index === 0) ||
+        (direction > 0 && index === sessions.length - 1)) return null;
+    return direction < 0 ? sessions[index - 1].id :
+      sessions[index + 2]?.id ?? "";
+  }
+
+  fields.workspaceList.addEventListener("change", () => {
+    renderWorkspaces(fields.workspaceList.value, "");
+    const selected = selectedWorkspace();
+    if (selected) fields.workspace.value = selected.path;
+  });
+
+  fields.workspaceCreate.addEventListener("click", () => action(async () => {
+    const path = fields.workspace.value.trim();
+    if (!path) throw new Error("Enter an existing absolute directory.");
+    const title = fields.workspaceTitle.value.trim();
+    const result = await rpc("workspace/create", { path, ...(title ? { title } : {}) });
+    await refreshWorkspaces(result.workspace.id, "");
+  }));
+
+  fields.workspaceRename.addEventListener("click", () => action(async () => {
+    const workspace = selectedWorkspace();
+    if (!workspace) return;
+    await rpc("workspace/rename", {
+      workspaceId: workspace.id, title: fields.workspaceTitle.value.trim(),
+    });
+    await refreshWorkspaces(workspace.id);
+  }));
+
+  fields.workspaceDelete.addEventListener("click", () => action(async () => {
+    const workspace = selectedWorkspace();
+    if (!workspace || !window.confirm("Remove the workspace registration? Files and sessions will remain.")) return;
+    await rpc("workspace/delete", { workspaceId: workspace.id });
+    await refreshWorkspaces("");
+  }));
+
+  function moveWorkspace(direction) {
+    return action(async () => {
+      const workspace = selectedWorkspace();
+      const before = workspaceMoveAnchor(direction);
+      if (!workspace || before === null) return;
+      await rpc("workspace/move", { workspaceId: workspace.id,
+        ...(before ? { beforeWorkspaceId: before } : {}) });
+      await refreshWorkspaces(workspace.id);
+    });
+  }
+  fields.workspaceUp.addEventListener("click", () => moveWorkspace(-1));
+  fields.workspaceDown.addEventListener("click", () => moveWorkspace(1));
+
+  function moveWorkspaceSession(direction) {
+    return action(async () => {
+      const workspace = selectedWorkspace();
+      const sessionId = fields.workspaceMember.value;
+      const before = sessionMoveAnchor(direction);
+      if (!workspace || !sessionId || before === null) return;
+      await rpc("workspace/session/move", { workspaceId: workspace.id, sessionId,
+        ...(before ? { beforeSessionId: before } : {}) });
+      await refreshWorkspaces(workspace.id, sessionId);
+    });
+  }
+  fields.workspaceSessionUp.addEventListener("click", () => moveWorkspaceSession(-1));
+  fields.workspaceSessionDown.addEventListener("click", () => moveWorkspaceSession(1));
+  fields.savedSessions.addEventListener("change", synchronizeWorkspaceControls);
+
+  async function changeSavedSession(method) {
+    const name = fields.savedSessions.value;
+    if (!name) return;
+    await rpc(method, { session: name });
+    await refresh();
+    notice("Saved conversation updated.");
+  }
+  fields.sessionPin.addEventListener("click", () => action(() => changeSavedSession("session/pin")));
+  fields.sessionUnpin.addEventListener("click", () => action(() => changeSavedSession("session/unpin")));
+  fields.sessionArchive.addEventListener("click", () => action(() => changeSavedSession("session/archive")));
+  fields.sessionUnarchive.addEventListener("click", () => action(() => changeSavedSession("session/unarchive")));
+
+  async function refreshOptionalControls() {
+    $("workspace-controls").hidden = !capabilities.workspaces;
+    $("saved-controls").hidden = !capabilities.persistent;
+    if (capabilities.workspaces) await refreshWorkspaces();
+    if (capabilities.persistent) await refreshSavedSessions();
+  }
+
+  async function pollWorkspaceChanges() {
+    if (busy || operation || !authorized || workspaceRevision === null) return;
+    const change = await rpc("workspace/feed", { since: workspaceRevision });
+    if (change.type === "reset" || change.events.length) await refreshWorkspaces();
+  }
+
   action(async () => {
     capabilities = await rpc("web/info");
     $("composer-caption").textContent = capabilities.chatOnly ? "Chat only · no host tools" : "Julia-native session";
@@ -223,4 +415,5 @@
     if (response.ok) { const access = await response.json(); const expiry = new Date(access.expiresAt*1000).toLocaleString(); $("access-expiry").textContent = "Access ends " + new Date(access.expiresAt*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); $("security-detail").textContent = "Access ends " + expiry + ". The invitation works once. Clearing cookies does not reset it."; }
     settings(location.hash === "#settings",false); notice();
   });
+  window.setInterval(() => { pollWorkspaceChanges().catch(error => notice(error.message || String(error),true)); },5000);
 })();

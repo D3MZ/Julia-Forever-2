@@ -52,6 +52,13 @@ function menu_snapshot(app::App; images::Bool=app.menus.images, models=nothing,
         menu_node("warnings", "Warnings"; children=[
             flag("anthropic-extra-usage", "Anthropic extra usage")]),
     ])
+    for node in nodes
+        reason=setting_unavailable_reason(Val(Symbol(node["id"])))
+        if !isempty(reason)
+            node["available"]=false
+            node["reason"]=reason
+        end
+    end
     thinking_levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
     model_options = isempty(available_models) ? [menu_node("__none__", "No models available")] :
         [menu_node(string(model.provider, "/", model.id), string(model.id, " [", model.provider, "]"))

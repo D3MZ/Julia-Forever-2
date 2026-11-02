@@ -23,6 +23,12 @@ const BROWSER_SESSION_METHODS = Set(("session/list", "session/list/all", "sessio
     "session/markdown", "session/search", "session/archive", "session/unarchive", "session/list/pinned",
     "session/pin", "session/unpin"))
 
+const LOCAL_WORKSPACE_METHODS = Set(("workspace/list", "workspace/create", "workspace/rename",
+    "workspace/delete", "workspace/move", "workspace/session/move", "workspace/feed", "session/list/workspaces"))
+
+web_local_workspaces(controller::WebController) = !isnothing(controller.api.workspaces) &&
+    !isnothing(controller.access) && isempty(controller.access.origin) && !controller.access.browser_only
+
 function browser_route(controller::WebController, request::HTTP.Request, path)
     if request.method == "POST" && path == "/api/rpc"
         if length(request.body) > 1_048_576
@@ -52,9 +58,12 @@ end
 function browser_command!(controller::WebController, method::AbstractString, params::AbstractDict)
     if method in BROWSER_SESSION_METHODS
         JuliaForever2.session_api_request!(controller.api, method, params)
+    elseif method in LOCAL_WORKSPACE_METHODS && web_local_workspaces(controller)
+        JuliaForever2.session_api_request!(controller.api, method, params)
     elseif method in ("session/open", "session/resume")
-        # Browser callers cannot select a host directory or inject additional factory settings.
-        selected = Dict{String,Any}("workingDirectory" => controller.workspace)
+        # Public browser callers cannot select a host directory or inject factory settings; local registry controls retain their native scope.
+        directory = web_local_workspaces(controller) ? get(params, "workingDirectory", controller.workspace) : controller.workspace
+        selected = Dict{String,Any}("workingDirectory" => directory)
         if haskey(params, "session")
             selected["session"] = params["session"]
         end
@@ -71,7 +80,7 @@ function browser_command!(controller::WebController, method::AbstractString, par
     elseif method == "web/info"
         Dict("persistent" => !isnothing(controller.api.store), "titles" => !isnothing(controller.api.titles),
             "transport" => "Julia-native", "streaming" => "operation-scoped polling",
-            "chatOnly" => controller.api.factory isa WebChatFactory)
+            "chatOnly" => controller.api.factory isa WebChatFactory, "workspaces" => web_local_workspaces(controller))
     else
         JuliaForever2.RpcError(-32601, "Method is not available to the browser")
     end
@@ -184,7 +193,7 @@ function browser_open!(controller::WebController, method, params)
         JuliaForever2.RpcError(-32602, "Conversation identifier is too long")
     elseif lock(() -> length(controller.api.sessions) >= 64, controller.api.lock)
         JuliaForever2.RpcError(-32000, "Close a conversation before opening another (64 active maximum)")
-    elseif !isnothing(record) && abspath(record.directory) != controller.workspace
+    elseif !web_local_workspaces(controller) && !isnothing(record) && abspath(record.directory) != controller.workspace
         JuliaForever2.RpcError(-32602, "Saved conversation is outside this browser workspace")
     else
         JuliaForever2.session_api_request!(controller.api, method, params)
