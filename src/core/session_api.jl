@@ -170,6 +170,40 @@ function api_set_saved_archive!(api::SessionAPI, params::AbstractDict, archived:
     end
 end
 
+"""List ordered native pin identities without loading or resuming any session."""
+pinned_saved_sessions(error::RpcError) = error
+function pinned_saved_sessions(store)
+    names = pinned_sessions(store)
+    isnothing(names) ? RpcError(-32601, "Session pin service is not configured") : names
+end
+
+"""Adapt optional pin mutations to the Julia-native, replaceable session RPC."""
+pin_saved_session!(error::RpcError, name, pinned::Bool) = error
+function pin_saved_session!(store, name::AbstractString, pinned::Bool)
+    result = pinned ? pin_session!(store, name) : unpin_session!(store, name)
+    if result.ok
+        Dict("pinned" => pinned)
+    elseif result.reason == "Session pin service is not configured"
+        RpcError(-32601, result.reason)
+    elseif startswith(result.reason, "Session was not saved:")
+        RpcError(-32004, result.reason)
+    elseif startswith(result.reason, "Session is archived:")
+        RpcError(-32000, result.reason)
+    else
+        RpcError(-32602, result.reason)
+    end
+end
+
+function api_set_saved_pin!(api::SessionAPI, params::AbstractDict, pinned::Bool)
+    name = api_parameter(params, "session")
+    name isa AbstractString && !isempty(name) ?
+        pin_saved_session!(api_saved_store(api), String(name), pinned) :
+        RpcError(-32602, "Expected a session identifier")
+end
+
+api_pinned_session_list(api::SessionAPI, params::AbstractDict) =
+    pinned_saved_sessions(api_saved_store(api))
+
 """Export public session text through a Julia-owned, replaceable Markdown renderer."""
 function api_session_markdown(api::SessionAPI, params::AbstractDict)
     title = get(params, "title", nothing)
@@ -423,6 +457,9 @@ const SESSION_OPERATIONS = Dict(
     "session/list/saved" => api_saved_session_list,
     "session/archive" => (api, params) -> api_set_saved_archive!(api, params, true),
     "session/unarchive" => (api, params) -> api_set_saved_archive!(api, params, false),
+    "session/pin" => (api, params) -> api_set_saved_pin!(api, params, true),
+    "session/unpin" => (api, params) -> api_set_saved_pin!(api, params, false),
+    "session/list/pinned" => api_pinned_session_list,
     "session/describe/saved" => api_saved_session_detail,
     "session/describe" => api_session_detail,
     "session/messages" => api_session_messages,
