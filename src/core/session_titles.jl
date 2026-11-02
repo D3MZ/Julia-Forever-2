@@ -190,9 +190,12 @@ function delete_title_record!(store::SessionStore, identity::UUID)
     nothing
 end
 
-function first_session_title(service::SessionTitleService, session::Session)
+first_session_title(service::SessionTitleService, session::Session) =
+    first_session_title(service, history_snapshot(session).messages)
+
+function first_session_title(service::SessionTitleService, messages::AbstractVector)
     title = nothing
-    for message in history_snapshot(session).messages
+    for message in messages
         if isnothing(title) && message.role === :user && message.kind === :text
             proposed = fallback_session_title(message.content;
                 max_words=service.max_words, max_bytes=service.fallback_max_bytes)
@@ -211,7 +214,24 @@ end
 
 """Read the saved explicit title or materialize the first eligible user-text fallback."""
 function session_title(service::SessionTitleService, session::Session)
-    identity = session_lineage(session).id
+    resolve_session_title(service, session_lineage(session).id) do
+        first_session_title(service, session)
+    end
+end
+
+"""Read a saved conversation title without opening its session or creating a provider."""
+function saved_session_title(service::SessionTitleService, store::SessionStore, name::AbstractString)
+    record = saved_session_record(store, name)
+    if isnothing(record)
+        nothing
+    else
+        resolve_session_title(service, record.lineage.id) do
+            first_session_title(service, record.messages)
+        end
+    end
+end
+
+function resolve_session_title(f, service::SessionTitleService, identity::UUID)
     lock(service.lock) do
         if service.closed
             nothing
@@ -221,7 +241,7 @@ function session_title(service::SessionTitleService, session::Session)
                 record = load_title_record(service.store, identity)
             end
             if isnothing(record)
-                title = first_session_title(service, session)
+                title = f()
                 if !isnothing(title)
                     record = SessionTitleRecord(title, :fallback)
                     remember_title!(service, identity, record)

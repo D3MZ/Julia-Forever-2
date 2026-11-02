@@ -384,7 +384,7 @@ function pinned_saved_sessions(store)
 end
 
 """Adapt optional pin mutations to the Julia-native, replaceable session RPC."""
-pin_saved_session!(error::RpcError, name, pinned::Bool) = error
+pin_saved_session!(error::RpcError, name::AbstractString, pinned::Bool) = error
 function pin_saved_session!(store, name::AbstractString, pinned::Bool)
     result = pinned ? pin_session!(store, name) : unpin_session!(store, name)
     if result.ok

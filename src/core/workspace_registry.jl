@@ -123,7 +123,7 @@ function workspace_mutate!(mutation, registry::WorkspaceRegistry)
         result = mutation(state["items"])
         if result.changed
             state["revision"] += 1
-            event = copy(result.event)
+            event = Dict{String,Any}(result.event)
             event["revision"] = state["revision"]
             push!(state["events"], event)
             if length(state["events"]) > 256
@@ -250,9 +250,9 @@ function move_workspace!(registry::WorkspaceRegistry, id::AbstractString, before
         else
             old = [row["id"] for row in items]
             moved = splice!(items, index)
-            target = isnothing(before) || before == id ? min(index, length(items) + 1) :
-                workspace_find(items, String(before))
-            insert!(items, target, moved)
+            target = isnothing(before) ? length(items) + 1 : before == id ?
+                min(index, length(items) + 1) : workspace_find(items, String(before))
+            Base.insert!(items, target, moved)
             ids = [row["id"] for row in items]
             workspace_success(Dict("workspaceIds" => ids),
                 ids == old ? nothing : Dict("type" => "order", "workspaceIds" => ids))
@@ -281,9 +281,9 @@ function move_workspace_session!(registry::WorkspaceRegistry, id::AbstractString
                 findfirst(==(String(before)), ordered)
             if isnothing(destination)
                 destination = findfirst(==(session_id), before_move)
-                insert!(ordered, min(destination, length(ordered) + 1), String(session_id))
+                Base.insert!(ordered, min(destination, length(ordered) + 1), String(session_id))
             else
-                insert!(ordered, destination, String(session_id))
+                Base.insert!(ordered, destination, String(session_id))
             end
             if ordered == previous
                 workspace_success(Dict("workspace" => deepcopy(row)))
