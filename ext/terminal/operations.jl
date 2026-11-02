@@ -83,23 +83,33 @@ function dispatch!(app::App, prompt::AbstractString)
         result.ok && !was_busy ? app.operations.active : nothing
     end
 end
+"""Retire the active terminal operation while preserving its queued-input boundary."""
+function finish_operation!(app::App)
+    clear_preview!(app)
+    previous = (kind=app.operations.active_kind, ids=app.operations.pending_start_ids,
+        continuation=app.operations.pending_continuation)
+    app.operations.active = nothing
+    app.operations.active_kind = :none
+    app.operations.pending_start_ids = UInt64[]
+    app.operations.pending_continuation = false
+    app.busy = false
+    previous
+end
+
+"""Run completion effects only after the active operation has been retired."""
+function settle_operation!(app::App, handle::TaskHandle, previous)
+    app.settings.workspace = working_directory(app.session)
+    app.directory = directory_label(app.settings.workspace)
+    result = session_action_result(handle)
+    previous.kind == :compaction_done && result.ok && clear_command_documents!(app)
+    app.status = result.ok ? "Ready" : result.text
+    flush_user_shell!(app) && continue_terminal_pending!(app, result, previous.kind, previous.ids, previous.continuation)
+    result
+end
+
 function operation_finished!(app::App, handle::TaskHandle)
     if app.operations.active === handle
-        clear_preview!(app)
-        previous_kind = app.operations.active_kind
-        previous_ids = app.operations.pending_start_ids
-        was_continuation = app.operations.pending_continuation
-        app.operations.active = nothing
-        app.operations.active_kind = :none
-        app.operations.pending_start_ids = UInt64[]
-        app.operations.pending_continuation = false
-        app.busy = false
-        app.settings.workspace = working_directory(app.session)
-        app.directory = directory_label(app.settings.workspace)
-        result = session_action_result(handle)
-        previous_kind==:compaction_done && result.ok && clear_command_documents!(app)
-        app.status = result.ok ? "Ready" : result.text
-        flush_user_shell!(app) && continue_terminal_pending!(app, result, previous_kind, previous_ids, was_continuation)
+        settle_operation!(app, handle, finish_operation!(app))
     end
     nothing
 end
