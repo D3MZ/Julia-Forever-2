@@ -200,10 +200,10 @@ end
 function session_selector_input!(app::App, event::KeyEvent, raw)
     if app.menus.path == ["resume"]
         menu = app.menus.resume_menu
-        isnothing(menu) || resume_input!(menu, menu_packet(event, raw))
+        isnothing(menu) || resume_input!(menu,menu_packet(event,raw);selectors=native_selector_context(app))
     else
         menu = app.menus.fork_menu
-        isnothing(menu) || fork_input!(menu, menu_packet(event, raw))
+        isnothing(menu) || fork_input!(menu,menu_packet(event,raw);selectors=native_selector_context(app))
     end
     nothing
 end
@@ -213,14 +213,14 @@ function session_selector_view!(app::App,frame::Frame)
     nothing
 end
 
-selector_lines(menu::ResumeMenu, width) = resume_lines(menu, width)
-selector_lines(menu::ForkMenu, width) = fork_lines(menu, width)
+selector_lines(menu::ResumeMenu,width;selectors::NativeSelectorBindings=NativeSelectorBindings())=resume_lines(menu,width;selectors)
+selector_lines(menu::ForkMenu,width;selectors::NativeSelectorBindings=NativeSelectorBindings())=fork_lines(menu,width)
 
 function session_selector_mouse!(app::App, event::MouseEvent)
     menu = app.menus.resume_menu
     result=nothing
     if app.menus.path == ["resume"] && !isnothing(menu)
-        lines = resume_lines(menu, app.area.width)
+        lines = resume_lines(menu,app.area.width;selectors=native_selector_context(app))
         geometry=startup_editor_geometry(app,lines)
         local_row=startup_editor_row(app,event,geometry)
         action = event.action == Tachikoma.mouse_press ? :press : :other

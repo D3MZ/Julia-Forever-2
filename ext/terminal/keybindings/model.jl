@@ -18,12 +18,13 @@ end
 
 native_windows_keys() = Sys.iswindows() || Sys.islinux() && (!isempty(get(ENV,"WSL_DISTRO_NAME","")) || !isempty(get(ENV,"WSL_INTEROP","")))
 
-"""Define only existing native chat actions; omitted action families cannot masquerade as configurable consumers."""
+"""Define only existing native chat and selector actions; omitted families cannot masquerade as consumers."""
 function native_app_keybinding_definitions(;windows::Bool=native_windows_keys())
     NativeKeybindingDefinition[
         NativeKeybindingDefinition("app.interrupt",["escape"]),
         NativeKeybindingDefinition("app.clear",["ctrl+c"]),
         NativeKeybindingDefinition("app.exit",["ctrl+d"]),
+        NativeKeybindingDefinition("app.suspend",["ctrl+z"]),
         NativeKeybindingDefinition("app.thinking.cycle",["shift+tab"]),
         NativeKeybindingDefinition("app.model.cycleForward",["ctrl+p"]),
         NativeKeybindingDefinition("app.model.cycleBackward",[windows ? "alt+p" : "shift+ctrl+p"]),
@@ -38,6 +39,12 @@ function native_app_keybinding_definitions(;windows::Bool=native_windows_keys())
         NativeKeybindingDefinition("app.session.tree",String[]),
         NativeKeybindingDefinition("app.session.fork",String[]),
         NativeKeybindingDefinition("app.session.resume",String[]),
+        NativeKeybindingDefinition("tui.select.up",["up"]),
+        NativeKeybindingDefinition("tui.select.down",["down"]),
+        NativeKeybindingDefinition("tui.select.pageUp",["pageUp"]),
+        NativeKeybindingDefinition("tui.select.pageDown",["pageDown"]),
+        NativeKeybindingDefinition("tui.select.confirm",["enter"]),
+        NativeKeybindingDefinition("tui.select.cancel",["escape","ctrl+c"]),
     ]
 end
 

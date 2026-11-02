@@ -104,4 +104,20 @@ function close_terminal_job!(job::TerminalJob)
         (ok=restored.ok && code==0,reason=!restored.ok ? restored.reason : code==0 ? "" : terminal_error("Terminal job release failed",code))
     end
 end
+
+"""Observe only this process's job-control parent and matching controlling terminal."""
+function self_terminal_state(adapter::TerminalJobAdapter,input_fd::Integer,output_fd::Integer)
+    parent=Ref{Cint}(0);group=Ref{Cint}(0);session=Ref{Cint}(0);foreground=Ref{Cint}(0)
+    code=ccall(terminal_symbol(adapter,:jf2_terminal_self_state),Cint,
+        (Cint,Cint,Ref{Cint},Ref{Cint},Ref{Cint},Ref{Cint}),input_fd,output_fd,parent,group,session,foreground)
+    (ok=code==0,reason=code==0 ? "" : terminal_error("Self suspension unavailable",code),
+        parent=parent[],group=group[],session=session[],foreground=foreground[]!=0)
+end
+
+"""Request default job-control suspension of this process alone after revalidating its own identity."""
+function suspend_self_terminal!(adapter::TerminalJobAdapter,input_fd::Integer,output_fd::Integer,identity)
+    code=ccall(terminal_symbol(adapter,:jf2_terminal_self_suspend),Cint,
+        (Cint,Cint,Cint,Cint,Cint),input_fd,output_fd,identity.parent,identity.group,identity.session)
+    (ok=code==0,reason=code==0 ? "" : terminal_error("Self suspension request failed",code),requested=code==0)
+end
 end

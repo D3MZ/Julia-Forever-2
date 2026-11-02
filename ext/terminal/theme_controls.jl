@@ -45,12 +45,12 @@ function theme_control_event!(app::App, kind, setting, result)
 end
 
 """Attach color framing only after the framework completes terminal probes, without a second stdin reader."""
-function initialize_terminal_theme!(app::App, terminal::Tachikoma.Terminal)
+function initialize_terminal_theme!(app::App, terminal::Tachikoma.Terminal;resume_input=nothing)
     close_terminal_theme!(app)
     runtime = app.menus.theme_runtime
     if !isnothing(runtime)
         lifecycle = ThemeLifecycle(; runtime, output=terminal.io)
-        attached = theme_input_attach!(lifecycle)
+        attached = theme_input_restore!(resume_input,lifecycle)
         if attached.ok
             app.settings.theme_input = attached.input
             theme_lifecycle_start!(lifecycle)
@@ -64,6 +64,7 @@ end
 
 """Apply color and file notifications on the UI owner before rendering the next frame."""
 function Tachikoma.pre_render!(app::App)
+    terminal_lease_failed(app) && return nothing
     input = app.settings.theme_input
     if !isnothing(input) && theme_input_poll!(input)
         refresh_theme_controls!(app)
@@ -111,19 +112,19 @@ end
 theme_controls_active(app::App) = app.menus.path in (["theme"], ["settings", "theme"])
 function theme_controls_input!(app::App, event::KeyEvent, raw)
     menu = app.menus.theme_menu
-    isnothing(menu) || theme_menu_input!(menu, menu_packet(event, raw))
+    isnothing(menu) || theme_menu_input!(menu,menu_packet(event,raw);selectors=native_selector_context(app))
     nothing
 end
 function theme_controls_lines(app::App, width)
     menu = app.menus.theme_menu
-    isnothing(menu) ? SessionDisplayRows() : theme_menu_lines(menu, width)
+    isnothing(menu) ? SessionDisplayRows() : theme_menu_lines(menu,width;selectors=native_selector_context(app))
 end
 function theme_controls_mouse!(app::App, event::MouseEvent)
     menu = app.menus.theme_menu
     result=nothing
     if !isnothing(menu)
         area = app.area
-        lines = theme_menu_lines(menu, area.width)
+        lines = theme_menu_lines(menu,area.width;selectors=native_selector_context(app))
         geometry=startup_editor_geometry(app,lines)
         local_row=startup_editor_row(app,event,geometry)
         wheel_delta = terminal_viewport_wheel(app,event)

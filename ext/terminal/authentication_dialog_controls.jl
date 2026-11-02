@@ -65,7 +65,7 @@ function auth_dialog_copy_hint(app,url::String)
 end
 
 function auth_dialog_cancel_hint(app)
-    [auth_dialog_span(app,"("),auth_dialog_span(app,"escape/ctrl+c",:dim),auth_dialog_span(app," to cancel",:muted),auth_dialog_span(app,")")]
+    [auth_dialog_span(app,"("),auth_dialog_span(app,native_selector_text(native_selector_context(app),:cancel),:dim),auth_dialog_span(app," to cancel",:muted),auth_dialog_span(app,")")]
 end
 
 auth_dialog_provider_name(::Nothing,id::Symbol)=string(id)
@@ -126,12 +126,12 @@ function auth_dialog_input!(app,control,event::KeyEvent,raw::AbstractVector{UInt
         api_key_dialog_input!(app,control,event,raw)
     elseif handled
         packet=menu_packet(event,raw)
-        pasting=control isa AuthMenuControl && control.callback_input.pasting
+        pasting=control isa AuthMenuControl && (control.callback_input.pasting || !isempty(control.callback_input.opening))
         if !pasting && packet=="\x18"
             auth_dialog_copy!(app,control;copy)
         elseif control isa AuthMenuControl && auth_menu_manual_active(app,control)
             auth_menu_manual_input!(app,control,event,raw)
-        elseif packet in ("\e","\x03")
+        elseif native_selector_matches(native_selector_context(app),:cancel,packet)
             if control isa AuthMenuControl
                 auth_menu_cancel_auth!(app,control)
             else

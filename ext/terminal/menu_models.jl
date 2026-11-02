@@ -189,9 +189,10 @@ function model_menu_refresh!(menu::ModelMenu,models::AbstractVector;errors=Strin
 end
 model_menu_dispose!(menu::ModelMenu) = (menu.closed=true;nothing)
 
-function model_menu_input!(menu::ModelMenu,packet::AbstractString)
+function model_menu_input!(menu::ModelMenu,packet::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     result=ModelMenuAction()
     count=length(menu.filtered)
+    navigation=native_selector_navigation(selectors,packet)
     if menu.search.pasting || occursin("\e[200~",packet)
         menu_search_input!(menu.search,packet)
         model_menu_filter!(menu)
@@ -206,20 +207,29 @@ function model_menu_input!(menu::ModelMenu,packet::AbstractString)
             end
             model_menu_filter!(menu)
         end
-    elseif packet in ("\e[A","\e[B","\e[5~","\e[6~")
+    elseif navigation!=:none
         if count>0
-            menu.cursor=packet=="\e[A" ? mod1(menu.cursor-1,count) : packet=="\e[B" ? mod1(menu.cursor+1,count) : clamp(menu.cursor+(packet=="\e[5~" ? -10 : 10),1,count)
+            menu.cursor=navigation==:up ? mod1(menu.cursor-1,count) : navigation==:down ? mod1(menu.cursor+1,count) : clamp(menu.cursor+(navigation==:page_up ? -10 : 10),1,count)
         end
-    elseif packet in ("\e","\x03")
-        model_menu_dispose!(menu)
-        result=ModelMenuAction(;kind=:cancel)
-    elseif packet in ("\r","\n") || packet=="\x13" && menu.can_save
+    elseif native_selector_matches(selectors,:confirm,packet)
         if count>0
             model_menu_dispose!(menu)
-            result=ModelMenuAction(;kind=packet=="\x13" ? :default : :select,value=menu.filtered[menu.cursor])
+            result=ModelMenuAction(;kind=:select,value=menu.filtered[menu.cursor])
+        end
+    elseif native_selector_matches(selectors,:cancel,packet)
+        model_menu_dispose!(menu)
+        result=ModelMenuAction(;kind=:cancel)
+    elseif packet=="\x13" && menu.can_save
+        if count>0
+            model_menu_dispose!(menu)
+            result=ModelMenuAction(;kind=:default,value=menu.filtered[menu.cursor])
         end
     else
-        menu_search_input!(menu.search,packet)
+        submitted=menu_search_input!(menu.search,packet)==:submit
+        if submitted && count>0
+            model_menu_dispose!(menu)
+            result=ModelMenuAction(;kind=:select,value=menu.filtered[menu.cursor])
+        end
         model_menu_filter!(menu)
     end
     result
@@ -278,16 +288,17 @@ function scoped_models_change!(menu::ScopedModelMenu,operation::Symbol,targets::
     ModelMenuAction(;kind=:change,value=deepcopy(menu.enabled))
 end
 
-function scoped_models_input!(menu::ScopedModelMenu,packet::AbstractString)
+function scoped_models_input!(menu::ScopedModelMenu,packet::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     result=ModelMenuAction()
     enabled=menu.enabled
     count=length(menu.filtered)
+    navigation=native_selector_navigation(selectors,packet)
     if menu.search.pasting || occursin("\e[200~",packet)
         menu_search_input!(menu.search,packet)
         scoped_models_filter!(menu)
-    elseif packet in ("\e[A","\e[B","\e[5~","\e[6~")
+    elseif navigation!=:none
         if count>0
-            menu.cursor=packet=="\e[A" ? mod1(menu.cursor-1,count) : packet=="\e[B" ? mod1(menu.cursor+1,count) : clamp(menu.cursor+(packet=="\e[5~" ? -8 : 8),1,count)
+            menu.cursor=navigation==:up ? mod1(menu.cursor-1,count) : navigation==:down ? mod1(menu.cursor+1,count) : clamp(menu.cursor+(navigation==:page_up ? -8 : 8),1,count)
         end
     elseif packet in ("\e[1;3A","\e[1;3B")
         if count>0 && !isnothing(enabled)
@@ -301,7 +312,7 @@ function scoped_models_input!(menu::ScopedModelMenu,packet::AbstractString)
                 result=ModelMenuAction(;kind=:change,value=copy(enabled))
             end
         end
-    elseif packet in ("\r","\n") && count>0
+    elseif native_selector_matches(selectors,:confirm,packet) && count>0
         id=menu.filtered[menu.cursor]
         result=scoped_models_change!(menu,scoped_models_enabled(menu,id) ? :clear : :enable,[id])
     elseif packet in ("\x01","\x18")
@@ -318,14 +329,14 @@ function scoped_models_input!(menu::ScopedModelMenu,packet::AbstractString)
         end
     elseif packet=="\x13"
         result=ModelMenuAction(;kind=:persist,value=deepcopy(enabled))
-    elseif packet=="\x03"
+    elseif native_binding_matches(packet,"ctrl+c";kitty=selectors.kitty)
         if isempty(menu.search.value)
             result=ModelMenuAction(;kind=:cancel)
         else
             menu_search_set!(menu.search, "")
             scoped_models_filter!(menu)
         end
-    elseif packet=="\e"
+    elseif native_binding_matches(packet,"escape";kitty=selectors.kitty)
         result=ModelMenuAction(;kind=:cancel)
     else
         menu_search_input!(menu.search,packet)
@@ -471,7 +482,7 @@ function model_menu_row(model::SelectorModel,selected,current;default=false,enab
     spans
 end
 
-function model_menu_lines(menu::ModelMenu,width::Integer)
+function model_menu_lines(menu::ModelMenu,width::Integer;selectors::NativeSelectorBindings=NativeSelectorBindings())
     lines=Vector{Tachikoma.Span}[]
     push!(lines,[model_menu_span(repeat("─",max(0,width)),:border)])
     model_menu_blank!(lines)
@@ -512,14 +523,14 @@ function model_menu_lines(menu::ModelMenu,width::Integer)
     end
     model_menu_blank!(lines)
     if menu.can_save
-        model_menu_text!(lines,"  Enter to select · Ctrl+S to set as default · Escape/Ctrl+C to cancel",width,:dim)
+        model_menu_text!(lines,"  "*native_selector_text(selectors,:confirm;capitalize=true)*" to select · Ctrl+S to set as default · "*native_selector_text(selectors,:cancel;capitalize=true)*" to cancel",width,:dim)
     end
     push!(lines,[model_menu_span(repeat("─",max(0,width)),:border)])
     menu.height=length(lines)
     lines
 end
 
-function scoped_models_footer(menu::ScopedModelMenu)
+function scoped_models_footer(menu::ScopedModelMenu;selectors::NativeSelectorBindings=NativeSelectorBindings())
     enabled=menu.enabled
     ids=selector_key.(menu.models)
     count_text=isnothing(enabled) ? "all enabled" : "$(count(id->id in ids,enabled))/$(length(ids)) enabled"
@@ -527,7 +538,7 @@ function scoped_models_footer(menu::ScopedModelMenu)
     if unavailable>0
         count_text*=" · $unavailable unavailable"
     end
-    text="  Enter toggle · Ctrl+A all · Ctrl+X clear · Ctrl+P provider · Alt+Up/Alt+Down reorder · Ctrl+S save · "*count_text
+    text="  "*native_selector_text(selectors,:confirm;capitalize=true)*" toggle · Ctrl+A all · Ctrl+X clear · Ctrl+P provider · Alt+Up/Alt+Down reorder · Ctrl+S save · "*count_text
     spans=[model_menu_span(text*(menu.dirty ? " " : ""),:dim)]
     if menu.dirty
         push!(spans,model_menu_span("(unsaved)",:warning))
@@ -535,7 +546,7 @@ function scoped_models_footer(menu::ScopedModelMenu)
     spans
 end
 
-function scoped_models_lines(menu::ScopedModelMenu,width::Integer)
+function scoped_models_lines(menu::ScopedModelMenu,width::Integer;selectors::NativeSelectorBindings=NativeSelectorBindings())
     lines=Vector{Tachikoma.Span}[]
     push!(lines,[model_menu_span(repeat("─",max(0,width)),:border)])
     model_menu_blank!(lines)
@@ -575,7 +586,7 @@ function scoped_models_lines(menu::ScopedModelMenu,width::Integer)
     if !isnothing(status)
         model_menu_text!(lines,"  "*status,width,menu.status_kind)
     end
-    model_menu_text!(lines,scoped_models_footer(menu),width)
+    model_menu_text!(lines,scoped_models_footer(menu;selectors),width)
     push!(lines,[model_menu_span(repeat("─",max(0,width)),:border)])
     menu.height=length(lines)
     lines

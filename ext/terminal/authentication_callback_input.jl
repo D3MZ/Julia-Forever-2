@@ -9,12 +9,16 @@ Base.@kwdef mutable struct AuthCallbackInput
     cursor::Int = 0
     pasting::Bool = false
     paste_marker::Int = 0
+    opening::String = ""
     discard_paste::Bool = false
     warning::Symbol = :none
     received::Bool = false
     disposed::Bool = false
     width::Int = 0
 end
+"""Preserve the positional private-input API while defaulting the new paste-prefix state."""
+AuthCallbackInput(bytes,used,cursor,pasting,paste_marker,discard_paste,warning,received,disposed,width)=
+    AuthCallbackInput(bytes,used,cursor,pasting,paste_marker,"",discard_paste,warning,received,disposed,width)
 Base.show(io::IO,input::AuthCallbackInput)=print(io,"AuthCallbackInput(<redacted>, received=",input.received,", disposed=",input.disposed,")")
 Base.show(io::IO,::MIME"text/plain",input::AuthCallbackInput)=show(io,input)
 
@@ -25,6 +29,7 @@ function auth_callback_clear!(input::AuthCallbackInput)
     input.cursor=0
     input.pasting=false
     input.paste_marker=0
+    input.opening=""
     input.discard_paste=false
     nothing
 end
@@ -107,10 +112,22 @@ function auth_callback_paste!(input::AuthCallbackInput,data::AbstractString)
 end
 
 """Edit only private storage; submission and cancellation are returned to the native owner."""
-function auth_callback_input!(input::AuthCallbackInput,packet::AbstractString)
+function auth_callback_input!(input::AuthCallbackInput,packet::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings(),escape_key::Bool=true)
     action=:handled
-    if !input.disposed
-        if packet in ("\e","\x03") && !input.pasting
+    marker="\e[200~"
+    if !input.pasting && !input.disposed && !isempty(input.opening)
+        combined=input.opening*String(packet);input.opening=""
+        if startswith(marker,combined) && combined!=marker
+            input.opening=combined
+        elseif startswith(combined,marker)
+            action=auth_callback_input!(input,combined;selectors,escape_key=false)
+        else
+            auth_callback_clear!(input);input.warning=:unsafe_input
+        end
+    elseif !input.pasting && !input.disposed && !isempty(packet) && packet!=marker && startswith(marker,packet) && (packet!="\e" || !escape_key)
+        input.opening=String(packet)
+    elseif !input.disposed
+        if native_selector_matches(selectors,:cancel,packet) && !input.pasting
             auth_callback_clear!(input)
             action=:cancel
         elseif input.received
@@ -121,7 +138,7 @@ function auth_callback_input!(input::AuthCallbackInput,packet::AbstractString)
             input.pasting=true
             input.warning=:none
             auth_callback_paste!(input,SubString(packet,7))
-        elseif packet in ("\e","\x03")
+        elseif native_selector_matches(selectors,:cancel,packet)
             auth_callback_clear!(input)
             action=:cancel
         elseif packet in ("\r","\n")
@@ -179,12 +196,12 @@ auth_callback_notice(::Val{:rejected})="Callback was rejected; the sign-in is no
 auth_callback_notice(::Val)="Callback input is unavailable."
 
 """Render only masked content and fixed safe messages, never any callback URL or service error."""
-function auth_callback_lines(input::AuthCallbackInput,width::Integer;style=Returns(Tachikoma.Style()))
+function auth_callback_lines(input::AuthCallbackInput,width::Integer;style=Returns(Tachikoma.Style()),selectors::NativeSelectorBindings=NativeSelectorBindings())
     input.width=max(0,Int(width))
     mask=input.used==0 ? "" : repeat("•",min(input.used,max(0,width-3)))
     message=input.received ? "Callback received; verifying sign-in…" : "Paste the final callback URL here (hidden):"
     prompt="> "*mask
-    footer=input.received ? "Waiting for verified authentication completion." : "enter submit · esc cancel · ctrl+u clear"
+    footer=input.received ? "Waiting for verified authentication completion." : "enter submit · "*native_selector_text(selectors,:cancel)*" cancel · ctrl+u clear"
     messages=[message,prompt,auth_callback_notice(Val(input.warning)),footer]
     [[Tachikoma.Span(menu_search_slice(message,0,max(0,Int(width))),style(index==2 ? :text : :dim))] for (index,message) in enumerate(messages)]
 end

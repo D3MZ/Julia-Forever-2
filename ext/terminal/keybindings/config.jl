@@ -4,6 +4,8 @@ const NATIVE_KEYBINDING_MIGRATIONS=Dict(
     "cycleThinkingLevel"=>"app.thinking.cycle","cycleModelForward"=>"app.model.cycleForward","cycleModelBackward"=>"app.model.cycleBackward",
     "selectModel"=>"app.model.select","expandTools"=>"app.tools.expand","toggleThinking"=>"app.thinking.toggle",
     "externalEditor"=>"app.editor.external","followUp"=>"app.message.followUp","dequeue"=>"app.message.dequeue","pasteImage"=>"app.clipboard.pasteImage",
+    "selectUp"=>"tui.select.up","selectDown"=>"tui.select.down","selectPageUp"=>"tui.select.pageUp",
+    "selectPageDown"=>"tui.select.pageDown","selectConfirm"=>"tui.select.confirm","selectCancel"=>"tui.select.cancel",
     "newSession"=>"app.session.new","tree"=>"app.session.tree","fork"=>"app.session.fork","resume"=>"app.session.resume")
 
 """Read only the selected private config through owned, no-follow descriptors; never execute its contents."""

@@ -1,4 +1,4 @@
-"""Advertise only implemented host bindings, preserving absent suspend and clipboard capabilities."""
+"""Advertise implemented host bindings; suspension retains local idle-terminal admission guards."""
 function startup_host_bindings(app::App)
     bindings=native_app_keybinding_labels(app)
     bindings["tui.editor.deleteToLineEnd"]="ctrl+k"
@@ -166,7 +166,7 @@ function startup_menu_rows(app::App,width::Int,height::Int)
             Vector{Tachikoma.Span}[]
         else
             menu.maximum_rows=10
-            selector_lines(menu,width)
+            selector_lines(menu,width;selectors=native_selector_context(app))
         end
     elseif app.menus.path==["trust"]
         project_trust_lines(app,width)
@@ -176,7 +176,7 @@ function startup_menu_rows(app::App,width::Int,height::Int)
             Vector{Tachikoma.Span}[]
         else
             menu.maximum_rows=max(5,fld(height,2))
-            tree_lines(menu,width)
+            tree_lines(menu,width;selectors=native_selector_context(app))
         end
     elseif thinking_defaults_active(app)
         thinking_defaults_controls_lines(app,width)

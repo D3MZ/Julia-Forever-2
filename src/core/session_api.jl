@@ -112,7 +112,7 @@ function api_close_session!(api::SessionAPI, params::AbstractDict)
         end
         if !reserved
             RpcError(-32000, "Session is not available: $name")
-        elseif executing_owned_work(session)
+        elseif !isnothing(api.store) && executing_owned_work(session)
             lock(() -> delete!(api.closing, name), api.lock)
             RpcError(-32000, "A session cannot synchronously close its own work")
         else

@@ -252,6 +252,8 @@ function default_input!(app::App, event::KeyEvent)
     raw = captured_key_bytes()
     if event.action == Tachikoma.key_release
         nothing
+    elseif native_selector_paste!(app,event,raw)
+        nothing
     elseif app.page==:pi_menu && app.menus.path==["trust"]
         project_trust_input!(app,event,raw)
     elseif native_chat_paste_prefix!(app,menu_packet(event,raw);escape_key=event.key==:escape)
@@ -271,7 +273,7 @@ function default_input!(app::App, event::KeyEvent)
         bug_report_input!(app,"\x03")
     elseif event.key == :ctrl_c
         if app.page == :pi_menu
-            selected_event = app.menus.path in (["model"], ["scoped-models"], ["thinking"]) ? event : KeyEvent(:escape)
+            selected_event = event
             page_input!(app, Val(:pi_menu), selected_event, raw)
         elseif app.page==:chat
             page_input!(app,Val(:chat),event,raw)
@@ -334,8 +336,9 @@ function ui_component(app::App, name::Symbol, fallback, argument)
     end
 end
 
-update!(app::App, event::Union{KeyEvent,MouseEvent}) = ui_component(app, :input, default_input!, event)
+update!(app::App, event::Union{KeyEvent,MouseEvent}) = terminal_lease_failed(app) ? nothing : ui_component(app, :input, default_input!, event)
 function view(app::App, frame::Frame)
+    terminal_lease_failed(app) && return nothing
     app.area = frame.area
     ui_component(app, :view, default_view!, frame)
 end

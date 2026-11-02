@@ -56,7 +56,7 @@ end
 
 function tree_controls_input!(app::App, event::KeyEvent, raw)
     menu = app.menus.tree_menu
-    isnothing(menu) || tree_input!(menu, menu_packet(event, raw))
+    isnothing(menu) || tree_input!(menu,menu_packet(event,raw);selectors=native_selector_context(app))
     nothing
 end
 function tree_controls_view!(app::App,frame::Frame)

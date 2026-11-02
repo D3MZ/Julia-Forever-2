@@ -114,7 +114,7 @@ function chat_host_packet!(app::App,packet::AbstractString)
         external_editor_command!(app)
         (action=:handled,text="")
     else
-        chat_completion_input!(state,packet)
+        chat_completion_input!(state,packet;selectors=native_selector_context(app))
     end
     if result.action==:submit
         chat_host_submit!(app,editor,result.text)

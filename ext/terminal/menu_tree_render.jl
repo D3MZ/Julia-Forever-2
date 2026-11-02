@@ -298,11 +298,11 @@ end
 const TREE_MENU_HELP = ["↑/↓ move","←/→ page","ctrl+←/→ branch","ctrl+x copy","shift+l label","shift+t label time", "filters ctrl+d/t/u/l/a","cycle ctrl+o/shift+ctrl+o"]
 
 """Keep semantic help chunks together before wrapping individual overlong chunks."""
-function tree_help_lines(menu::TreeMenu,width::Int)
+function tree_help_lines(menu::TreeMenu,width::Int;selectors::NativeSelectorBindings=NativeSelectorBindings())
     available = max(1,width)
     current = ""
     lines = String[]
-    for item in TREE_MENU_HELP
+    for item in [native_selector_move_hint(selectors,"↑/↓")*" move";TREE_MENU_HELP[2:end]]
         candidate = isempty(current) ? (menu_search_width("  "*item)<=available ? "  "*item : item) : current*" · "*item
         if isempty(current) || menu_search_width(candidate)<=available
             current = candidate
@@ -316,7 +316,7 @@ function tree_help_lines(menu::TreeMenu,width::Int)
 end
 
 """Render the actual component including inline label editing and parent viewport capture."""
-function tree_lines(menu::TreeMenu,width::Integer)
+function tree_lines(menu::TreeMenu,width::Integer;selectors::NativeSelectorBindings=NativeSelectorBindings())
     columns = Int(width)
     menu.width = columns
     lines = Vector{Tachikoma.Span}[]
@@ -329,7 +329,7 @@ function tree_lines(menu::TreeMenu,width::Integer)
         push!(lines,[tree_span(menu,repeat(" ",pad);bold=index>1),tree_span(menu,line;bold=true),
             tree_span(menu,repeat(" ",max(pad,columns-pad-menu_search_width(line)));bold=index<length(title))])
     end
-    append!(lines,tree_help_lines(menu,columns))
+    append!(lines,tree_help_lines(menu,columns;selectors))
     search = [tree_span(menu,"  "),tree_span(menu,"Type to search:",:muted)]
     isempty(menu.query) || append!(search,[tree_span(menu," "),tree_span(menu,menu.query,:accent)])
     push!(lines,tree_truncate(search,columns))
@@ -340,8 +340,8 @@ function tree_lines(menu::TreeMenu,width::Integer)
         push!(lines,tree_truncate([tree_span(menu,"  "),tree_span(menu,"Label (empty to remove):",:muted)],columns))
         menu.label_row = length(lines)
         push!(lines,tree_truncate([tree_span(menu,"  ");menu_search_spans(menu.input,columns-2)],columns))
-        push!(lines,tree_truncate([tree_span(menu,"  "),tree_span(menu,"enter",:dim),tree_span(menu," save",:muted),
-            tree_span(menu,"  "),tree_span(menu,"escape/ctrl+c",:dim),tree_span(menu," cancel",:muted)],columns))
+        push!(lines,tree_truncate([tree_span(menu,"  "),tree_span(menu,native_selector_text(selectors,:confirm),:dim),tree_span(menu," save",:muted),
+            tree_span(menu,"  "),tree_span(menu,native_selector_text(selectors,:cancel),:dim),tree_span(menu," cancel",:muted)],columns))
     end
     push!(lines,tree_line(menu),border)
     lines
