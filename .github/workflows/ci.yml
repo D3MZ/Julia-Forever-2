@@ -5,8 +5,6 @@ name: Merge compatible pull requests
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
-  schedule:
-    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
