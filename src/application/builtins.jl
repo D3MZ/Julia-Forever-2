@@ -3,7 +3,10 @@ function builtin_provider_registry()
     registry = ProviderRegistry()
     for descriptor in (demo_provider_descriptor(), chatgpt_provider_descriptor(),
             openrouter_provider_descriptor(), codex_provider_descriptor())
-        register_provider!(registry, with_model_selection(descriptor))
+        register_provider!(registry, builtin_model_descriptor(descriptor))
+    end
+    for id in (:groq,:anthropic)
+        register_provider!(registry,builtin_api_key_descriptor(id))
     end
     return registry
 end

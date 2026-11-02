@@ -125,19 +125,38 @@ auth_request(url::AbstractString, body::String, headers, context::ExecutionConte
 
 """Complete a provider authorization through its own exchange protocol."""
 complete_authorization!(dir::AbstractString, attempt::OAuthAttempt, callback; transport=auth_request, identity=nothing, context=ExecutionContext(), persist=(provider, data) -> (save_credentials!(dir, provider, data); true)) = callback.ok ? complete_authorization!(Val(attempt.provider), dir, attempt, callback; transport, identity, context, persist) : (ok=false, reason=callback.reason)
+const AuthorizationCallback = NamedTuple{(:ok,:code,:client_id,:reason),Tuple{Bool,String,String,String}}
+
+Base.@kwdef mutable struct AuthorizationInbox
+    attempt::OAuthAttempt
+    deadline::Float64
+    result::Union{Nothing,AuthorizationCallback}=nothing
+end
+
+Base.show(io::IO, ::AuthorizationInbox) = print(io, "AuthorizationInbox([redacted])")
+
 mutable struct AuthFlow{C}
     lock::ReentrantLock
     cancelled::Bool
     listener::Union{Sockets.TCPServer,Nothing}
     context::C
+    inbox::Union{Nothing,AuthorizationInbox}
 end
-AuthFlow(; timeout=180.0) = AuthFlow(ReentrantLock(), false, nothing, ExecutionContext(; timeout))
+AuthFlow(; timeout=180.0) = AuthFlow(ReentrantLock(), false, nothing, ExecutionContext(; timeout), nothing)
+AuthFlow(lock, cancelled, listener, context) = AuthFlow(lock, cancelled, listener, context, nothing)
+Base.show(io::IO, ::AuthFlow) = print(io, "AuthFlow([redacted])")
 
-Base.close(flow::AuthFlow) = close(flow.context)
+function Base.close(flow::AuthFlow)
+    lock(flow.lock) do
+        flow.inbox = nothing
+    end
+    close(flow.context)
+end
 
 function cancel_auth!(flow::AuthFlow)
     listener = lock(flow.lock) do
         flow.cancelled = true
+        flow.inbox = nothing
         flow.listener
     end
     cancel!(flow.context)
@@ -179,17 +198,31 @@ function receive_callback(server::Sockets.TCPServer, flow::AuthFlow, attempt::OA
     deadline = monotonic_seconds() + timeout
     callback = nothing
     while isnothing(callback) && active_auth(flow) && monotonic_seconds() < deadline
-        callback = acceptcallback(server, flow, attempt, deadline)
+        callback = received_auth_callback(flow)
+        if isnothing(callback)
+            callback = acceptcallback(server, flow, attempt, deadline)
+        end
+        if !isnothing(callback)
+            callback = claim_auth_callback!(flow, callback)
+        end
     end
     isnothing(callback) ? rejectedcallback("Sign-in cancelled or timed out.") : callback
 end
 
-function acceptcallback(server, flow, attempt, deadline)
+function acceptcallback(server, flow::AuthFlow, attempt, deadline)
     connection = Threads.@spawn accept(server)
-    while !istaskdone(connection) && active_auth(flow) && monotonic_seconds() < deadline
+    while !istaskdone(connection) && active_auth(flow) && monotonic_seconds() < deadline && isnothing(received_auth_callback(flow))
         sleep(0.05)
     end
-    if !istaskdone(connection)
+    submitted = received_auth_callback(flow)
+    if !isnothing(submitted)
+        close(server)
+        wait(connection; throw=false)
+        if !istaskfailed(connection)
+            close(fetch(connection))
+        end
+        submitted
+    elseif !istaskdone(connection)
         close(server)
         wait(connection; throw=false)
         rejectedcallback("Sign-in cancelled or timed out.")
@@ -198,6 +231,8 @@ function acceptcallback(server, flow, attempt, deadline)
             close(fetch(connection))
         end
         rejectedcallback("Sign-in cancelled or timed out.")
+    elseif istaskfailed(connection)
+        rejectedcallback("Sign-in listener closed.")
     else
         readcallback(fetch(connection), flow, attempt, deadline)
     end
@@ -207,10 +242,10 @@ function readcallback(client, flow, attempt, deadline)
     ownership = own_resource!(flow.context, client)
     reader = Threads.@spawn read_request_line(client)
     deadline = min(deadline, monotonic_seconds() + 5)
-    while !istaskdone(reader) && active_auth(flow) && monotonic_seconds() < deadline
+    while !istaskdone(reader) && active_auth(flow) && monotonic_seconds() < deadline && isnothing(received_auth_callback(flow))
         sleep(0.02)
     end
-    if !istaskdone(reader) || !active_auth(flow) || monotonic_seconds() >= deadline
+    if !istaskdone(reader) || !active_auth(flow) || monotonic_seconds() >= deadline || !isnothing(received_auth_callback(flow))
         release!(ownership)
         wait(reader; throw=false)
         nothing

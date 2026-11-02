@@ -8,3 +8,8 @@ lcov.info
 # Python tooling
 __pycache__/
 *.pyc
+
+# Explicitly compiled native terminal job-control artifact
+deps/usr/
+
+/parity/node_modules/

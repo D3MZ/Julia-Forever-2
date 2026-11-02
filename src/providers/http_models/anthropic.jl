@@ -1,31 +1,64 @@
 struct AnthropicMessagesProtocol end
+model_image_payload(::AnthropicMessagesProtocol,payload,policy::ModelImagePolicy=model_image_policy())=model_image_payload(Val(:anthropic),payload,policy)
 model_endpoint(::AnthropicMessagesProtocol, endpoint, model) = endpoint * "/v1/messages?beta=true"
 model_protocol_headers(::AnthropicMessagesProtocol) = ["anthropic-version" => "2023-06-01"]
 
 function anthropic_wire_message(message::Message)
     role = message.role == :assistant ? "assistant" : "user"
-    content = wire_content(message)
+    content = inline_wire_content(Val(:anthropic), message)
     return Dict{String,Any}("role" => role,
         "content" => role == "assistant" ? [Dict("type" => "text", "text" => content)] : content)
 end
-anthropic_wire_message(message::AbstractDict) = deepcopy(message)
+function anthropic_wire_message(message::AbstractDict)
+    wire=Dict{String,Any}("role"=>message["role"],"content"=>deepcopy(message["content"]))
+    haskey(message,"output_config") && (wire["output_config"]=deepcopy(message["output_config"]))
+    wire
+end
+
+anthropic_sendable(message) = true
+function anthropic_sendable(message::Message)
+    if isnothing(message_inline_content(message))
+        !isempty(strip(wire_content(message)))
+    else
+        inline_message_valid(message) || error("Invalid native inline message")
+        any(block -> block isa InlineImage || block isa InlineText && !isempty(strip(block.text)), inline_sendable_blocks(message))
+    end
+end
 
 function model_payload(::AnthropicMessagesProtocol, model::ModelSpec, request::ModelRequest, options)
-    messages = [anthropic_wire_message(message) for message in request.messages
-        if !(message isa Message) || !isempty(strip(wire_content(message)))]
+    messages = anthropic_context_messages(model,request,options)
     payload = Dict{String,Any}("model" => model.id, "messages" => messages,
         "max_tokens" => get(options, "maxTokens", get(model_metadata(model), "maxTokens", 4096)), "stream" => true)
     if !isempty(request.instructions)
         payload["system"] = [Dict("type" => "text", "text" => request.instructions)]
     end
     for (option, wire) in (("temperature", "temperature"), ("tools", "tools"),
-            ("toolChoice", "tool_choice"), ("thinking", "thinking"))
+            ("toolChoice", "tool_choice"), ("thinking", "thinking"), ("outputConfig", "output_config"))
         haskey(options, option) && (payload[wire] = deepcopy(options[option]))
     end
+    anthropic_managed_payload!(payload,model,options)
     return payload
 end
 
+"""Retain observed Anthropic counters across deltas without filling absent fields with initialized zero."""
+function anthropic_metered_usage!(state::ModelStreamState,raw::AbstractDict;initial=false)
+    initial && (state.metering=ModelUsageMeter())
+    meter=state.metering
+    for (source,field) in (("input_tokens",:input),("output_tokens",:output),
+            ("cache_read_input_tokens",:cache_read),("cache_creation_input_tokens",:cache_write))
+        if haskey(raw,source)
+            setfield!(meter,field,usage_tokens(raw[source]))
+        end
+    end
+    cache=get(raw,"cache_creation",nothing)
+    if cache isa AbstractDict && haskey(cache,"ephemeral_1h_input_tokens")
+        meter.cache_write_1h=usage_tokens(cache["ephemeral_1h_input_tokens"])
+    end
+    nothing
+end
+
 function anthropic_model_usage!(state::ModelStreamState, raw::AbstractDict; initial=false)
+    anthropic_metered_usage!(state,raw;initial)
     usage = state.message["usage"]
     for (source, target) in (("input_tokens", "input"), ("output_tokens", "output"),
             ("cache_read_input_tokens", "cacheRead"), ("cache_creation_input_tokens", "cacheWrite"))
@@ -74,7 +107,7 @@ function insertblock!(state::ModelStreamState, key, block::AbstractDict)
     index = length(state.message["content"])
     state.blocks[key] = index
     if block["type"] == "toolCall"
-        state.arguments[index] = ""
+        state.arguments[index] = IOBuffer()
         model_event!(state, "toolcall_start"; contentIndex=index - 1)
     else
         model_event!(state, string(block["type"], "_start"); contentIndex=index - 1)
@@ -94,16 +127,18 @@ function appenddelta!(state::ModelStreamState, index, delta)
     kind = delta["type"]
     if kind == "text_delta" || kind == "thinking_delta"
         field = kind == "text_delta" ? "text" : "thinking"
-        block[field] *= delta[field]
+        buffer = get!(state.text_buffers, index) do
+            output = IOBuffer()
+            write(output, block[field])
+            output
+        end
+        write(buffer, delta[field])
         model_event!(state, kind; contentIndex=index - 1, delta=delta[field])
     elseif kind == "signature_delta"
         block["thinkingSignature"] = get(block, "thinkingSignature", "") * delta["signature"]
     elseif kind == "input_json_delta"
-        state.arguments[index] *= delta["partial_json"]
-        if possible_tool_object(state.arguments[index])
-            arguments = parse_json(state.arguments[index])
-            arguments isa AbstractDict && (block["arguments"] = arguments)
-        end
+        arguments = append_model_tool_arguments!(state, index, delta["partial_json"])
+        arguments isa AbstractDict && (block["arguments"] = arguments)
         model_event!(state, "toolcall_delta"; contentIndex=index - 1, delta=delta["partial_json"])
     end
     return nothing

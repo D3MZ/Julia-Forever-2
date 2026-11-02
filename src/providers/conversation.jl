@@ -1,9 +1,11 @@
 using JSON
 
 wire_metadata(metadata) = metadata
+wire_metadata(metadata::ProviderMessageMetadata) = wire_metadata(metadata.original)
 wire_metadata(result::ExecutionResult) = (ok=result.ok,)
 
 function wire_content(message)
+    isnothing(message_inline_content(message)) || error("This provider requires a native inline-content adapter")
     metadata = wire_metadata(message.metadata)
     if message.kind == :text && message.role != :code_result && isnothing(metadata)
         message.content
@@ -12,11 +14,11 @@ function wire_content(message)
         JSON.json((kind, content=message.content, metadata))
     end
 end
-function conversation_messages(messages, instructions; system_role="system")
+function conversation_messages(messages, instructions; system_role="system", format=Val(:openai_chat))
     result = Dict{String,Any}[Dict("role" => system_role, "content" => instructions)]
     for message in messages
         role = message.role == :code_result ? "user" : string(message.role)
-        push!(result, Dict("role" => role, "content" => wire_content(message)))
+        push!(result, Dict("role" => role, "content" => inline_wire_content(format, message)))
     end
     return result
 end

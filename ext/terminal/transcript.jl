@@ -20,13 +20,11 @@ function wrap_printable_ascii_line(line::Union{String,SubString{String}}, width:
     return lines
 end
 
-function wrap_conversation_line(line::AbstractString, width::Int)
-    if line isa Union{String,SubString{String}} && all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
-        wrap_printable_ascii_line(line, width)
-    else
-        wrapgraphemes(line, width)
-    end
-end
+printable_ascii(::AbstractString) = false
+printable_ascii(line::Union{String,SubString{String}}) = all(byte -> 0x20 <= byte <= 0x7e, codeunits(line))
+
+wrap_conversation_line(line::AbstractString, width::Int) = wrapgraphemes(line, width)
+wrap_conversation_line(line::Union{String,SubString{String}}, width::Int) = printable_ascii(line) ? wrap_printable_ascii_line(line, width) : wrapgraphemes(line, width)
 
 function wrapgraphemes(line::AbstractString, width)
     graphemes = Base.Unicode.graphemes(line)
@@ -74,8 +72,7 @@ function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     columns = 0
     for span in spans
         content = span.content
-        if content isa Union{String,SubString{String}} &&
-                all(byte -> 0x20 <= byte <= 0x7e, codeunits(content))
+        if printable_ascii(content)
             # Printable ASCII graphemes each occupy one byte and one column.
             # Preserve boundaries and styles when a span crosses display lines.
             index = 1
@@ -111,17 +108,8 @@ function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     return lines
 end
 
-function markdown_lines(content::AbstractString, width::Int)
-    heading = Tachikoma.Style(; fg=Tachikoma.ColorRGB(205, 154, 34), bold=true)
-    bold = Tachikoma.Style(; fg=pi_style(:text).fg, bold=true)
-    emph = Tachikoma.Style(; fg=pi_style(:text).fg, italic=true)
-    code = Tachikoma.Style(; fg=Tachikoma.ColorRGB(104, 183, 141))
-    link = Tachikoma.Style(; fg=Tachikoma.ColorRGB(105, 173, 208), underline=true)
-    spans = Tachikoma.markdown_to_spans(content, width; h1_style=heading, h2_style=heading, h3_style=heading,
-        bold_style=bold, emph_style=emph, code_style=code, link_style=link,
-        quote_style=pi_style(:text_dim), text_style=pi_style(:text), hr_style=pi_style(:text_dim))
-    return [wrapped for line in spans for wrapped in wrap_markdown_spans(line, width)]
-end
+"""Use the same native block renderer for streaming previews and committed assistant messages."""
+markdown_lines(content::AbstractString,width::Int;kwargs...)=session_markdown_spans(content,width;kwargs...)
 
 function message_layout_key(messages, index)
     message = messages[index]
@@ -131,14 +119,14 @@ function message_layout_key(messages, index)
     return message, paired, continuation
 end
 
-function message_lines(messages, index, width)
+function message_lines(messages, index, width;mermaid_mode::Symbol=:off,is_streaming::Bool=false,mermaid_cache::Union{Nothing,MermaidRenderCache}=nothing)
     message, paired, continuation = message_layout_key(messages, index)
     code = message.role == :assistant && message.kind == :code
     style = message.role == :user ? :user_message : (message.role == :code_result || code) ? :code_result : :text
     lines = TranscriptLine[]
     style in (:user_message, :code_result) && !continuation && push!(lines, ("", style))
     if message.role == :assistant && !code
-        append!(lines, ((line, :markdown) for line in markdown_lines(message.content, max(1, width - 2))))
+        append!(lines, ((line, :markdown) for line in markdown_lines(message.content, max(1, width - 2);mermaid_mode,is_streaming,mermaid_cache)))
     else
         for line in split(message.content, '\n'; keepempty=true)
             append!(lines, ((chunk, style) for chunk in wrap_conversation_line(line, max(1, width - 2))))
@@ -187,7 +175,7 @@ function layout!(transcript::TranscriptState, layout::TranscriptLayout)
     count = length(transcript.chunks)
     for index in layout.first:length(layout.messages)
         reusable = !layout.resized && index <= length(transcript.messages) && index <= count && message_layout_key(transcript.messages, index) == message_layout_key(layout.messages, index)
-        lines = reusable ? transcript.chunks[index] : message_lines(layout.messages, index, layout.width)
+        lines = reusable ? transcript.chunks[index] : message_lines(layout.messages, index, layout.width;mermaid_mode=transcript.display.mermaid_mode,mermaid_cache=transcript.display.mermaid_cache)
         append!(transcript.lines, lines)
         if index <= count
             transcript.chunks[index] = lines
@@ -206,8 +194,11 @@ function layout!(transcript::TranscriptState, layout::TranscriptLayout)
 end
 """Discard transient output without changing committed conversation history."""
 function clear_preview!(app::App)
+    capture_cancelled_preview!(app)
+    frontend_notice_commit_preview!(app)
     transcript = app.transcript
     transcript.preview = nothing
+    transcript.preview_owner = nothing
     transcript.preview_operation_id = UInt64(0)
     transcript.preview_dirty = false
     empty!(transcript.preview_lines)
@@ -224,6 +215,7 @@ response_progress_received!(app::App, value) = nothing
 
 function response_progress_received!(app::App, value::NamedTuple{(:operation_id, :progress),Tuple{UInt64,ResponseProgress}})
     if active_operation(app, value.operation_id) && value.progress.kind in (:answer, :code)
+        remember_preview_ownership!(app,value.operation_id)
         preview!(app.transcript, value.progress, value.operation_id)
     end
     nothing
@@ -258,7 +250,7 @@ function preview_lines!(app::App, width::Int)
     if !isnothing(progress) && (transcript.preview_dirty || transcript.preview_width != width)
         messages = Message[Message(:assistant, progress.text, progress.kind)]
         empty!(transcript.preview_lines)
-        append!(transcript.preview_lines, message_lines(messages, 1, width))
+        append!(transcript.preview_lines, message_lines(messages, 1, width;mermaid_mode=transcript.display.mermaid_mode,is_streaming=true,mermaid_cache=transcript.display.mermaid_cache))
         transcript.preview_width = width
         transcript.preview_dirty = false
     end

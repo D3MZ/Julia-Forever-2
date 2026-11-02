@@ -56,7 +56,7 @@ function authorization_url(::Val{:chatgpt}, attempt::OAuthAttempt)
     return OPENAI_ISSUER * "/api/accounts/authorize?" * query_string(params)
 end
 
-valid_authorization_client(::Val{:chatgpt}, attempt, client) = !isempty(client) && client != "dynamic_agent_client" && (isempty(attempt.client_id) || client == attempt.client_id)
+valid_authorization_client(::Val{:chatgpt}, attempt, client) = !isempty(client) && !any(c -> isspace(c) || iscntrl(c), client) && client != "dynamic_agent_client" && (isempty(attempt.client_id) || client == attempt.client_id)
 function authorization_registration(::Val{:chatgpt}, dir)
     saved = load_credentials(dir, :chatgpt)
     registration = isnothing(saved) ? load_credentials(dir, :chatgpt_pending) : saved
