@@ -248,18 +248,20 @@ end
 
 """Normalize Kitty and modifyOtherKeys controls while rejecting functional private-use text."""
 function chat_key_packet(data::AbstractString)
-    kitty=match(r"^\e\[([0-9]+)(?::([0-9]*))?(?::([0-9]+))?(?:;([0-9]+))?(?::([0-9]+))?u$",data)
+    kitty=native_kitty_packet(data)
     other=match(r"^\e\[27;([0-9]+);([0-9]+)~$",data)
     if isnothing(kitty) && isnothing(other)
         (action=get(CHAT_EDITOR_KEYS,String(data),:none),printable=nothing)
     else
         code=chat_parseint(isnothing(kitty) ? other.captures[2] : kitty.captures[1])
-        mod=chat_parseint(isnothing(kitty) ? other.captures[1] : something(kitty.captures[4],"1"))
+        mod=isnothing(kitty) ? chat_parseint(other.captures[1]) : native_binding_number(kitty.captures[4],1)
         modifier=isnothing(mod) ? -1 : (mod-1)&~192
         shifted=isnothing(kitty) || isnothing(kitty.captures[2]) || isempty(kitty.captures[2]) ? nothing : chat_parseint(kitty.captures[2])
         effective=modifier==1 && !isnothing(shifted) ? shifted : code
         action=:none;printable=nothing
-        if !isnothing(code)
+        if !isnothing(kitty) && kitty.captures[5]=="3"
+            action=:release
+        elseif !isnothing(code)
             if modifier==4 && (97<=code<=122 || 65<=code<=90)
                 action=get(CHAT_EDITOR_KEYS,string(Char(code-(code<=90 ? 64 : 96))),:none)
             elseif modifier==4 && code==45
@@ -277,6 +279,10 @@ function chat_key_packet(data::AbstractString)
             elseif modifier in (0,1) && !isnothing(effective) && 32<=effective<=0x10ffff && !(57344<=effective<=63743) && !(0xd800<=effective<=0xdfff)
                 printable=string(Char(effective))
             end
+        end
+        if action==:none && native_kitty_text_modifier(modifier)
+            associated=native_kitty_text(kitty)
+            !isnothing(associated) && (printable=associated)
         end
         (;action,printable)
     end

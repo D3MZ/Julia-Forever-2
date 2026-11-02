@@ -1,3 +1,5 @@
+import SHA
+
 """An owned, replaceable interface to independent Julia sessions and their durable state."""
 mutable struct SessionAPI{F,S,Q,T,W}
     factory::F
@@ -318,13 +320,99 @@ function api_workspace_session_move!(api::SessionAPI, params::AbstractDict)
     end
 end
 
+
+"""Build a complete, replaceable navigation projection from registered workspaces and sessions."""
+function workspace_navigation_state(registry, api::SessionAPI)
+    workspaces = workspace_snapshot(registry)
+    groups = api_session_workspace_groups(api, Dict{String,Any}())
+    saved = isnothing(api.store) ? Dict{String,Any}[] :
+        api_saved_session_list(api, Dict{String,Any}("archived" => false))
+    archived = isnothing(api.store) ? Dict{String,Any}[] :
+        api_saved_session_list(api, Dict{String,Any}("archived" => true))
+    pinned = isnothing(api.store) ? String[] :
+        api_pinned_session_list(api, Dict{String,Any}())
+    parts = (workspaces, groups, saved, archived, pinned)
+    failed = findfirst(value -> value isa RpcError, parts)
+    if !isnothing(failed)
+        parts[failed]
+    else
+        Dict{String,Any}("revision" => workspaces["revision"],
+            "workspaces" => workspaces["workspaces"], "groups" => groups,
+            "saved" => saved, "archived" => archived, "pinned" => pinned)
+    end
+end
+
+"""Canonicalize dictionary keys before hashing observable navigation content."""
+workspace_state_canonical(value::AbstractDict) =
+    Any["object", [Any[string(key), workspace_state_canonical(value[key])]
+        for key in sort!(collect(keys(value)); by=string)]]
+workspace_state_canonical(value::AbstractVector) =
+    Any["array", workspace_state_canonical.(value)]
+workspace_state_canonical(value) = Any["value", value]
+
+workspace_state_version(snapshot) =
+    bytes2hex(SHA.sha256(JSON.json(workspace_state_canonical(snapshot))))
+
+"""Resolve the active registry through dispatch; custom registry types can replace the projection."""
+function workspace_state_snapshot(api::SessionAPI)
+    registry = api_workspace_registry(api)
+    registry isa RpcError ? registry : workspace_navigation_state(registry, api)
+end
+
+"""Observe changes to workspace navigation, including archived and pinned saved sessions.
+
+This is a bounded, eventually consistent snapshot observation, not a durable
+event stream or an atomic transaction spanning independent session stores.
+"""
+function workspace_state_observe(api::SessionAPI, snapshot::AbstractDict, requested, wait_ms::Int)
+    version = workspace_state_version(snapshot)
+    if !isnothing(requested) && requested == version && wait_ms > 0
+        deadline = time_ns() + UInt64(wait_ms) * UInt64(1_000_000)
+        current = time_ns()
+        while requested == version && current < deadline && snapshot isa AbstractDict
+            sleep(min(0.25, Float64(deadline - current) / 1_000_000_000))
+            snapshot = workspace_state_snapshot(api)
+            if snapshot isa AbstractDict
+                version = workspace_state_version(snapshot)
+            end
+            current = time_ns()
+        end
+    end
+    if snapshot isa RpcError
+        snapshot
+    elseif !isnothing(requested) && requested == version
+        Dict("type" => "unchanged", "version" => version)
+    else
+        Dict("type" => "replace", "version" => version, "snapshot" => snapshot)
+    end
+end
+
+"""Expose an opaque versioned navigation snapshot for local Julia or authorized Web consumers."""
+function api_workspace_state(api::SessionAPI, params::AbstractDict)
+    requested = get(params, "ifVersion", nothing)
+    wait_ms = get(params, "waitMs", 0)
+    if !(isnothing(requested) || (requested isa AbstractString &&
+            occursin(r"\A[0-9a-f]{64}\z", requested)))
+        RpcError(-32602, "Workspace state version must be a SHA-256 hex string")
+    elseif !(wait_ms isa Integer && !(wait_ms isa Bool) && 0 <= wait_ms <= 10_000)
+        RpcError(-32602, "Workspace waitMs must be an integer from 0 to 10000")
+    else
+        snapshot = workspace_state_snapshot(api)
+        snapshot isa RpcError ? snapshot :
+            workspace_state_observe(api, snapshot, requested, Int(wait_ms))
+    end
+end
+
 function api_workspace_feed(api::SessionAPI, params::AbstractDict)
     since = get(params, "since", nothing)
-    if isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0)
-        registry = api_workspace_registry(api)
-        registry isa RpcError ? registry : workspace_changes(registry; since)
-    else
+    wait_ms = get(params, "waitMs", 0)
+    if !(isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0))
         RpcError(-32602, "Workspace cursor must be a nonnegative integer")
+    elseif !(wait_ms isa Integer && !(wait_ms isa Bool) && 0 <= wait_ms <= 10_000)
+        RpcError(-32602, "Workspace waitMs must be an integer from 0 to 10000")
+    else
+        registry = api_workspace_registry(api)
+        registry isa RpcError ? registry : workspace_wait_changes(registry; since, wait_ms)
     end
 end
 
@@ -692,6 +780,7 @@ const SESSION_OPERATIONS = Dict(
     "workspace/move" => api_workspace_move!,
     "workspace/session/move" => api_workspace_session_move!,
     "workspace/feed" => api_workspace_feed,
+    "workspace/state" => api_workspace_state,
     "session/archive" => (api, params) -> api_set_saved_archive!(api, params, true),
     "session/unarchive" => (api, params) -> api_set_saved_archive!(api, params, false),
     "session/pin" => (api, params) -> api_set_saved_pin!(api, params, true),

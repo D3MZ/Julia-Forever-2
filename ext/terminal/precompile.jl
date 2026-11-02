@@ -10,6 +10,8 @@ using PrecompileTools: @compile_workload
     precompile(Tuple{typeof(Base.bytesavailable),ThemeTerminalInput{Base.TTY,
         ThemeLifecycle{PresentationIO,typeof(native_theme_timer),typeof(native_theme_cancel)},typeof(time)}})
     # Infer real first-key entry points without executing tasks, timers, hooks or I/O.
+    precompile(Tuple{typeof(Tachikoma.dispatch_event!),Tachikoma.Terminal,Tachikoma.AppOverlay,App,KeyEvent,Bool})
+    precompile(Tuple{typeof(menu_page_items),App,Val{:settings}})
     precompile(Tuple{typeof(default_input!),App,KeyEvent})
     precompile(Tuple{typeof(chat_host_packet!),App,String})
     precompile(Tuple{typeof(chat_editor_input!),ChatEditorState,String})

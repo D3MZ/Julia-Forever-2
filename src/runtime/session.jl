@@ -128,13 +128,8 @@ end
 Base.propertynames(session::Session, private::Bool=false) = (fieldnames(typeof(session))..., CONVERSATION_PROPERTIES..., RUNTIME_PROPERTIES..., :scope, :output)
 
 """Commit an optional durable journal before changing visible session history."""
-function journal_history!(session::Session, operation::Symbol, arguments...)
-    journal = component(session.kernel, :history_journals)
-    if journal isa HistoryJournals
-        Base.invokelatest(journal, session, operation, arguments...)
-    end
-    nothing
-end
+journal_history!(journal, session::Session, operation::Symbol, arguments...) = nothing
+journal_history!(session::Session, operation::Symbol, arguments...) = journal_history!(component(session.kernel, :history_journals), session, operation, arguments...)
 
 function append_message!(session::Session, message)
     lock(session.conversation.lock) do

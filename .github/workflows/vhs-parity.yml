@@ -3,8 +3,6 @@ name: Scheduled VHS terminal evidence
 # Screenshots are reviewed by the separate scheduled parity agent.
 # They are not required PR checks or automatic proof of Pi parity.
 on:
-  schedule:
-    - cron: '43 */6 * * *'
   workflow_dispatch:
 
 permissions:

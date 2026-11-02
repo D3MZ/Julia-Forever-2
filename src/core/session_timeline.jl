@@ -408,18 +408,19 @@ function timeline_labels(entries)
 end
 
 function timeline_label_order(entries)
-    order = String[]
-    for entry in entries
+    # Track first active positions directly, retaining removal/reactivation ordering.
+    active = Dict{String,Int}()
+    for (index, entry) in enumerate(entries)
         if entry["type"] == "label"
             target, label = String(entry["targetId"]), get(entry, "label", nothing)
             if isnothing(label) || isempty(label)
-                filter!(!=(target), order)
-            elseif !(target in order)
-                push!(order, target)
+                delete!(active, target)
+            elseif !haskey(active, target)
+                active[target] = index
             end
         end
     end
-    order
+    sort!(collect(keys(active)); by=target -> active[target])
 end
 
 function timeline_label(timeline::SessionTimeline, target::AbstractString)
