@@ -334,7 +334,7 @@ function workspace_navigation_state(registry, api::SessionAPI)
     parts = (workspaces, groups, saved, archived, pinned)
     failed = findfirst(value -> value isa RpcError, parts)
     if !isnothing(failed)
-        parts[failed]
+        parts[failed]::RpcError
     else
         Dict{String,Any}("revision" => workspaces["revision"],
             "workspaces" => workspaces["workspaces"], "groups" => groups,
