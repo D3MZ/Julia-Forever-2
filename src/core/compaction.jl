@@ -46,7 +46,7 @@ end
 
 """Byte-based estimate; providers may use different tokenization rules."""
 estimated_tokens(text::AbstractString) = cld(ncodeunits(text), 4)
-estimated_tokens(message::Message) = estimated_tokens(message.content)
+estimated_tokens(message::Message) = inline_estimated_tokens(message)
 
 function context_token_estimate(session::Session, provider)
     messages = context_messages(session)
@@ -131,7 +131,7 @@ end
 """Request a summary with the current provider, without executing model-generated code."""
 function model_summary!(session::Session, provider, messages::AbstractVector{<:Message}, context::ExecutionContext,
         instructions::AbstractString)
-    transcript = join(["[" * string(message.role) * "] " * message.content
+    transcript = join(["[" * string(message.role) * "] " * summary_message_text(message)
         for message in messages], "\n\n")::String
     base = model_request(operation_protocol(session.definition, provider),
         [Message(:user, transcript)], session)

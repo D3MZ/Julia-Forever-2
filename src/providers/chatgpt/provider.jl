@@ -30,7 +30,7 @@ OpenAIProvider(dir::String,model::String,transport,auth_transport,policy,catalog
 
 """Construct the subscription request without changing authentication or transport."""
 function chatgpt_request_payload(provider::OpenAIProvider,request::ModelRequest,model::AbstractString)
-    conversation=conversation_messages(request.messages,request.instructions;system_role="developer")
+    conversation=conversation_messages(request.messages,request.instructions;system_role="developer",format=Val(:responses))
     payload=Dict{String,Any}("model"=>model,"input"=>conversation,"store"=>false,"stream"=>true,"text"=>Dict("format"=>request.response_format))
     reasoning=provider.reasoning
     if !isnothing(reasoning)

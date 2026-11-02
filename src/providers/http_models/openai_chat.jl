@@ -8,7 +8,7 @@ model_endpoint(::OpenAIChatProtocol, endpoint, model) = endpoint * "/chat/comple
 
 function openai_wire_message(message::Message)
     return Dict{String,Any}("role" => (message.role == :code_result ? "user" : string(message.role)),
-        "content" => wire_content(message))
+        "content" => inline_wire_content(Val(:openai_chat), message))
 end
 openai_wire_message(message::AbstractDict) = deepcopy(message)
 

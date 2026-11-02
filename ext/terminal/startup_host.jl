@@ -1,12 +1,8 @@
 """Advertise only implemented host bindings, preserving absent suspend and clipboard capabilities."""
 function startup_host_bindings(app::App)
-    Dict("app.interrupt"=>"escape","app.clear"=>"ctrl+c","app.exit"=>"ctrl+d",
-        "app.editor.external"=>"ctrl+g","tui.editor.deleteToLineEnd"=>"ctrl+k",
-        "app.thinking.cycle"=>"shift+tab","app.model.cycleForward"=>"ctrl+p",
-        "app.model.cycleBackward"=>"shift+ctrl+p","app.model.select"=>"ctrl+l",
-        "app.tools.expand"=>"ctrl+o","app.thinking.toggle"=>"ctrl+t",
-        "app.message.followUp"=>(Sys.iswindows() ? "alt+enter/ctrl+q" : "alt+enter"),
-        "app.message.dequeue"=>(Sys.iswindows() ? "alt+up/alt+q" : "alt+up"))
+    bindings=native_app_keybinding_labels(app)
+    bindings["tui.editor.deleteToLineEnd"]="ctrl+k"
+    bindings
 end
 
 """Resolve factual repository location outside rendering, never from a guessed directory suffix."""

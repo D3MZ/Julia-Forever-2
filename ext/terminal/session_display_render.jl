@@ -12,7 +12,13 @@ Base.@kwdef mutable struct SessionDisplayState
     retry_attempt::Int = 0
     mermaid_mode::Symbol = :streaming
     mermaid_cache::MermaidRenderCache = MermaidRenderCache()
+    expand_key::String = "ctrl+o"
 end
+
+"""Preserve the previous positional display-state constructor while adding an independent key hint."""
+SessionDisplayState(expanded::Set{String},collapsed::Set{String},expand_all::Bool,hide_thinking::Bool,hidden_thinking_label::String,
+    show_usage::Bool,output_padding::Int,retry_attempt::Int,mermaid_mode::Symbol,mermaid_cache::MermaidRenderCache)=
+    SessionDisplayState(;expanded,collapsed,expand_all,hide_thinking,hidden_thinking_label,show_usage,output_padding,retry_attempt,mermaid_mode,mermaid_cache)
 
 const SessionDisplayRows = Vector{Vector{Tachikoma.Span}}
 
@@ -277,7 +283,7 @@ function session_display_summary(message::AbstractDict,id::AbstractString,width:
         isempty(message["summary"]) || append!(body,session_display_markdown(session_display_string(message["summary"]),width,state.output_padding;kind=:muted,bg))
     else
         label=compact ? title : "Branch summary"
-        spans=[Tachikoma.Span(label*" (",session_display_style(:muted)),Tachikoma.Span("ctrl+o",session_display_style(:dim)),Tachikoma.Span(" to expand)",session_display_style(:muted))]
+        spans=[Tachikoma.Span(label*" (",session_display_style(:muted)),Tachikoma.Span(state.expand_key,session_display_style(:dim)),Tachikoma.Span(" to expand)",session_display_style(:muted))]
         append!(body,session_display_wrap(spans,width,state.output_padding;bg))
     end
     session_display_box(compact ? "[compaction]" : "[branch]",body,width,state)
@@ -314,7 +320,7 @@ function session_display_bash(message::AbstractDict,id::AbstractString,width::In
     if !running && hidden>0
         label=expanded ? "(" : "... $(hidden) more lines ("
         verb=expanded ? "to collapse" : "to expand"
-        push!(statuses,[Tachikoma.Span(label,session_display_style(:muted)),Tachikoma.Span("ctrl+o",session_display_style(:dim)),Tachikoma.Span(" "*verb*")",session_display_style(:muted))])
+        push!(statuses,[Tachikoma.Span(label,session_display_style(:muted)),Tachikoma.Span(state.expand_key,session_display_style(:dim)),Tachikoma.Span(" "*verb*")",session_display_style(:muted))])
     end
     if !running && get(message,"cancelled",false) === true
         push!(statuses,[Tachikoma.Span("(cancelled)",session_display_style(:warning))])

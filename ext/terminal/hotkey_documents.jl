@@ -23,8 +23,8 @@ const COMMAND_HOTKEY_GROUPS=(
         (["app.clipboard.pasteImage"],"Paste files on macOS, images, or text from clipboard"),
         (["command.slash"],"Slash commands"),(["command.bash"],"Run bash command"),(["command.bashExcluded"],"Run bash command (excluded from context)")]))
 
-function command_key_label(keys::AbstractString;macos::Bool=Sys.isapple())
-    join((join((uppercasefirst(macos && lowercase(part)=="alt" ? "option" : part) for part in split(key,'+';keepempty=true)),"+") for key in split(keys,'/';keepempty=true)),"/")
+function command_key_label(keys::AbstractString;macos::Bool=Sys.isapple(),capitalize::Bool=true)
+    join((join(((capitalize ? uppercasefirst : identity)(macos && lowercase(part)=="alt" ? "option" : part) for part in split(key,'+';keepempty=true)),"+") for key in split(keys,'/';keepempty=true)),"/")
 end
 command_hotkey_safe(value::AbstractString)=replace(session_display_safe(value),'\n'=>" ",'|'=>"\\|",'`'=>"'")
 
@@ -37,7 +37,7 @@ function command_hotkeys_markdown(bindings::AbstractDict;extensions=Pair{String,
             keys=String[]
             for action in actions
                 value=get(bindings,action,nothing)
-                push!(keys,value isa AbstractString && !isempty(value) ? "`"*command_hotkey_safe(command_key_label(value;macos))*"`" : "Unavailable")
+                push!(keys,value isa AbstractString ? ("`"*command_hotkey_safe(command_key_label(value;macos))*"`") : "Unavailable")
             end
             suffix=windows && actions==["tui.input.newLine"] ? " (Ctrl+Enter on Windows Terminal)" : ""
             push!(lines,"| "*join(keys," / ")*" | "*description*suffix*" |")
@@ -83,14 +83,13 @@ end
 
 """Project the live host registry; unavailable future integrations are not advertised as active."""
 function command_installed_bindings(app::App)
-    bindings=Dict{String,String}("command.slash"=>"/","tui.input.submit"=>"enter")
+    bindings=Dict{String,String}("command.slash"=>"/","tui.input.submit"=>"enter",
+        "tui.input.tab"=>"tab","command.bash"=>"!","command.bashExcluded"=>"!!")
     if isdefined(@__MODULE__,:startup_host_bindings)
         merge!(bindings,startup_host_bindings(app))
     end
     if isdefined(@__MODULE__,:chat_host_packet!)
         merge!(bindings,command_editor_bindings())
-        bindings["app.clear"]="ctrl+c"
-        bindings["app.exit"]="ctrl+d"
     end
     bindings
 end

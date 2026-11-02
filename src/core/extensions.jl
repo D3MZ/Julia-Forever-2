@@ -25,6 +25,8 @@ ToolSpec(name::Symbol, schema, callback, description::String, output_schema, con
     ToolSpec(name, schema, callback, description, output_schema, concurrency_policy, nothing, nothing)
 ToolSpec(name::Symbol, schema, callback, description::String, output_schema, concurrency_policy, renderer) =
     ToolSpec(name, schema, callback, description, output_schema, concurrency_policy, renderer, nothing)
+ToolSpec{S,F,O,P,R}(name, schema, callback, description, output_schema, concurrency_policy, renderer) where {S,F,O,P,R} =
+    ToolSpec{S,F,O,P,R,Nothing}(name, schema, callback, description, output_schema, concurrency_policy, renderer, nothing)
 ToolSpec(name, callback; schema=(type="object",), description="", output_schema=nothing,
         concurrency_safe=false, render_output=nothing, when=nothing) =
     ToolSpec(name, schema, callback; description, output_schema, concurrency_safe, render_output, when)
@@ -587,7 +589,10 @@ mutable struct ToolSet
     scope::ExtensionScope
     entries::Dict{Symbol,AbstractToolEntry}
     closed::Bool
+    origin::Union{Nothing,ExecutionContext}
 end
+
+ToolSet(scope, entries, closed) = ToolSet(scope, entries, closed, nothing)
 
 """Each activation decision sees one native scope, model selection and cancellation owner."""
 struct ToolActivationContext{M,C}
@@ -605,6 +610,7 @@ function Base.close(selection::ToolSet)
     lock(selection.scope.lock) do
         selection.closed = true
         empty!(selection.entries)
+        selection.origin = nothing
     end
     return nothing
 end
@@ -670,7 +676,7 @@ function activate_tools(invocations, activation::ToolActivationContext)
     elseif !isempty(reason)
         selection_failure(reason)
     else
-        (ok=true, reason="", tool_set=ToolSet(activation.scope, entries, false))
+        (ok=true, reason="", tool_set=ToolSet(activation.scope, entries, false, activation.execution))
     end
 end
 
@@ -687,7 +693,7 @@ end
 
 """Restrict an admission to its original scope and still-live registration identities."""
 function selected_tool_names(scope::ExtensionScope, visible, selection::ToolSet)
-    isopen(scope) && selection.scope === scope && !selection.closed ?
+    isopen(scope) && selection.scope === scope && !selection.closed && !cancelled(selection.origin) ?
         filter(name -> get(selection.entries, name, nothing) === visible.entries[name], visible.names) : Symbol[]
 end
 selected_tool_names(scope::ExtensionScope, visible, ::Nothing) = visible.names
@@ -699,7 +705,8 @@ function admitted_tool_entry(scope::ExtensionScope, name::Symbol, ::Nothing)
 end
 
 function admitted_tool_entry(scope::ExtensionScope, name::Symbol, selection::ToolSet)
-    entry = isopen(scope) && selection.scope === scope && !selection.closed ? visible_tool_entry(scope, name) : nothing
+    entry = isopen(scope) && selection.scope === scope && !selection.closed && !cancelled(selection.origin) ?
+        visible_tool_entry(scope, name) : nothing
     !isnothing(entry) && get(selection.entries, name, nothing) === entry ? entry : nothing
 end
 
@@ -888,6 +895,18 @@ function acquire_tool!(scope::ExtensionScope, name::Symbol; tool_set=nothing)
     end
 end
 
+selection_origin(::Nothing) = nothing
+selection_origin(selection::ToolSet) = selection.origin
+
+"""Capture selection authority with the exact acquired registration generation."""
+function acquire_tool_with_origin!(scope::ExtensionScope, name::Symbol, tool_set)
+    lock(scope.lock) do
+        invocation = acquire_tool!(scope, name; tool_set)
+        origin = isnothing(invocation) ? nothing : selection_origin(tool_set)
+        (invocation, origin)
+    end
+end
+
 function acquire!(entry::ToolEntry)
     invocation = retain!(entry)
     if !isnothing(invocation)
@@ -975,22 +994,22 @@ function validate(spec::ToolSpec, arguments, result::ExecutionResult)
     isempty(violations) ? present_tool_result(spec, arguments, result) : ExecutionResult(false, string("Invalid tool result: ", join(violations, "; ")))
 end
 """Evaluate admission and argument checks before starting the Julia-owned tool callback."""
-function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, arguments, context)
+function admitted_tool_result(invocation, guards, scope::ExtensionScope, call, arguments, context; origin=nothing)
     reason = first_tool_denial(guards, call, scope)
-    isnothing(reason) ? validate(invocation.listener.spec, call, arguments, context) : ExecutionResult(false, reason)
+    isnothing(reason) ? validate(invocation.listener.spec, call, arguments, context; origin) : ExecutionResult(false, reason)
 end
 
-function validate(spec::ToolSpec, call, arguments, context)
-    if cancelled(context)
+function validate(spec::ToolSpec, call, arguments, context; origin=nothing)
+    if cancelled(context) || cancelled(origin)
         ExecutionResult(false, "Tool call aborted before dispatch")
     else
         violations = tool_argument_violations(spec.schema, call.arguments)
-        isempty(violations) ? invoke(spec, call, arguments, context) : ExecutionResult(false, string(join(violations, "; ")))
+        isempty(violations) ? invoke(spec, call, arguments, context; origin) : ExecutionResult(false, string(join(violations, "; ")))
     end
 end
 
-function invoke(spec::ToolSpec, call, arguments, context)
-    if cancelled(context)
+function invoke(spec::ToolSpec, call, arguments, context; origin=nothing)
+    if cancelled(context) || cancelled(origin)
         ExecutionResult(false, "Tool call aborted before dispatch")
     else
         returned = event_value(Base.invokelatest(spec.call, arguments...))
@@ -999,28 +1018,28 @@ function invoke(spec::ToolSpec, call, arguments, context)
 end
 """Complete an admitted tool result using an independently replaceable Julia policy."""
 function complete_tool_result(scope::ExtensionScope, call, raw::ExecutionResult,
-        context, spec::ToolSpec, arguments)
+        context, spec::ToolSpec, arguments; origin=nothing)
     decision = Base.invokelatest(tool_completion_decision, scope, call, raw)
     settled = Base.invokelatest(apply_tool_completion, decision, raw, spec, arguments)
-    return cancelled(context) && settled.ok ?
+    return (cancelled(context) || cancelled(origin)) && settled.ok ?
         ExecutionResult(false, "Tool call aborted") : settled
 end
 
 """Invoke a tool only after inherited guards permit it; post-policy cannot revive a failure."""
 function invoke_tool!(scope::ExtensionScope, name::Symbol, arguments...; context=current_context(), tool_set=nothing)
-    invocation = acquire_tool!(scope, name; tool_set)
-    isnothing(invocation) ? ExecutionResult(false, "Unknown tool: $name") : invoke(scope, invocation, arguments, context)
+    invocation, origin = acquire_tool_with_origin!(scope, name, tool_set)
+    isnothing(invocation) ? ExecutionResult(false, "Unknown tool: $name") : invoke(scope, invocation, arguments, context; origin)
 end
 
-function invoke(scope::ExtensionScope, invocation::EventInvocation, arguments, context)
+function invoke(scope::ExtensionScope, invocation::EventInvocation, arguments, context; origin=nothing)
     guards = acquire_tool_guards(scope)
     worker = spawn_scoped() do
         call = ToolCall(invocation.listener.spec.name, length(arguments) == 1 ? first(arguments) : arguments)
-        if cancelled(context)
+        if cancelled(context) || cancelled(origin)
             ExecutionResult(false, "Tool call aborted before dispatch")
         else
-            raw = admitted_tool_result(invocation, guards, scope, call, arguments, context)
-            complete_tool_result(scope, call, raw, context, invocation.listener.spec, call.arguments)
+            raw = admitted_tool_result(invocation, guards, scope, call, arguments, context; origin)
+            complete_tool_result(scope, call, raw, context, invocation.listener.spec, call.arguments; origin)
         end
     end
     wait(worker; throw=false)
@@ -1030,7 +1049,8 @@ function invoke(scope::ExtensionScope, invocation::EventInvocation, arguments, c
     wait(tool_cleanup; throw=false)
     workers = (worker, guard_cleanup, tool_cleanup)
     failed = findfirst(istaskfailed, workers)
-    isnothing(failed) ? tool_result(fetch(worker)) : ExecutionResult(false, sprint(showerror, TaskFailedException(workers[failed])))
+    result = isnothing(failed) ? tool_result(fetch(worker)) : ExecutionResult(false, sprint(showerror, TaskFailedException(workers[failed])))
+    (cancelled(context) || cancelled(origin)) && result.ok ? ExecutionResult(false, "Tool call aborted") : result
 end
 struct ToolCall{A}
     name::Symbol
