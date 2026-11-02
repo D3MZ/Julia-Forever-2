@@ -53,7 +53,7 @@ function menu_snapshot(app::App; images::Bool=app.menus.images, models=nothing,
             flag("anthropic-extra-usage", "Anthropic extra usage")]),
     ])
     for node in nodes
-        reason=setting_unavailable_reason(Val(Symbol(node["id"])))
+        reason=setting_unavailable_reason(node["id"])
         if !isempty(reason)
             node["available"]=false
             node["reason"]=reason
@@ -272,7 +272,7 @@ menu_page_items(app::App, ::Val{:logout}) =
 
 """Keep declared but missing command families visible without opening an empty success-shaped menu."""
 menu_unavailable_reason(::Val)=""
-menu_unavailable_reason(::Val{:share})=setting_unavailable_reason(Val(Symbol("share-destination")))
+menu_unavailable_reason(::Val{:share})=setting_unavailable_reason("share-destination")
 
 function open_menu!(app::App,name::AbstractString;refresh=true,query="",login_reference="",auth_login=auth_menu_start_login!)
     reason=menu_unavailable_reason(Val(Symbol(name)))
