@@ -5,7 +5,7 @@ model_protocol_headers(::AnthropicMessagesProtocol) = ["anthropic-version" => "2
 
 function anthropic_wire_message(message::Message)
     role = message.role == :assistant ? "assistant" : "user"
-    content = wire_content(message)
+    content = inline_wire_content(Val(:anthropic), message)
     return Dict{String,Any}("role" => role,
         "content" => role == "assistant" ? [Dict("type" => "text", "text" => content)] : content)
 end
@@ -16,7 +16,14 @@ function anthropic_wire_message(message::AbstractDict)
 end
 
 anthropic_sendable(message) = true
-anthropic_sendable(message::Message) = !isempty(strip(wire_content(message)))
+function anthropic_sendable(message::Message)
+    if isnothing(message_inline_content(message))
+        !isempty(strip(wire_content(message)))
+    else
+        inline_message_valid(message) || error("Invalid native inline message")
+        any(block -> block isa InlineImage || block isa InlineText && !isempty(strip(block.text)), inline_sendable_blocks(message))
+    end
+end
 
 function model_payload(::AnthropicMessagesProtocol, model::ModelSpec, request::ModelRequest, options)
     messages = anthropic_context_messages(model,request,options)
