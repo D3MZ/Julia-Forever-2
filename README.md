@@ -2,4 +2,4 @@
 [![codecov](https://codecov.io/gh/D3MZ/Julia-Forever-2/graph/badge.svg?branch=main)](https://codecov.io/gh/D3MZ/Julia-Forever-2)
 [![Julia](https://img.shields.io/badge/Julia-1.13%2B%20%281.x%29-9558B2?logo=julia&logoColor=white)](Project.toml)
 
-![Hercules hourly Julia code history](https://raw.githubusercontent.com/D3MZ/Julia-Forever-2/b03ddc3173ae286f744e3788b6743611076a7fe4/assets/hercules-history.png)
+![Hercules hourly Julia code history](https://raw.githubusercontent.com/D3MZ/Julia-Forever-2/78f375c0bcbe7fb5adb3d11ab0bc1b39102c9373/assets/hercules-history.png)
