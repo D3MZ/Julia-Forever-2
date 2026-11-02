@@ -34,7 +34,7 @@ public working_directory, set_working_directory!, workspace_path
 public AgentDecision, agent_decision, action_content, action_kind, action_payload
 public BoundComponent, bind_component, bound_dependency, fork_kernel
 public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileStore, compose_profiles, save_profile!, load_profile, profile_names, ProfilePlan, profile_plan
-public Skill, SkillRegistry, SkillRegistration, FilesystemSkillRegistry, register_skill!, unregister_skill!, skill_catalog, skill_catalog_snapshot, load_skill, skill_registry_plugin, filesystem_skill_plugin, skill_request
+public Skill, SkillRegistry, SkillRegistration, FilesystemSkillRegistry, CompositeSkillRegistry, SkillSourceRegistration, register_skill!, unregister_skill!, register_skill_source!, unregister_skill_source!, skill_catalog, skill_catalog_snapshot, load_skill, skill_registry_plugin, filesystem_skill_plugin, composite_skill_plugin, skill_request
 public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
 public ToolSpec, ToolCall, ToolExecutor, ToolBatch, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!, invoke_tool_batch!, tool_concurrency_safe
@@ -69,6 +69,7 @@ include("core/plugins.jl")
 include("core/skills.jl")
 include("core/prompt_templates.jl")
 include("core/filesystem_skills.jl")
+include("core/composite_skills.jl")
 include("text/word_segmentation.jl")
 include("core/profile_store.jl")
 include("core/profile_inspection.jl")
