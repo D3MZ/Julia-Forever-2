@@ -81,10 +81,47 @@ function composite_skill_summary(entry)
     (valid=valid, name=Symbol(label), description=description)
 end
 
+"""Evaluate a third-party skill source without allowing its exception to abort other sources."""
+function observe_composite_skill_source(callback::Function, name::Symbol)
+    worker = Task(callback)
+    schedule(worker)
+    wait(worker; throw=false)
+    if istaskfailed(worker)
+        errors = Base.current_exceptions(worker)
+        reason = isempty(errors) ? "Unknown source failure" : sprint(showerror, last(errors).exception)
+        @warn "Skill source failed" source=name reason
+        (ok=false, value=nothing)
+    else
+        (ok=true, value=fetch(worker))
+    end
+end
+
+"""Normalize an unfiltered catalog before applying precedence across independent sources."""
+function composite_skill_unfiltered(source, workspace::AbstractString)
+    observed = skill_catalog_snapshot(source, workspace; audience=:all)
+    rows = NamedTuple{(:name, :description),Tuple{Symbol,String}}[]
+    complete = observed.complete
+    for entry in observed.skills
+        summary = composite_skill_summary(entry)
+        if !summary.valid
+            complete = false
+        else
+            push!(rows, (name=summary.name, description=summary.description))
+        end
+    end
+    (rows=rows, complete=complete)
+end
+
+"""Observe audience visibility separately so a failed lookup cannot reveal a masked skill."""
+function composite_skill_audience(source, workspace::AbstractString, audience::Symbol)
+    observed = skill_catalog_snapshot(source, workspace; audience)
+    (names=Set(Symbol(entry.name) for entry in observed.skills), complete=observed.complete)
+end
+
 """Merge sources by priority, masking duplicate names across both audiences.
 
-Each source implements skill_catalog_snapshot and load_skill, including audience=:all.
-Incomplete source catalogs retain usable entries and mark the merged view incomplete.
+Incomplete or failing sources retain usable unfiltered names when possible.
+If a visibility lookup fails, that source still masks lower-priority duplicates.
 """
 function skill_catalog_snapshot(registry::CompositeSkillRegistry,
         workspace::AbstractString=pwd(); audience::Symbol=:model)
@@ -93,27 +130,30 @@ function skill_catalog_snapshot(registry::CompositeSkillRegistry,
     seen = Set{Symbol}()
     complete = true
     for binding in snapshot.sources
-        all_entries = skill_catalog_snapshot(binding.source, workspace; audience=:all)
-        shown = audience === :all ? all_entries :
-            skill_catalog_snapshot(binding.source, workspace; audience)
-        complete &= all_entries.complete && shown.complete
-        visible = Set(Symbol(entry.name) for entry in shown.skills)
-        known = Set{Symbol}()
-        for entry in all_entries.skills
-            summary = composite_skill_summary(entry)
-            if !summary.valid
-                complete = false
-            else
-                push!(known, summary.name)
-                if !(summary.name in seen)
-                    push!(seen, summary.name)
-                    if summary.name in visible
-                        push!(rows, (name=summary.name, description=summary.description))
+        unfiltered = observe_composite_skill_source(binding.name) do
+            composite_skill_unfiltered(binding.source, workspace)
+        end
+        if !unfiltered.ok
+            complete = false
+        else
+            shown = observe_composite_skill_source(binding.name) do
+                audience === :all ?
+                    (names=Set(entry.name for entry in unfiltered.value.rows), complete=true) :
+                    composite_skill_audience(binding.source, workspace, audience)
+            end
+            visible = shown.ok ? shown.value.names : Set{Symbol}()
+            known = Set(entry.name for entry in unfiltered.value.rows)
+            complete &= unfiltered.value.complete && shown.ok &&
+                shown.value.complete && issubset(visible, known)
+            for entry in unfiltered.value.rows
+                if !(entry.name in seen)
+                    push!(seen, entry.name)
+                    if entry.name in visible
+                        push!(rows, entry)
                     end
                 end
             end
         end
-        complete &= issubset(visible, known)
     end
     stable = lock(() -> registry.revision == snapshot.revision, registry.lock)
     (skills=sort!(rows; by=entry -> entry.name), complete=complete && stable)
@@ -124,12 +164,15 @@ skill_catalog(registry::CompositeSkillRegistry, workspace::AbstractString=pwd();
         audience::Symbol=:model) =
     skill_catalog_snapshot(registry, workspace; audience).skills
 
-"""Choose the owner by the unfiltered catalog, even if a skill is hidden."""
+"""Choose the first discoverable owner; a failed source may fall back to the next."""
 function composite_skill_owner(sources, label::AbstractString, workspace::AbstractString)
     selected = nothing
     for binding in sources
-        entries = skill_catalog_snapshot(binding.source, workspace; audience=:all)
-        if any(entry -> String(entry.name) == label, entries.skills)
+        found = observe_composite_skill_source(binding.name) do
+            entries = skill_catalog_snapshot(binding.source, workspace; audience=:all)
+            any(entry -> String(entry.name) == label, entries.skills)
+        end
+        if found.ok && found.value
             selected = binding
             break
         end
@@ -137,7 +180,7 @@ function composite_skill_owner(sources, label::AbstractString, workspace::Abstra
     selected
 end
 
-"""Load the visible winner, rejecting a registration change during lookup."""
+"""Load the visible winner, rejecting failed visibility checks and stale registrations."""
 function load_skill(registry::CompositeSkillRegistry,
         name::Union{Symbol,AbstractString}, workspace::AbstractString=pwd();
         audience::Symbol=:model)
@@ -150,14 +193,26 @@ function load_skill(registry::CompositeSkillRegistry,
         if isnothing(owner)
             skill_load_failure("Unknown skill: $label")
         else
-            shown = skill_catalog_snapshot(owner.source, workspace; audience)
-            permitted = any(entry -> String(entry.name) == label, shown.skills)
-            if !permitted
+            shown = observe_composite_skill_source(owner.name) do
+                entries = skill_catalog_snapshot(owner.source, workspace; audience)
+                any(entry -> String(entry.name) == label, entries.skills)
+            end
+            if !shown.ok
+                skill_load_failure("Skill $label visibility could not be checked")
+            elseif !shown.value
                 skill_load_failure("Skill $label is not available for $audience")
             else
-                loaded = load_skill(owner.source, name, workspace; audience)
+                loaded = observe_composite_skill_source(owner.name) do
+                    load_skill(owner.source, name, workspace; audience)
+                end
                 stable = lock(() -> registry.revision == snapshot.revision, registry.lock)
-                stable ? loaded : skill_load_failure("Skill sources changed during load: $label")
+                if !stable
+                    skill_load_failure("Skill sources changed during load: $label")
+                elseif !loaded.ok
+                    skill_load_failure("Skill $label could not be loaded from source $(owner.name)")
+                else
+                    loaded.value
+                end
             end
         end
     end
