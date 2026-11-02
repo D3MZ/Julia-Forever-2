@@ -105,6 +105,34 @@ function validated_session_lineage(record::SessionRecord)
     session_lineage(record)
 end
 
+"""Inspect a saved session without constructing an agent, executor or Julia Message objects."""
+function session_summary(store::SessionStore, name::AbstractString)
+    path = session_file(store, name)
+    if !is_saved_profile_file(path)
+        return nothing
+    end
+    record = SessionRecord(JSON.parsefile(path), store, String(name))
+    lineage = session_lineage(record)
+    return Dict{String,Any}(
+        "session" => String(name), "id" => string(lineage.id),
+        "parent" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
+        "root" => string(lineage.root_id),
+        "workingDirectory" => String(record.data["working_directory"]),
+        "messages" => length(record.data["messages"]))
+end
+
+"""Enumerate saved session summaries in stable name order without resuming sessions."""
+function session_summaries(store::SessionStore)
+    lock(store.lock) do
+        summaries = Dict{String,Any}[]
+        for name in session_names(store)
+            summary = session_summary(store, name)
+            isnothing(summary) || push!(summaries, summary)
+        end
+        summaries
+    end
+end
+
 """Read persisted ancestry without materializing the session's message history."""
 function session_lineage(store::SessionStore, name::Union{Symbol,AbstractString})
     path = session_file(store, name)
