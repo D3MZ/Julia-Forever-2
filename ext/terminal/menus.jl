@@ -270,8 +270,24 @@ menu_page_items(app::App, ::Val{:logout}) =
     [menu_node(string(provider.id), provider.label) for provider in app.settings.providers
         if haskey(app.menus.logout_revisions, String(provider.id))]
 
-"""Enter a native menu page; the active path drives breadcrumbs and nested actions."""
-function open_menu!(app::App, name::AbstractString;refresh=true,query="",login_reference="",auth_login=auth_menu_start_login!)
+"""Keep declared but missing command families visible without opening an empty success-shaped menu."""
+menu_unavailable_reason(::Val)=""
+menu_unavailable_reason(::Val{:trust})=setting_unavailable_reason(Val(Symbol("default-project-trust")))
+menu_unavailable_reason(::Val{:share})=setting_unavailable_reason(Val(Symbol("share-destination")))
+
+function open_menu!(app::App,name::AbstractString;refresh=true,query="",login_reference="",auth_login=auth_menu_start_login!)
+    reason=menu_unavailable_reason(Val(Symbol(name)))
+    if isempty(reason)
+        open_supported_menu!(app,name;refresh,query,login_reference,auth_login)
+    else
+        app.status=reason
+        frontend_notice!(app,reason;kind=:warning)
+    end
+    nothing
+end
+
+"""Enter an implemented native menu page; the active path drives breadcrumbs and nested actions."""
+function open_supported_menu!(app::App, name::AbstractString;refresh=true,query="",login_reference="",auth_login=auth_menu_start_login!)
     previous=app.menus.auth_menu_control
     if previous isa AuthMenuControl && previous.stage==:auth
         auth_menu_cancel_auth!(app,previous)
