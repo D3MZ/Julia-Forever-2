@@ -4,7 +4,7 @@ function user_shell_run_lines(run::UserShellRun,width::Int,state::SessionDisplay
     message=isnothing(stored) ? Dict{String,Any}("command"=>run.command,"output"=>run.visible,"excludeFromContext"=>run.excluded) : JuliaForever2.user_shell_record(stored)
     running=isnothing(run.result)
     frame=1+Int(mod(div(time_ns()-run.started_ns,80_000_000),10))
-    view=SessionDisplayState(;expand_all=run.expanded,output_padding=state.output_padding)
+    view=SessionDisplayState(;expand_all=run.expanded,output_padding=state.output_padding,expand_key=state.expand_key)
     rows=session_display_bash(message,string(run.id),width,view;running,frame)
     if !isempty(run.reason)
         append!(rows,session_display_text_rows(run.reason,width,state.output_padding;style=session_display_style(:error)))

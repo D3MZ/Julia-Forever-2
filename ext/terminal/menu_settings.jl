@@ -169,6 +169,7 @@ function settings_lines(app::App, width::Integer)
         end
         unavailable_reason=setting_unavailable_reason(items[selected].id)
         description = isempty(unavailable_reason) ? items[selected].description : unavailable_reason
+        items[selected].id=="model-thinking" && (description="Override the default thinking level for specific models. "*native_keybinding_hint(app,"app.thinking.cycle")*" cycles in-session.")
         if !isempty(description)
             push!(lines, menu_line())
             append!(lines, [menu_line("  " * line, :text_dim) for line in menu_wrap(description, width - 4)])

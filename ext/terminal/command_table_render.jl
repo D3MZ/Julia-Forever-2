@@ -41,8 +41,18 @@ function command_table_widths(cells,capacity::Int)
 end
 
 function command_inline_keys(text::AbstractString)
-    parts=split(text,'`';keepempty=true)
-    [Tachikoma.Span(replace(String(part),"\\|"=>"|"),isodd(index) ? Tachikoma.Style() : session_display_style(:code)) for (index,part) in enumerate(parts)]
+    spans=Tachikoma.Span[];cursor=firstindex(text)
+    # Generated help uses single-tick code spans; an empty tick pair is literal source text.
+    for token in eachmatch(r"(?<!`)`([^`]+)`(?!`)",text)
+        if cursor<token.offset
+            push!(spans,Tachikoma.Span(replace(String(SubString(text,cursor,prevind(text,token.offset))),"\\|"=>"|"),Tachikoma.Style()))
+        end
+        push!(spans,Tachikoma.Span(replace(String(token.captures[1]),"\\|"=>"|"),session_display_style(:code)))
+        cursor=token.offset+ncodeunits(token.match)
+    end
+    cursor<=lastindex(text) && push!(spans,Tachikoma.Span(replace(String(SubString(text,cursor)),"\\|"=>"|"),Tachikoma.Style()))
+    isempty(spans) && push!(spans,Tachikoma.Span("",Tachikoma.Style()))
+    spans
 end
 
 function command_table_rows(cells,width::Int)

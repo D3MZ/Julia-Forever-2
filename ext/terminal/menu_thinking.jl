@@ -214,14 +214,14 @@ function thinking_item_line(item, selected::Bool, width::Int, primary_width::Int
 end
 
 """Render the actual selector and retain zero-based hit-test coordinates after wrapping."""
-function thinking_lines(menu::ThinkingMenu, width::Integer)
+function thinking_lines(menu::ThinkingMenu, width::Integer; cycle_hint::AbstractString="Shift+Tab")
     columns = Int(width)
     lines = Vector{Tachikoma.Span}[]
     push!(lines, thinking_line(repeat("─", max(1, columns)), :menu_border))
     push!(lines, thinking_line())
     append!(lines, thinking_text_lines("Thinking Level", columns))
     push!(lines, thinking_line())
-    append!(lines, thinking_text_lines("Shift+Tab cycles thinking levels in-session", columns))
+    append!(lines, thinking_text_lines(cycle_hint*" cycles thinking levels in-session", columns))
     push!(lines, thinking_line())
     menu.search_row = length(lines)
     push!(lines, menu_search_spans(menu.search, columns))
