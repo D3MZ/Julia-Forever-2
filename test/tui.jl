@@ -250,7 +250,7 @@ end
 
     app = App(default_kernel())
     update!(app, KeyEvent('/'))
-    for _ in 1:4
+    for _ in 1:5
         update!(app, KeyEvent(:down))
     end
     tb = TestBackend(40, 8)
@@ -277,6 +277,34 @@ end
     @test !isnothing(pos)
     update!(app, MouseEvent(pos.x, pos.y, Tachikoma.mouse_left, Tachikoma.mouse_press, false, false, false))
     @test JuliaForever2.component(app.session.kernel, :provider) isa JuliaForever2.CodexProvider
+end
+
+@testset "Compact update controls retain provider selection" begin
+    mktempdir() do dir
+        for height in (8, 9)
+            app = App(default_kernel(); settings_dir=dir)
+            app.page = :settings
+            app.selected = 4
+            app.updates.automatic = false
+            backend = TestBackend(40, height)
+            frame = Tachikoma.Frame(backend.buf, backend.buf.area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+            Tachikoma.view(app, frame)
+            @test !isnothing(find_text(backend, "→ ChatGPT / Codex"))
+            @test !isnothing(find_text(backend, "Update: Not checked"))
+            @test !isnothing(find_text(backend, "c:Check"))
+            @test !isnothing(find_text(backend, "u:Install"))
+            @test !isnothing(find_text(backend, "↑↓ ↵ s Esc"))
+            auto = find_text(backend, "a:Off")
+            @test !isnothing(auto)
+            update!(app, MouseEvent(auto.x, auto.y, Tachikoma.mouse_left, Tachikoma.mouse_press, false, false, false))
+            @test app.updates.automatic
+            Tachikoma.reset!(backend.buf)
+            Tachikoma.view(app, frame)
+            @test !isnothing(find_text(backend, "a:On"))
+            @test !isnothing(find_text(backend, "→ ChatGPT / Codex"))
+            close(app.session)
+        end
+    end
 end
 
 @testset "Provider selection persists" begin
