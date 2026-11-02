@@ -1,0 +1,64 @@
+name: Isolated JSONL export BenchmarkTools experiment
+
+on:
+  push:
+    branches:
+      - perf-experiment-jsonl-export-20261102-0231
+
+permissions:
+  contents: read
+
+concurrency:
+  group: isolated-jsonl-export-experiment
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      JULIA_NUM_THREADS: '2'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Check out exact parent main as baseline worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach "$RUNNER_TEMP/jf2-baseline" 4b4d586f674694bb4110f9c283bb89878343ae8a
+          mkdir -p "$RUNNER_TEMP/benchmark-evidence"
+          git rev-parse HEAD > "$RUNNER_TEMP/benchmark-evidence/candidate-sha.txt"
+          git -C "$RUNNER_TEMP/jf2-baseline" rev-parse HEAD > "$RUNNER_TEMP/benchmark-evidence/baseline-sha.txt"
+          julia --version > "$RUNNER_TEMP/benchmark-evidence/julia-version.txt"
+          uname -a > "$RUNNER_TEMP/benchmark-evidence/runner.txt"
+      - name: Install all JuliaForever2 source dependencies in the shared benchmark environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          julia --project=benchmarks -e '
+            using Pkg
+            Pkg.instantiate()
+            root = Pkg.TOML.parsefile("Project.toml")["deps"]
+            benchmark = Pkg.TOML.parsefile("benchmarks/Project.toml")["deps"]
+            missing = sort!(collect(setdiff(keys(root), keys(benchmark))))
+            isempty(missing) || Pkg.add(missing)
+          '
+      - name: Run isolated semantic checks, alternating BenchmarkTools trials and profiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          julia --project=benchmarks benchmarks/experiments/timeline_jsonl_export.jl             "$RUNNER_TEMP/jf2-baseline" "$RUNNER_TEMP/benchmark-evidence"             2>&1 | tee "$RUNNER_TEMP/benchmark-evidence/run.log"
+      - name: Upload benchmark evidence even when the acceptance gate fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jsonl-export-benchmark-evidence
+          path: ${{ runner.temp }}/benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30
