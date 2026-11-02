@@ -52,6 +52,14 @@ settings_definitions(images::Bool) = filter(item -> images || !(item.id in ("sho
 """Describe unavailable native consumers without hiding the original menu entries."""
 setting_unavailable_reason(::Val) = ""
 setting_unavailable_reason(::Val{Symbol("install-telemetry")}) = "Install telemetry is unavailable: no approved Julia Forever 2 destination or privacy contract. No ping is sent."
+setting_unavailable_reason(::Val{Symbol("transport")}) = "Transport selection is unavailable: native providers currently use HTTP/SSE. WebSocket and cached WebSocket transports are not implemented."
+setting_unavailable_reason(::Val{Symbol("cache-warming-mode")}) = "Cache warming is unavailable: no native background warming service is installed. No warming requests are sent."
+setting_unavailable_reason(::Val{Symbol("auto-resize-images")}) = "Input image resizing is unavailable: terminal image sizing only changes display, not images sent to a provider."
+setting_unavailable_reason(::Val{Symbol("block-images")}) = "Outbound image blocking is unavailable: this build has no request-wide image policy. This switch does not guarantee that custom provider requests exclude images."
+setting_unavailable_reason(::Val{Symbol("default-project-trust")}) = "Project trust decisions are unavailable: this build has no native project trust store or resource-loading gate. Existing security permissions remain in force."
+setting_unavailable_reason(::Val{Symbol("share-destination")}) = "Session sharing is unavailable: no native Radius or GitHub Gist publisher is installed. No session is uploaded."
+setting_unavailable_reason(::Val{Symbol("mermaid-rendering")}) = "Mermaid diagrams are unavailable: diagram fences remain source text. No native diagram renderer is installed."
+
 """Show availability first; supported settings retain their persisted or declared value."""
 function setting_value(app::App, item::SettingSpec)
     if !isempty(setting_unavailable_reason(Val(Symbol(item.id))))
@@ -161,7 +169,8 @@ function settings_lines(app::App, width::Integer)
         if first_item > 1 || last_item < length(items)
             push!(lines, menu_line(menu_clip("  ($selected/$(length(items)))", width - 2), :text_dim))
         end
-        description = items[selected].description
+        unavailable_reason=setting_unavailable_reason(Val(Symbol(items[selected].id)))
+        description = isempty(unavailable_reason) ? items[selected].description : unavailable_reason
         if !isempty(description)
             push!(lines, menu_line())
             append!(lines, [menu_line("  " * line, :text_dim) for line in menu_wrap(description, width - 4)])
