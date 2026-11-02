@@ -132,7 +132,7 @@ mutable struct SessionSearchIndex
     lock::ReentrantLock
     revision::UInt64
     documents::Vector{SessionSearchHit}
-    postings::Dict{String,BitSet}
+    postings::Dict{UInt32,BitSet}
     unicode_documents::BitSet
 end
 
@@ -143,19 +143,33 @@ function session_trigrams(text::AbstractString)
         for index in 1:max(0, length(characters) - 2)]
 end
 
-"""Index ASCII trigrams without per-gram copied strings and a transient deduplication Set."""
-function append_ascii_session_postings!(postings::Dict{String,BitSet}, text::String, document_id::Int)
-    lowercase_text = lowercase(text)
-    for offset in 1:max(0, ncodeunits(lowercase_text) - 2)
-        gram = SubString(lowercase_text, offset, offset + 2)
-        push!(get!(BitSet, postings, gram), document_id)
+"""Pack the three lowercase ASCII bytes of a trigram in a UInt32 key."""
+ascii_lower(byte::UInt8) = 0x41 <= byte <= 0x5a ? byte + 0x20 : byte
+
+function ascii_trigram(bytes, offset::Int)
+    first = UInt32(ascii_lower(bytes[offset]))
+    second = UInt32(ascii_lower(bytes[offset + 1]))
+    third = UInt32(ascii_lower(bytes[offset + 2]))
+    first | (second << 8) | (third << 16)
+end
+
+"""Index ASCII trigrams without per-gram strings or transient deduplication sets."""
+function append_ascii_session_postings!(postings::Dict{UInt32,BitSet}, text::String, document_id::Int)
+    bytes = codeunits(text)
+    for offset in 1:max(0, length(bytes) - 2)
+        push!(get!(BitSet, postings, ascii_trigram(bytes, offset)), document_id)
     end
-    return nothing
+    nothing
+end
+
+function ascii_session_trigrams(text::AbstractString)
+    bytes = codeunits(text)
+    [ascii_trigram(bytes, offset) for offset in 1:max(0, length(bytes) - 2)]
 end
 
 function SessionSearchIndex(store::SessionStore)
     index = SessionSearchIndex(store, ReentrantLock(), typemax(UInt64),
-        SessionSearchHit[], Dict{String,BitSet}(), BitSet())
+        SessionSearchHit[], Dict{UInt32,BitSet}(), BitSet())
     refresh_index!(index)
     return index
 end
@@ -165,7 +179,7 @@ function refresh_index!(index::SessionSearchIndex)
     lock(index.lock) do
         lock(index.store.lock) do
             documents = SessionSearchHit[]
-            postings = Dict{String,BitSet}()
+            postings = Dict{UInt32,BitSet}()
             unicode = BitSet()
             for name in session_names(index.store)
                 index!(documents, postings, unicode, saved_session_record(index.store, name), name)
@@ -194,9 +208,9 @@ function index!(documents, postings, unicode, record, name)
 end
 """Narrow candidates conservatively, then verify all text predicates using the exact matcher."""
 function indexed_session_candidates(index::SessionSearchIndex, text::AbstractString)
-    grams = String[]
+    grams = UInt32[]
     for term in Iterators.filter(isascii, split(strip(String(text)), r"\s+"))
-        append!(grams, session_trigrams(term))
+        append!(grams, ascii_session_trigrams(term))
     end
     unique!(grams)
     isempty(grams) ? (1:length(index.documents)) : candidates(index, grams, smallest(index.postings, grams))
