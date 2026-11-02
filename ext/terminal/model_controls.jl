@@ -341,6 +341,7 @@ function model_configuration_finished!(app::App, handle::TaskHandle)
         app.busy = false
         result = session_action_result(handle)
         app.status = result.text
+        result.ok && maybe_warn_anthropic_subscription!(app)
         owns_view = app.menus.configuration_page == :pi_menu && app.page == :pi_menu && app.menus.path == app.menus.configuration_path && app.menus.generation == app.menus.configuration_generation
         if result.ok && owns_view
             close_model_controls!(app)

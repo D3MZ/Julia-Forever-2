@@ -61,6 +61,7 @@ function App(session::Session; settings_dir::AbstractString=config_dir(), regist
     load_model_preferences!(app)
     initialize_theme_controls!(app; fallback=theme_fallback)
     initialize_startup_host!(app)
+    initialize_notice_settings!(app)
     chat_completion_state!(app)
     return app
 end
@@ -71,6 +72,7 @@ function terminal_app(; settings_dir::AbstractString=config_dir(), registry::Pro
     kernel = isnothing(provider) ? Kernel() : default_kernel(provider)
     app = App(Session(kernel; owns_kernel=true); settings_dir, registry)
     restore_default_model!(app)
+    maybe_warn_anthropic_subscription!(app)
     if isnothing(provider)
         app.page = :settings
         app.status = "Configured provider is unavailable. Choose a provider."
@@ -100,5 +102,6 @@ function Tachikoma.init!(app::App, terminal::Tachikoma.Terminal)
     app.settings.terminal = terminal
     initialize_terminal_presentation!(app,terminal)
     initialize_terminal_theme!(app, terminal)
+    maybe_warn_anthropic_subscription!(app)
     nothing
 end

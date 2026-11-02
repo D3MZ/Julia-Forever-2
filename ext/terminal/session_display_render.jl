@@ -46,13 +46,13 @@ end
 function session_display_style(kind::Symbol; bg=Tachikoma.NoColor(), bold=false, italic=false)
     runtime = isdefined(@__MODULE__, :ACTIVE_NATIVE_THEME) ? ACTIVE_NATIVE_THEME[] : nothing
     if !isnothing(runtime)
-        tokens = (thinking="thinkingText", bash="bashMode", heading="mdHeading", link="mdLink", code="mdCode", codeblock="mdCodeBlock", user="userMessageText", tool="toolOutput")
+        tokens = (thinking="thinkingText", bash="bashMode", heading="mdHeading", link="mdLink", linkurl="mdLinkUrl", code="mdCode", codeblock="mdCodeBlock", user="userMessageText", tool="toolOutput")
         style = theme_token_style(runtime, haskey(tokens, kind) ? tokens[kind] : String(kind); bold, italic)
         Tachikoma.Style(; fg=style.fg, bg, bold, italic, dim=style.dim)
     else
         colors = (text=(222,224,225), muted=(157,165,169), dim=(126,136,142), accent=(167,152,215),
             thinking=(150,160,164), error=(234,127,129), warning=(205,154,34), bash=(94,178,134),
-            heading=(205,154,34), link=(105,173,208), code=(167,152,215), codeblock=(104,183,141), user=(222,224,225), tool=(222,224,225))
+            heading=(205,154,34), link=(105,173,208), linkurl=(157,165,169), code=(167,152,215), codeblock=(104,183,141), user=(222,224,225), tool=(222,224,225))
         fg = haskey(colors, kind) ? Tachikoma.ColorRGB(colors[kind]...) : Tachikoma.NoColor()
         Tachikoma.Style(; fg, bg, bold, italic)
     end
@@ -120,7 +120,7 @@ function session_display_wrap(spans::Vector{Tachikoma.Span}, width::Int, padding
         for position in range
             grapheme,old,_ = source[position]
             style = Tachikoma.Style(;fg=old.fg,bg=preserve_background && !(old.bg isa Tachikoma.NoColor) ? old.bg : bg,bold=old.bold,dim=old.dim,italic=old.italic,
-                underline=old.underline,strikethrough=old.strikethrough)
+                underline=old.underline,strikethrough=old.strikethrough,hyperlink=old.hyperlink)
             push!(row,Tachikoma.Span(grapheme,style))
             used += menu_search_grapheme_width(grapheme)
         end
@@ -133,6 +133,10 @@ function session_display_wrap(spans::Vector{Tachikoma.Span}, width::Int, padding
         if boundary_styles && index==length(ranges) && !isempty(spans) && isempty(last(spans).content)
             old=last(spans).style
             trailing=Tachikoma.Style(;fg=old.fg,bg,bold=old.bold,dim=old.dim,italic=old.italic,underline=old.underline,strikethrough=old.strikethrough)
+        end
+        if index<length(ranges)
+            old=trailing
+            trailing=Tachikoma.Style(;fg=old.fg,bg=old.bg,bold=old.bold,dim=old.dim,italic=old.italic,underline=false,strikethrough=false)
         end
         push!(row,Tachikoma.Span(repeat(" ",max(0,width-padding-used)),trailing))
         leading = Tachikoma.Style(;bg)

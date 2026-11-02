@@ -1,8 +1,9 @@
-"""Advertise implemented host bindings only, leaving missing editor and shell actions unclaimed."""
+"""Advertise only implemented host bindings, preserving absent suspend and clipboard capabilities."""
 function startup_host_bindings(app::App)
-    Dict("app.interrupt"=>"escape","tui.editor.deleteToLineEnd"=>"ctrl+k",
+    Dict("app.interrupt"=>"escape","app.clear"=>"ctrl+c","app.exit"=>"ctrl+d",
+        "app.editor.external"=>"ctrl+g","tui.editor.deleteToLineEnd"=>"ctrl+k",
         "app.thinking.cycle"=>"shift+tab","app.model.cycleForward"=>"ctrl+p",
-        "app.model.cycleBackward"=>"ctrl+shift+p","app.model.select"=>"ctrl+l",
+        "app.model.cycleBackward"=>"shift+ctrl+p","app.model.select"=>"ctrl+l",
         "app.tools.expand"=>"ctrl+o","app.thinking.toggle"=>"ctrl+t",
         "app.message.followUp"=>(Sys.iswindows() ? "alt+enter/ctrl+q" : "alt+enter"),
         "app.message.dequeue"=>(Sys.iswindows() ? "alt+up/alt+q" : "alt+up"))
@@ -17,7 +18,7 @@ end
 
 """Initialize actual startup resources and non-secret footer caches after preferences and theme loading."""
 function initialize_startup_host!(app::App)
-    controls=startup_controls(app;bindings=startup_host_bindings(app))
+    controls=startup_controls(app;bindings=startup_host_bindings(app),supported=["bash","bash.noContext"])
     app.menus.startup=controls
     startup_discover_resources!(controls,app)
     refresh_footer_controls!(app;models=menu_model_snapshot(app),branch=startup_host_branch(app.settings.workspace),home=homedir())

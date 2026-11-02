@@ -13,7 +13,11 @@ function terminal_output_frame!(app::App; now::Real=time_ns()/1e9)
     end
     nothing
 end
-Tachikoma.post_render!(app::App)=terminal_output_frame!(app)
+function Tachikoma.post_render!(app::App)
+    terminal_output_frame!(app)
+    acknowledge_notice_frame!(app)
+    nothing
+end
 
 """Publish the exact composed scene cursor after clipping; no terminal escape is emitted in view."""
 function terminal_output_cursor!(app::App,cursor::Union{Nothing,Tuple{Int,Int}})

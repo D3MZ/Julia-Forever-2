@@ -4,10 +4,12 @@ public startup_control_rows, startup_control_scene
 
 Base.@kwdef mutable struct StartupControls
     document::StartupDocument
+    anthropic_warning_shown::Bool=false
     disk_keys::Set{Tuple{Symbol,String}} = Set{Tuple{Symbol,String}}()
     disk_diagnostics::Vector{StartupDiagnostic} = StartupDiagnostic[]
     disk_registrations::Dict{Tuple{Symbol,String},Tuple{UInt,Any}} = Dict{Tuple{Symbol,String},Tuple{UInt,Any}}()
 end
+StartupControls(document,disk_keys,disk_diagnostics,disk_registrations)=StartupControls(document,false,disk_keys,disk_diagnostics,disk_registrations)
 
 """Create startup state from the actual app preferences; callers supply implemented keybindings."""
 function startup_controls(app;bindings::Dict{String,String},verbose::Bool=false,brand::AbstractString="Julia Forever 2",logo::Bool=false,supported::AbstractVector{<:AbstractString}=String[])

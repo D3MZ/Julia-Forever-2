@@ -335,7 +335,7 @@ end
 
 function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     message = state.message
-    report = model_reported_usage(state)
+    report = model_completion_usage(state)
     text = join(block["text"] for block in message["content"] if block["type"] == "text")
     reply = if message["stopReason"] in ("error", "aborted")
         Reply(:error, get(message, "errorMessage", "Model request failed."))
@@ -346,7 +346,7 @@ function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     else
         decode_reply(request.protocol, text)
     end
-    return StreamedCompletion(reply, report, message, model_usage_provenance(report))
+    return StreamedCompletion(reply, report, message, model_completion_provenance(state,report))
 end
 
 function respond_model(backend::HTTPModelBackend, model::ModelSpec, request::ModelRequest, context::ExecutionContext)
@@ -354,6 +354,7 @@ function respond_model(backend::HTTPModelBackend, model::ModelSpec, request::Mod
     if !cancelled(context)
         exchange!(backend, state, request)
     end
+    sanitize_model_failure!(backend.transport,state)
     finish_model_stream!(state)
     StreamedCompletion(state, request)
 end
@@ -366,15 +367,18 @@ function exchange!(backend::HTTPModelBackend, state::ModelStreamState, request::
     append!(headers, Base.invokelatest(backend.credentials, model, context))
     payload = model_payload(backend.protocol, model, request, options)
     prepare_protocol_state!(backend.protocol,state,payload,options)
+    progress=HTTPModelProgress(;policy=request.protocol)
     decoder = SSEDecoder() do event
         if !cancelled(context)
             consume_model_event!(backend.protocol, state, event)
+            publish_model_progress!(progress,state;force=state.received_stop || state.message["stopReason"]!="pending")
         end
     end
     response = Base.invokelatest(backend.transport, model_endpoint(backend.protocol, backend.endpoint, model), "POST", JSON.json(payload), headers, context, decoder)
     if response.status in 200:299
         start_model_stream!(state)
         finish_protocol_stream!(backend.protocol, state)
+        publish_model_progress!(progress,state;force=true)
     else
         state.error = "Model HTTP request failed ($(response.status)): $(response.reason)"
     end
@@ -383,5 +387,7 @@ end
 model_protocol_headers(protocol) = Pair{String,String}[]
 model_protocol_headers(protocol,model,options,request)=model_protocol_headers(protocol)
 prepare_protocol_state!(protocol,state,payload,options)=nothing
+
+sanitize_model_failure!(transport,state::ModelStreamState)=nothing
 
 completion_result(state::ModelStreamState, request::ModelRequest) = StreamedCompletion(state, request)
