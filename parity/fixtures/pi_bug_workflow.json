@@ -1,0 +1,473 @@
+{
+  "pin": "2c8d1feb147f6b3d97e855da803bfe7b19f3c403",
+  "hash": "d55147d46ed0754c759b98efe2dbd79d1f41cef7203964859862251ec47cd862",
+  "fixtures": [
+    {
+      "id": "cancel-description",
+      "inputs": [
+        "\u001b"
+      ],
+      "trace": [
+        [
+          "status",
+          "Bug report cancelled"
+        ]
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-transcript",
+      "inputs": [
+        "\r",
+        "\u001b"
+      ],
+      "trace": [
+        [
+          "status",
+          "Bug report cancelled"
+        ]
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-summary",
+      "inputs": [
+        "\r",
+        "\u001b[B",
+        "\r",
+        "\u001b"
+      ],
+      "trace": [
+        [
+          "status",
+          "Bug report cancelled"
+        ]
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-delivery-with-transcript",
+      "inputs": [
+        "\r",
+        "\r",
+        "\u001b"
+      ],
+      "trace": [
+        [
+          "status",
+          "Bug report cancelled"
+        ]
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-delivery-with-summary",
+      "inputs": [
+        "\r",
+        "\u001b[B",
+        "\r",
+        "\r",
+        "\u001b"
+      ],
+      "trace": [
+        [
+          "status",
+          "Bug report cancelled"
+        ]
+      ],
+      "restored": true
+    }
+  ],
+  "snapshots": [
+    {
+      "id": "cancel-description/0",
+      "width": 100,
+      "component": "ExtensionEditorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140mReport a bug\u001b[39m                                                                                       ",
+        "",
+        " \u001b[38;5;254mThis report goes to the Pi developers (Earendil) and is not shared publicly. It includes your pi   ",
+        " \u001b[38;5;254mversion, operating system, the current model and provider configuration (without API keys), loaded ",
+        " \u001b[38;5;254mextensions, settings, and provider error diagnostics from this session.                            ",
+        " \u001b[38;5;254m                                                                                                   ",
+        " \u001b[38;5;254mWhat went wrong? (optional)\u001b[39m                                                                        ",
+        "",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "Actual reproduction\u001b_pi:c\u0007\u001b_pi:fc\u0007 \u001b_pi:/fc\u0007                                                                                ",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m submit\u001b[39m  \u001b[38;5;102mshift+enter/ctrl+j\u001b[39m\u001b[38;5;145m newline\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m  \u001b[38;5;102mctrl+g\u001b[39m\u001b[38;5;145m external editor\u001b[39m             ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-description/1",
+      "width": 100,
+      "component": "Text",
+      "ansiLines": [
+        "ORIGINAL EDITOR                                                                                     "
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-transcript/0",
+      "width": 100,
+      "component": "ExtensionEditorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140mReport a bug\u001b[39m                                                                                       ",
+        "",
+        " \u001b[38;5;254mThis report goes to the Pi developers (Earendil) and is not shared publicly. It includes your pi   ",
+        " \u001b[38;5;254mversion, operating system, the current model and provider configuration (without API keys), loaded ",
+        " \u001b[38;5;254mextensions, settings, and provider error diagnostics from this session.                            ",
+        " \u001b[38;5;254m                                                                                                   ",
+        " \u001b[38;5;254mWhat went wrong? (optional)\u001b[39m                                                                        ",
+        "",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "Actual reproduction\u001b_pi:c\u0007\u001b_pi:fc\u0007 \u001b_pi:/fc\u0007                                                                                ",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m submit\u001b[39m  \u001b[38;5;102mshift+enter/ctrl+j\u001b[39m\u001b[38;5;145m newline\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m  \u001b[38;5;102mctrl+g\u001b[39m\u001b[38;5;145m external editor\u001b[39m             ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-transcript/1",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mInclude the session transcript?\u001b[22m\u001b[39m                                                                    ",
+        "",
+        " \u001b[38;5;254mThe transcript contains your messages, model output, tool calls and their results, including file  ",
+        " \u001b[38;5;254mcontents and command output read during this session.\u001b[39m                                              ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mYes, include the transcript\u001b[39m                                                                      ",
+        "   \u001b[38;5;254mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-transcript/2",
+      "width": 100,
+      "component": "Text",
+      "ansiLines": [
+        "ORIGINAL EDITOR                                                                                     "
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-summary/0",
+      "width": 100,
+      "component": "ExtensionEditorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140mReport a bug\u001b[39m                                                                                       ",
+        "",
+        " \u001b[38;5;254mThis report goes to the Pi developers (Earendil) and is not shared publicly. It includes your pi   ",
+        " \u001b[38;5;254mversion, operating system, the current model and provider configuration (without API keys), loaded ",
+        " \u001b[38;5;254mextensions, settings, and provider error diagnostics from this session.                            ",
+        " \u001b[38;5;254m                                                                                                   ",
+        " \u001b[38;5;254mWhat went wrong? (optional)\u001b[39m                                                                        ",
+        "",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "Actual reproduction\u001b_pi:c\u0007\u001b_pi:fc\u0007 \u001b_pi:/fc\u0007                                                                                ",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m submit\u001b[39m  \u001b[38;5;102mshift+enter/ctrl+j\u001b[39m\u001b[38;5;145m newline\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m  \u001b[38;5;102mctrl+g\u001b[39m\u001b[38;5;145m external editor\u001b[39m             ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-summary/1",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mInclude the session transcript?\u001b[22m\u001b[39m                                                                    ",
+        "",
+        " \u001b[38;5;254mThe transcript contains your messages, model output, tool calls and their results, including file  ",
+        " \u001b[38;5;254mcontents and command output read during this session.\u001b[39m                                              ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mYes, include the transcript\u001b[39m                                                                      ",
+        "   \u001b[38;5;254mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-summary/2",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mInclude the session transcript?\u001b[22m\u001b[39m                                                                    ",
+        "",
+        " \u001b[38;5;254mThe transcript contains your messages, model output, tool calls and their results, including file  ",
+        " \u001b[38;5;254mcontents and command output read during this session.\u001b[39m                                              ",
+        "",
+        "   \u001b[38;5;254mYes, include the transcript\u001b[39m                                                                      ",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-summary/3",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mAttach a summary written by fixture model instead?\u001b[22m\u001b[39m                                                 ",
+        "",
+        " \u001b[38;5;254mThe transcript is sent to fixture with your credentials and tokens. Only the generated summary is  ",
+        " \u001b[38;5;254mattached; the transcript stays on your machine.\u001b[39m                                                    ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mYes, generate a summary\u001b[39m                                                                          ",
+        "   \u001b[38;5;254mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-summary/4",
+      "width": 100,
+      "component": "Text",
+      "ansiLines": [
+        "ORIGINAL EDITOR                                                                                     "
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-delivery-with-transcript/0",
+      "width": 100,
+      "component": "ExtensionEditorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140mReport a bug\u001b[39m                                                                                       ",
+        "",
+        " \u001b[38;5;254mThis report goes to the Pi developers (Earendil) and is not shared publicly. It includes your pi   ",
+        " \u001b[38;5;254mversion, operating system, the current model and provider configuration (without API keys), loaded ",
+        " \u001b[38;5;254mextensions, settings, and provider error diagnostics from this session.                            ",
+        " \u001b[38;5;254m                                                                                                   ",
+        " \u001b[38;5;254mWhat went wrong? (optional)\u001b[39m                                                                        ",
+        "",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "Actual reproduction\u001b_pi:c\u0007\u001b_pi:fc\u0007 \u001b_pi:/fc\u0007                                                                                ",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m submit\u001b[39m  \u001b[38;5;102mshift+enter/ctrl+j\u001b[39m\u001b[38;5;145m newline\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m  \u001b[38;5;102mctrl+g\u001b[39m\u001b[38;5;145m external editor\u001b[39m             ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-transcript/1",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mInclude the session transcript?\u001b[22m\u001b[39m                                                                    ",
+        "",
+        " \u001b[38;5;254mThe transcript contains your messages, model output, tool calls and their results, including file  ",
+        " \u001b[38;5;254mcontents and command output read during this session.\u001b[39m                                              ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mYes, include the transcript\u001b[39m                                                                      ",
+        "   \u001b[38;5;254mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-transcript/2",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mBug report\u001b[22m\u001b[39m                                                                                         ",
+        "",
+        " \u001b[38;5;254mDescription: Actual reproduction                                                                   ",
+        " \u001b[38;5;254mTranscript: included                                                                               ",
+        " \u001b[38;5;254mSummary: none                                                                                      ",
+        " \u001b[38;5;254m                                                                                                   ",
+        " \u001b[38;5;254mUpload sends the report to radius.pi.dev. Export writes a zip archive to the current directory     ",
+        " \u001b[38;5;254minstead.\u001b[39m                                                                                           ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mUpload Report\u001b[39m                                                                                    ",
+        "   \u001b[38;5;254mExport as Zip\u001b[39m                                                                                    ",
+        "   \u001b[38;5;254mCancel\u001b[39m                                                                                           ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-transcript/3",
+      "width": 100,
+      "component": "Text",
+      "ansiLines": [
+        "ORIGINAL EDITOR                                                                                     "
+      ],
+      "restored": true
+    },
+    {
+      "id": "cancel-delivery-with-summary/0",
+      "width": 100,
+      "component": "ExtensionEditorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140mReport a bug\u001b[39m                                                                                       ",
+        "",
+        " \u001b[38;5;254mThis report goes to the Pi developers (Earendil) and is not shared publicly. It includes your pi   ",
+        " \u001b[38;5;254mversion, operating system, the current model and provider configuration (without API keys), loaded ",
+        " \u001b[38;5;254mextensions, settings, and provider error diagnostics from this session.                            ",
+        " \u001b[38;5;254m                                                                                                   ",
+        " \u001b[38;5;254mWhat went wrong? (optional)\u001b[39m                                                                        ",
+        "",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "Actual reproduction\u001b_pi:c\u0007\u001b_pi:fc\u0007 \u001b_pi:/fc\u0007                                                                                ",
+        "\u001b[38;5;102m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m submit\u001b[39m  \u001b[38;5;102mshift+enter/ctrl+j\u001b[39m\u001b[38;5;145m newline\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m  \u001b[38;5;102mctrl+g\u001b[39m\u001b[38;5;145m external editor\u001b[39m             ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-summary/1",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mInclude the session transcript?\u001b[22m\u001b[39m                                                                    ",
+        "",
+        " \u001b[38;5;254mThe transcript contains your messages, model output, tool calls and their results, including file  ",
+        " \u001b[38;5;254mcontents and command output read during this session.\u001b[39m                                              ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mYes, include the transcript\u001b[39m                                                                      ",
+        "   \u001b[38;5;254mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-summary/2",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mInclude the session transcript?\u001b[22m\u001b[39m                                                                    ",
+        "",
+        " \u001b[38;5;254mThe transcript contains your messages, model output, tool calls and their results, including file  ",
+        " \u001b[38;5;254mcontents and command output read during this session.\u001b[39m                                              ",
+        "",
+        "   \u001b[38;5;254mYes, include the transcript\u001b[39m                                                                      ",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-summary/3",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mAttach a summary written by fixture model instead?\u001b[22m\u001b[39m                                                 ",
+        "",
+        " \u001b[38;5;254mThe transcript is sent to fixture with your credentials and tokens. Only the generated summary is  ",
+        " \u001b[38;5;254mattached; the transcript stays on your machine.\u001b[39m                                                    ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mYes, generate a summary\u001b[39m                                                                          ",
+        "   \u001b[38;5;254mNo\u001b[39m                                                                                               ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-summary/4",
+      "width": 100,
+      "component": "ExtensionSelectorComponent",
+      "ansiLines": [
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m",
+        "",
+        " \u001b[38;5;140m\u001b[1mBug report\u001b[22m\u001b[39m                                                                                         ",
+        "",
+        " \u001b[38;5;254mDescription: Actual reproduction                                                                   ",
+        " \u001b[38;5;254mTranscript: not included                                                                           ",
+        " \u001b[38;5;254mSummary: written by fixture model                                                                  ",
+        " \u001b[38;5;254m                                                                                                   ",
+        " \u001b[38;5;254mUpload sends the report to radius.pi.dev. Export writes a zip archive to the current directory     ",
+        " \u001b[38;5;254minstead.\u001b[39m                                                                                           ",
+        "",
+        " \u001b[38;5;140m→ \u001b[39m\u001b[38;5;140mUpload Report\u001b[39m                                                                                    ",
+        "   \u001b[38;5;254mExport as Zip\u001b[39m                                                                                    ",
+        "   \u001b[38;5;254mCancel\u001b[39m                                                                                           ",
+        "",
+        " \u001b[38;5;102m↑↓\u001b[39m\u001b[38;5;145m navigate\u001b[39m  \u001b[38;5;102menter\u001b[39m\u001b[38;5;145m select\u001b[39m  \u001b[38;5;102mescape/ctrl+c\u001b[39m\u001b[38;5;145m cancel\u001b[39m                                                    ",
+        "",
+        "\u001b[38;5;74m────────────────────────────────────────────────────────────────────────────────────────────────────\u001b[39m"
+      ],
+      "restored": false
+    },
+    {
+      "id": "cancel-delivery-with-summary/5",
+      "width": 100,
+      "component": "Text",
+      "ansiLines": [
+        "ORIGINAL EDITOR                                                                                     "
+      ],
+      "restored": true
+    }
+  ]
+}

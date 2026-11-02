@@ -1,0 +1,43 @@
+// Test-only original Pi selector oracle. Native production never invokes this file.
+import {readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {resolve,join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {pathToFileURL} from 'node:url';
+const root=resolve(process.env.PI_REFERENCE??process.argv[2]);
+const out=process.argv[3];
+const pin='2c8d1feb147f6b3d97e855da803bfe7b19f3c403';
+const git=(...a)=>execFileSync('git',['-C',root,...a],{encoding:'utf8'}).trim();
+if(git('rev-parse','HEAD')!==pin)throw Error('Wrong Pi commit');
+git('diff','--exit-code',pin,'--','packages/ai/src','packages/tui/src','packages/coding-agent/src');
+const paths=git('ls-files','packages/ai/src','packages/tui/src','packages/coding-agent/src').split('\n');
+const sha=b=>createHash('sha256').update(b).digest('hex');
+const sourceHashes=Object.fromEntries(paths.map(p=>[p,sha(readFileSync(join(root,p)))]));
+const temp=mkdtempSync(join(tmpdir(),'pi-model-oracle-'));process.env.PI_CODING_AGENT_DIR=temp;process.env.PI_OFFLINE='1';process.env.COLORTERM='truecolor';process.env.TERM='xterm-256color';process.env.FORCE_COLOR='3';globalThis.fetch=()=>{throw Error('Network forbidden')};
+const load=p=>import(pathToFileURL(join(root,p)).href);
+await load('packages/coding-agent/src/experimental/source-resolver.ts');
+const tui=await load('packages/tui/src/index.ts');const th=await load('packages/coding-agent/src/modes/interactive/theme/theme.ts');
+const {KeybindingsManager}=await load('packages/coding-agent/src/core/keybindings.ts');tui.setKeybindings(new KeybindingsManager());th.initTheme('dark');
+const {ModelSelectorComponent}=await load('packages/coding-agent/src/modes/interactive/components/model-selector.ts');
+const {ScopedModelsSelectorComponent}=await load('packages/coding-agent/src/modes/interactive/components/scoped-models-selector.ts');
+const model=(id,provider='demo',extra={})=>({id,name:id,provider,api:'openai-completions',baseUrl:'http://fixture.invalid',reasoning:true,input:['text'],contextWindow:128000,maxTokens:8192,cost:{input:0,output:0,cacheRead:0,cacheWrite:0},...extra});
+const models=[model('alpha','demo',{name:'Alpha Reasoning'}),model('beta','demo',{name:'Beta Fast'}),model('gamma','other',{name:'Gamma Limited'}),...Array.from({length:11},(_,i)=>model(`model-${String(i).padStart(2,'0')}`,i%2?'other':'demo'))];
+const cases=[];const widths=[100,60,30,10];const snapshots=[];
+const defaultModel={provider:'demo',id:'beta'};
+const baseEvents=['\x1b[B','\x1b[A','\x1b[A','\x1b[6~','\x1b[5~','default','\x15','gamma','\x15','zzzzz','\x15','\x13','\x1b'];
+for(const kind of ['all','scoped','empty','one-error','many-errors','aborted','timeout','runtime-error','exception'])cases.push({id:'model.'+kind,kind:'model',models:kind==='empty'?[]:models,scoped:kind==='scoped'?['demo/alpha','other/gamma']:[],current:'demo/alpha',default:'demo/beta',refresh:kind,events:kind==='scoped'?['\t','\x1b[B','\t',...baseEvents]:baseEvents});
+cases.push({id:'model.cancel-pending',kind:'model',models,scoped:[],current:'demo/alpha',default:'demo/beta',refresh:'all',preEvents:['\x1b'],events:[]});
+cases.push({id:'model.exception-selection',kind:'model',models,scoped:[],current:'demo/alpha',default:'demo/beta',refresh:'exception',preEvents:['\x1b[B','\x1b[B'],events:[]});
+cases.push({id:'model.names',kind:'model',models:[model('gpt-5','openai',{name:'GPT 5'}),model('openai/gpt-5','openrouter',{name:'OpenAI GPT 5'}),model('eu.anthropic.claude-sonnet-4-5-20250929-v1:0','bedrock',{name:'Claude Sonnet 4.5 (EU)'}),model('r-model4','demo',{name:'Retitled 界 café'})],scoped:[],current:'openai/gpt-5',default:'openrouter/openai/gpt-5',refresh:'all',events:['openai/gpt5','\x15','4model','\x15','Retitled','\r']});
+for(const [id,enabled]of[['all',null],['selected',['other/gamma','demo/alpha','gone/missing']],['none',[]],['empty',null]])cases.push({id:'scoped.'+id,kind:'scoped',models:id==='empty'?[]:models,enabled,events:['\r','\x13','gamma','\x01','\x18','\x03','\x10','\x1b[B','\x1b[1;3A','\x1b[1;3B','\x01','\x18','\x03','\x1b']});
+const renderer=Object.create(tui.TuiMainScreen.prototype);renderer.showHardwareCursor=false;
+const key=m=>`${m.provider}/${m.id}`;
+for(const c of cases){let events=[];const cb=kind=>(value)=>events.push({kind,value:value===undefined?null:typeof value==='object'&&value?.provider?key(value):value});let release;let fireTimeout;const realSetTimeout=globalThis.setTimeout;globalThis.setTimeout=(fn,ms,...args)=>ms===15000?(fireTimeout=fn,0):realSetTimeout(fn,ms,...args);const promise=new Promise(r=>release=r);const fakeTui={requestRender(){},terminal:{rows:40,columns:100}};
+const runtime={getAvailableSnapshot:()=>c.models,getModel:(p,id)=>c.models.find(m=>m.provider===p&&m.id===id),getError:()=>c.refresh==='runtime-error'?'Invalid fixture model configuration':undefined,refresh:async()=>{await promise;if(c.refresh==='exception')throw Error('fixture failed');return{aborted:c.refresh==='aborted',errors:new Map(c.refresh==='one-error'?[['demo',Error('no')]]:c.refresh==='many-errors'?[['demo',Error('no')],['other',Error('no')]]:[])}}};
+const comp=c.kind==='model'?new ModelSelectorComponent(fakeTui,c.models.find(m=>key(m)===c.current),runtime,c.scoped.map(id=>({model:c.models.find(m=>key(m)===id)})),cb('select'),cb('cancel'),undefined,cb('default'),c.models.find(m=>key(m)===c.default)):new ScopedModelsSelectorComponent({allModels:c.models,enabledModelIds:c.enabled,refreshStatus:'Refreshing model catalogs…'},{onChange:cb('change'),onPersist:cb('persist'),onCancel:cb('cancel')});
+globalThis.setTimeout=realSetTimeout;
+const capture=(step,event)=>{for(const width of widths){const ansiLines=comp.render(width);snapshots.push({id:`${c.id}.${step}`,caseId:c.id,width,event,ansiLines,terminalAnsiLines:renderer.resolveFakeCursors(ansiLines),state:c.kind==='model'?{selected:comp.selectedIndex,scope:comp.scope,query:comp.searchInput.getValue(),filtered:comp.filteredModels.map(i=>key(i.model)),closed:comp.closed}: {selected:comp.selectedIndex,query:comp.searchInput.getValue(),filtered:comp.filteredItems.map(i=>i.fullId),enabled:comp.enabledIds,dirty:comp.isDirty},events:structuredClone(events)});}events=[];};
+capture('open',null);for(let i=0;i<(c.preEvents??[]).length;i++){comp.handleInput(c.preEvents[i]);capture('pre'+i,{type:'key',data:c.preEvents[i]});}if(c.kind==='model'){if(c.refresh==='timeout')fireTimeout();release();await new Promise(r=>setImmediate(r));capture('refreshed',{type:'refresh'});}else{comp.setRefreshStatus('Model catalogs refreshed.','success');capture('refreshed',{type:'status',message:'Model catalogs refreshed.',kind:'success'});}
+for(let i=0;i<c.events.length;i++){comp.handleInput(c.events[i]);capture(String(i),{type:'key',data:c.events[i]});}if(c.kind==='model')comp.dispose();}
+writeFileSync(out,JSON.stringify({reference:{commit:pin,sourceHashes},models,cases,widths,colors:Object.fromEntries(['accent','border','warning','muted','dim','success','error'].map(k=>[k,th.theme.fg(k,'x')])),snapshots},null,2));rmSync(temp,{recursive:true,force:true});

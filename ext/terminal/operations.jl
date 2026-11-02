@@ -31,9 +31,12 @@ end
 
 ui_context(app::App) = ExecutionContext(; event_sink=event -> enqueue_event!(app, TaskEvent(event.kind, event.data)))
 
-function track_operation!(app::App, handle::TaskHandle, id::Symbol, status::AbstractString)
+function track_operation!(app::App, handle::TaskHandle, id::Symbol, status::AbstractString; pending_continuation::Bool=false, pending_ids=pending_input_ids(app))
     clear_preview!(app)
     app.operations.active = handle
+    app.operations.active_kind = id
+    app.operations.pending_start_ids = copy(pending_ids)
+    app.operations.pending_continuation = pending_continuation
     app.busy = true
     app.status = String(status)
     notify_completion!(app, id, handle.task, handle)
@@ -47,36 +50,65 @@ function julia_command!(app::App, code::AbstractString)
     elseif app.busy || app.operations.closing[]
         nothing
     else
-        append_message!(app.session, Message(:user, "/julia " * code))
-        track_operation!(app, submit_evaluation!(app.session, code; context=ui_context(app)), :evaluation, "Running Julia…")
+        handle = JuliaForever2.submit_managed!(app.session, app.session, ui_context(app)) do context
+            lock(app.session.runtime.execution_lock) do
+                if isopen(app.session) && !cancelled(context)
+                    append_message!(app.session, Message(:user, string("/julia ", code)))
+                    JuliaForever2.record!(app.session, code, context)
+                else
+                    JuliaForever2.stopped_result()
+                end
+            end
+        end
+        track_operation!(app, handle, :evaluation, "Running Julia…")
     end
 end
 function submit!(app::App, prompt::AbstractString)
     if !isempty(strip(prompt)) && !app.operations.closing[]
         app.scroll = 0
-        dispatch!(app, prompt)
+        dispatch!(app, strip(prompt))
     end
 end
 
 function dispatch!(app::App, prompt::AbstractString)
-    if startswith(prompt, "/")
+    app.menus.model_command=nothing
+    shell=raw_user_shell(prompt)
+    if !isnothing(shell)
+        start_user_shell!(app,shell)
+    elseif startswith(prompt, "/")
         command!(app, SubString(prompt, nextind(prompt, firstindex(prompt))))
-    elseif !app.busy
-        Tachikoma.clear!(app.input)
-        track_operation!(app, submit_turn!(app.session, prompt; context=ui_context(app)), :turn, "Thinking…")
+    else
+        was_busy = app.busy
+        result = submit_literal_input!(app, prompt)
+        result.ok && !was_busy ? app.operations.active : nothing
     end
 end
 function operation_finished!(app::App, handle::TaskHandle)
     if app.operations.active === handle
         clear_preview!(app)
+        previous_kind = app.operations.active_kind
+        previous_ids = app.operations.pending_start_ids
+        was_continuation = app.operations.pending_continuation
         app.operations.active = nothing
+        app.operations.active_kind = :none
+        app.operations.pending_start_ids = UInt64[]
+        app.operations.pending_continuation = false
         app.busy = false
-        result = fetch(handle)
+        app.settings.workspace = working_directory(app.session)
+        app.directory = directory_label(app.settings.workspace)
+        result = session_action_result(handle)
+        previous_kind==:compaction_done && result.ok && clear_command_documents!(app)
         app.status = result.ok ? "Ready" : result.text
+        flush_user_shell!(app) && continue_terminal_pending!(app, result, previous_kind, previous_ids, was_continuation)
     end
     nothing
 end
 function cleanup!(app::App)
+    close_chat_completion!(app)
+    auth_menu_dispose!(app.menus.auth_menu_control)
+    close_terminal_output!(app)
+    close_terminal_theme!(app)
+    close_session_selectors!(app)
     lock(app.operations.event_lock) do
         app.operations.closing[] = true
         empty!(app.queue.channel)
@@ -85,15 +117,19 @@ function cleanup!(app::App)
     isnothing(active_turn) || cancel!(active_turn)
     isnothing(auth_flow) || cancel_auth!(auth_flow)
     clear_preview!(app)
+    tree = app.menus.tree_menu
+    isnothing(tree) || tree_dispose!(tree)
     return nothing
 end
 
 function finish_shutdown!(app::App)
     cleanup!(app)
+    close_user_shell!(app)
     close(app.session)
     auth_task = app.settings.auth_task
     isnothing(auth_task) || wait(auth_task)
     foreach(wait, app.operations.watchers)
+    discard_pending_session!(app)
     empty!(app.operations.watchers)
     return nothing
 end

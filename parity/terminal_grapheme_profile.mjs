@@ -1,0 +1,8 @@
+// Test-only profile: enhanced grapheme support is experimental and explicitly versioned.
+import{createRequire}from'node:module';import{join}from'node:path';
+const require=createRequire(process.env.PI_TERMINAL_GRAPHEME_ROOT?join(process.env.PI_TERMINAL_GRAPHEME_ROOT,'package.json'):new URL('./package.json',import.meta.url));
+const{Terminal}=require('@xterm/headless');const{UnicodeGraphemesAddon}=require('@xterm/addon-unicode-graphemes');
+for(const[name,version]of Object.entries({'@xterm/headless':'5.5.0','@xterm/addon-unicode-graphemes':'0.4.0'}))if(require(name+'/package.json').version!==version)throw Error('Wrong grapheme terminal version: '+name);
+export const graphemeTerminalProfile=Object.freeze({emulator:'@xterm/headless',version:'5.5.0',unicodeAddon:'@xterm/addon-unicode-graphemes',addonVersion:'0.4.0',unicodeVersion:'15-graphemes',experimental:true,allowProposedApi:true,disableStdin:true,convertEol:false});
+export function createGraphemeTerminal(width,height){const t=new Terminal({cols:width,rows:height,allowProposedApi:true,disableStdin:true,convertEol:false});t.loadAddon(new UnicodeGraphemesAddon());return t;}
+export function graphemeScreen(t){return Array.from({length:t.rows},(_,y)=>Array.from({length:t.cols},(_,x)=>{const c=t.buffer.active.getLine(y).getCell(x);return{x,text:c.getChars()||' ',columns:c.getWidth(),style:{fg:{mode:c.getFgColorMode(),value:c.getFgColor()},bg:{mode:c.getBgColorMode(),value:c.getBgColor()},bold:!!c.isBold(),dim:!!c.isDim(),italic:!!c.isItalic(),underline:!!c.isUnderline(),inverse:!!c.isInverse(),strikethrough:!!c.isStrikethrough(),invisible:!!c.isInvisible()}};}));}

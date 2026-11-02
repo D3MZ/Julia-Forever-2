@@ -108,17 +108,8 @@ function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
     return lines
 end
 
-function markdown_lines(content::AbstractString, width::Int)
-    heading = Tachikoma.Style(; fg=Tachikoma.ColorRGB(205, 154, 34), bold=true)
-    bold = Tachikoma.Style(; fg=pi_style(:text).fg, bold=true)
-    emph = Tachikoma.Style(; fg=pi_style(:text).fg, italic=true)
-    code = Tachikoma.Style(; fg=Tachikoma.ColorRGB(104, 183, 141))
-    link = Tachikoma.Style(; fg=Tachikoma.ColorRGB(105, 173, 208), underline=true)
-    spans = Tachikoma.markdown_to_spans(content, width; h1_style=heading, h2_style=heading, h3_style=heading,
-        bold_style=bold, emph_style=emph, code_style=code, link_style=link,
-        quote_style=pi_style(:text_dim), text_style=pi_style(:text), hr_style=pi_style(:text_dim))
-    return [wrapped for line in spans for wrapped in wrap_markdown_spans(line, width)]
-end
+"""Use the same native block renderer for streaming previews and committed assistant messages."""
+markdown_lines(content::AbstractString,width::Int)=session_markdown_spans(content,width)
 
 function message_layout_key(messages, index)
     message = messages[index]
@@ -203,6 +194,7 @@ function layout!(transcript::TranscriptState, layout::TranscriptLayout)
 end
 """Discard transient output without changing committed conversation history."""
 function clear_preview!(app::App)
+    frontend_notice_commit_preview!(app)
     transcript = app.transcript
     transcript.preview = nothing
     transcript.preview_operation_id = UInt64(0)

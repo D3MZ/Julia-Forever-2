@@ -1,0 +1,12 @@
+{
+  "reference": "earendil-works/pi",
+  "commit": "2c8d1feb147f6b3d97e855da803bfe7b19f3c403",
+  "sourceHashes": {
+    "packages/coding-agent/src/modes/interactive/theme/system-theme.ts": "877a3dc24fd194f2dc5ee9efe8f1699acdcdac6defa197009bc7b39920bbb729",
+    "packages/coding-agent/src/modes/interactive/theme/theme-tokens.ts": "6c38a169da4f85ee04bc31980a13ef6a498b6be68e63faceda4f5a1e5c632ecf",
+    "packages/coding-agent/src/modes/interactive/theme/dark.json": "e1f96982f8cb7d2a48eca7db03c9cb282cb1e14a243680cd855638ecd6a251b6",
+    "packages/coding-agent/src/modes/interactive/theme/light.json": "2dee6a4be7f765e7fd7728166b7ebf8c29e4ce313f8ec6b38ae50699e3abc2f3",
+    "packages/coding-agent/src/modes/interactive/theme/theme.ts": "07ff17a690749afa8b3b1724efd271859ff889255fd494606230fec99ec1c1ba"
+  },
+  "note": "Immutable theme data/constants only; Julia executes its own native color/runtime implementation. MIT attribution in LICENSE."
+}

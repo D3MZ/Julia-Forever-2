@@ -27,7 +27,7 @@ function model_payload(protocol::OpenAIChatProtocol, model::ModelSpec, request::
         payload[get(compatibility, "maxTokensField", "max_completion_tokens")] = options["maxTokens"]
     end
     for (option, wire) in (("temperature", "temperature"), ("toolChoice", "tool_choice"),
-            ("tools", "tools"), ("reasoningEffort", "reasoning_effort"))
+            ("tools", "tools"), ("reasoningEffort", "reasoning_effort"), ("reasoning", "reasoning"))
         haskey(options, option) && (payload[wire] = deepcopy(options[option]))
     end
     isnothing(request.response_format) || (payload["response_format"] = request.response_format)

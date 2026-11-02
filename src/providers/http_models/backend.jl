@@ -13,7 +13,7 @@ HTTPModelBackend(protocol, endpoint::AbstractString; credentials=Returns(Pair{St
 Base.show(io::IO, backend::HTTPModelBackend) = print(io, "HTTPModelBackend(", nameof(typeof(backend.protocol)), ")")
 
 """Send an owned streaming request; custom transports implement this same context-aware signature."""
-model_http_transport(url, method, body, headers, context, sink) = HTTPTransport.http_request(url, method, body, headers, context; sink)
+model_http_transport(url, method, body, headers, context, sink) = HTTPTransport.http_request(url, method, body, headers, context; sink, timeout=Inf, idle_timeout_ms=HTTPTransport.http_idle_timeout_ms())
 
 struct StreamedCompletion{R,U,M}
     reply::R
@@ -362,9 +362,10 @@ function exchange!(backend::HTTPModelBackend, state::ModelStreamState, request::
     model, context = state.model, state.context
     options = model_request_options(backend.options, model, request)
     headers = Pair{String,String}["Content-Type" => "application/json"]
-    append!(headers, model_protocol_headers(backend.protocol))
+    append!(headers, model_protocol_headers(backend.protocol,model,options,request))
     append!(headers, Base.invokelatest(backend.credentials, model, context))
     payload = model_payload(backend.protocol, model, request, options)
+    prepare_protocol_state!(backend.protocol,state,payload,options)
     decoder = SSEDecoder() do event
         if !cancelled(context)
             consume_model_event!(backend.protocol, state, event)
@@ -380,5 +381,7 @@ function exchange!(backend::HTTPModelBackend, state::ModelStreamState, request::
     state
 end
 model_protocol_headers(protocol) = Pair{String,String}[]
+model_protocol_headers(protocol,model,options,request)=model_protocol_headers(protocol)
+prepare_protocol_state!(protocol,state,payload,options)=nothing
 
 completion_result(state::ModelStreamState, request::ModelRequest) = StreamedCompletion(state, request)

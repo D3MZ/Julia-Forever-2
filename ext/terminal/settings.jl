@@ -62,17 +62,19 @@ function authenticated!(app::App, flow, task)
     app.settings.auth_task = nothing
     app.page == :auth && (app.page = :settings)
     app.settings.auth_url = ""
-    result = fetch(task)
+    result = istaskfailed(task) ? (ok=false,reason="Sign-in failed. No new access was verified.") : fetch(task)
     if !active_auth(flow)
         app.status = "Sign-in cancelled."
     else
         app.status = result.reason
-        if result.ok
+        if result.ok && !get(result,:preserve_selection,false)
             selected = JuliaForever2.select_provider!(app.session.kernel, app.settings.auth_provider; dir=app.settings.directory, registry=app.settings.registry)
             selected.ok || (app.status = selected.reason)
         end
     end
     refresh_settings!(app)
+    control=app.menus.auth_menu_control
+    control isa AuthMenuControl && auth_menu_finish!(app,control,flow;ok=result.ok && active_auth(flow))
     return nothing
 end
 
@@ -108,20 +110,8 @@ end
 
 
 function page_view!(app::App, ::Val{:auth}, frame::Frame)
-    area, buf = frame.area, frame.buffer
-    x, y, w, h = area.x, area.y, area.width, area.height
-    drawline!(buf, x + 1, y, w - 2, "◆ JULIA FOREVER", :accent)
-    descriptor = provider_descriptor(app.settings.registry, app.settings.auth_provider)
-    name = isnothing(descriptor) ? string(app.settings.auth_provider) : descriptor.label
-    drawline!(buf, x + 1, y + 2, w - 2, "Sign in to " * name, :accent)
-    drawline!(buf, x + 1, y + 4, w - 2, "Complete authorization in your browser.", :text)
-    drawline!(buf, x + 1, y + 6, w - 2, "If it did not open, copy this URL:", :text_dim)
-    chars = collect(app.settings.auth_url)
-    for (i, part) in enumerate(Iterators.take(Iterators.partition(chars, max(1, w - 2)), max(0, h - 10)))
-        drawline!(buf, x + 1, y + 6 + i, w - 2, String(collect(part)), :text)
-    end
-    drawline!(buf, x + 1, y + h - 1, w - 2, "esc cancel", :text_dim)
-    return
+    startup_host_view!(app,frame)
+    nothing
 end
 
 function page_view!(app::App, ::Val{:settings}, frame::Frame)
@@ -143,14 +133,9 @@ function page_view!(app::App, ::Val{:settings}, frame::Frame)
     return
 end
 
-function page_input!(app::App, ::Val{:auth}, event::KeyEvent)
-    flow = app.settings.auth_flow
-    if event.key == :escape && !isnothing(flow)
-        cancel_auth!(flow)
-        app.status = "Cancelling sign-in…"
-        app.page = :settings
-    end
-    return nothing
+function page_input!(app::App, ::Val{:auth}, event::KeyEvent,raw::AbstractVector{UInt8}=UInt8[])
+    auth_dialog_input!(app,app.menus.auth_menu_control,event,raw)
+    nothing
 end
 
 function page_input!(app::App, ::Val{:settings}, event::KeyEvent)

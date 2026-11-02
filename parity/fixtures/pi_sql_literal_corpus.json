@@ -1,0 +1,29 @@
+{
+  "cases": [
+    {
+      "id": "booleans",
+      "text": "```sql\nSELECT true, TRUE, TrUe, false, FALSE, FaLsE;\n```"
+    },
+    {
+      "id": "nulls",
+      "text": "```sql\nSELECT null, NULL, NuLl, None;\n```"
+    },
+    {
+      "id": "strings",
+      "text": "```sql\nSELECT 'TRUE', 'False', 'null';\n```"
+    },
+    {
+      "id": "comments",
+      "text": "```sql\n-- TRUE false NULL\nSELECT 1; /* false TrUe */\n```"
+    },
+    {
+      "id": "identifiers",
+      "text": "```sql\nSELECT true_column, notfalse, nullable, NULLIF(value, 0) FROM flags;\n```"
+    }
+  ],
+  "widths": [
+    100,
+    40,
+    20
+  ]
+}

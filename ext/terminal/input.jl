@@ -202,6 +202,26 @@ function edit_prompt_key!(input::TextInput, event::KeyEvent, raw::AbstractVector
     end
 end
 
+"""Retain legacy word-edit bindings while native input owns grapheme navigation."""
+function edit_menu_search!(input::MenuSearchInput, event::KeyEvent, raw::AbstractVector{UInt8})
+    operation = terminal_edit_action(event, raw)
+    if !isnothing(operation) || (event.key == :ctrl && event.char == 'w')
+        legacy = TextInput(; label="")
+        Tachikoma.set_text!(legacy, input.value)
+        legacy.cursor = length(menu_search_prefix(input))
+        edit_prompt_key!(legacy, event, raw)
+        input.value = Tachikoma.text(legacy)
+        input.cursor = length(menu_search_graphemes(String(legacy.buffer[1:legacy.cursor])))
+        :handled
+    else
+        menu_search_input!(input, event, raw)
+    end
+end
+
+"""Recognize bracketed-paste packets before menu/global shortcut handling."""
+menu_search_pasting(input::MenuSearchInput, raw::AbstractVector{UInt8}) =
+    input.pasting || occursin("\e[200~", String(copy(raw)))
+
 """Refresh slash suggestions after editing, including control-key deletions."""
 function refresh_command_menu!(app::App)
     app.menu = startswith(Tachikoma.text(app.input), "/") && !isempty(matching_commands(app))
@@ -210,10 +230,8 @@ function refresh_command_menu!(app::App)
 end
 
 function edit_chat_input!(app::App, event::KeyEvent, raw::AbstractVector{UInt8}=UInt8[])
-    before = Tachikoma.text(app.input)
-    edit_prompt_key!(app.input, event, raw)
-    before == Tachikoma.text(app.input) || refresh_command_menu!(app)
-    return nothing
+    chat_host_packet!(app,menu_packet(event,raw))
+    nothing
 end
 
 """Complete the selected slash command without executing it."""
@@ -236,8 +254,24 @@ function default_input!(app::App, event::KeyEvent)
     raw = captured_key_bytes()
     if event.action == Tachikoma.key_release
         nothing
+    elseif app.page == :pi_menu && app.menus.path in (["settings"], ["settings", "warnings"]) && menu_search_pasting(app.menus.search, raw)
+        menu_search_input!(app.menus.search, event, raw)
+        app.menus.cursor = 1
+    elseif app.page==:chat && chat_host_pasting(app,menu_packet(event,raw))
+        page_input!(app,Val(:chat),event,raw)
+    elseif app.page==:auth
+        page_input!(app,Val(:auth),event,raw)
+    elseif event.key == :ctrl_c && app.page==:bug_report
+        bug_report_input!(app,"\x03")
     elseif event.key == :ctrl_c
-        quit_command!(app, "")
+        if app.page == :pi_menu
+            selected_event = app.menus.path in (["model"], ["scoped-models"], ["thinking"]) ? event : KeyEvent(:escape)
+            page_input!(app, Val(:pi_menu), selected_event, raw)
+        elseif app.page==:chat
+            chat_host_interrupt!(app)
+        else
+            quit_command!(app, "")
+        end
     else
         page_input!(app, Val(app.page), event, raw)
     end
@@ -254,30 +288,36 @@ function page_input!(app::App, page::Val, event::KeyEvent)
 end
 
 function page_input!(app::App, ::Val{:chat}, event::KeyEvent, raw::AbstractVector{UInt8})
-    if app.menu
-        matches = matching_commands(app)
-        if event.key == :escape
-            app.menu = false
-            Tachikoma.clear!(app.input)
-        elseif event.key == :up && !isempty(matches)
-            app.selected = mod1(app.selected - 1, length(matches))
-        elseif event.key == :down && !isempty(matches)
-            app.selected = mod1(app.selected + 1, length(matches))
-        elseif event.key == :backtab && !isempty(matches)
-            app.selected = mod1(app.selected - 1, length(matches))
-        elseif event.key == :tab && !isempty(matches)
-            complete_command!(app, matches)
-        elseif event.key == :enter && !isempty(matches)
-            command!(app, matches[clamp(app.selected, 1, length(matches))][1])
-        else
-            edit_chat_input!(app, event, raw)
-        end
-    elseif event.key == :enter
-        submit!(app, Tachikoma.text(app.input))
-    elseif event.key == :pageup
-        app.scroll += 10
-    elseif event.key == :pagedown
-        app.scroll = max(0, app.scroll - 10)
+    packet = menu_packet(event, raw)
+    if chat_host_pasting(app,packet)
+        chat_host_packet!(app,packet)
+    elseif pending_follow_up_key(packet)
+        chat_host_follow_up!(app)
+    elseif pending_dequeue_key(packet)
+        restore_pending_input!(app)
+    elseif event.key == :escape && app.busy && !chat_host_completion_open(app)
+        restore_pending_input!(app; abort=true)
+    elseif event.key == :escape && !isnothing(app.operations.shell.active) && !chat_host_completion_open(app)
+        cancel_user_shell!(app)
+    elseif menu_packet(event, raw) == "\x18"
+        copy_last_assistant!(app)
+    elseif menu_packet(event, raw) == "\x0f"
+        state = app.transcript.display
+        session_display_transition!(state, state.expand_all ? :collapse_all : :expand_all)
+        user_shell_expand!(app,state.expand_all)
+        controls=app.menus.startup
+        isnothing(controls) || startup_set_expanded!(controls.document,state.expand_all;on_notice=message->frontend_notice!(app,message))
+    elseif menu_packet(event, raw) == "\x14"
+        toggle_thinking_visibility!(app)
+    elseif menu_packet(event, raw) in ("\x10", "\e[112;6u", "\e[80;6u", "\ep")
+        packet = menu_packet(event, raw)
+        cycle_terminal_model!(app, packet == "\x10" ? 1 : -1)
+    elseif event.key == :backtab || menu_packet(event, raw) == "\e[Z"
+        cycle_terminal_thinking!(app)
+    elseif menu_packet(event, raw) == "\x0c"
+        open_menu!(app, "model")
+    elseif event.key in (:enter,:pageup,:pagedown)
+        chat_host_packet!(app,packet)
     else
         edit_chat_input!(app, event, raw)
     end
@@ -286,27 +326,35 @@ end
 
 
 function default_input!(app::App, event::MouseEvent)
-    if event.button == Tachikoma.mouse_left && event.action == Tachikoma.mouse_press
-        page_mouse!(app, Val(app.page), event)
+    handled=if app.page in (:chat,:pi_menu) || (event.button==Tachikoma.mouse_left && event.action==Tachikoma.mouse_press)
+        page_mouse!(app,Val(app.page),event)
+    else
+        nothing
     end
-    return nothing
+    if handled!==true && event.button in (Tachikoma.mouse_scroll_up,Tachikoma.mouse_scroll_down) &&
+            (app.page==:chat || app.page==:pi_menu && app.menus.path in (["model"],["scoped-models"]))
+        amount=terminal_integer(app,"fullscreen-wheel-scroll-lines",3,1,100)
+        app.scroll=max(0,app.scroll+(event.button==Tachikoma.mouse_scroll_up ? amount : -amount))
+    end
+    nothing
 end
 
 page_mouse!(app::App, page::Val, event::MouseEvent) = nothing
 
-function page_mouse!(app::App, ::Val{:chat}, event::MouseEvent)
-    area = app.area
-    if app.menu
-        matches, first, count = command_menu(app, area.height)
-        start = area.y + area.height - 2 - count
-        offset = event.y - start
-        if 0 <= offset < count
-            command!(app, matches[first + offset][1])
-        end
-    else
-        Tachikoma.handle_mouse!(app.input, event)
-    end
+function page_mouse!(app::App,::Val{:chat},event::MouseEvent)
+    geometry=startup_editor_geometry(app)
+    row=startup_editor_row(app,event,geometry)
+    state=chat_completion_state!(app)
+    wheel=event.button in (Tachikoma.mouse_scroll_up,Tachikoma.mouse_scroll_down)
+    type=wheel ? :wheel : event.action==Tachikoma.mouse_press ? :press : event.action==Tachikoma.mouse_release ? :click : :move
+    button=event.button==Tachikoma.mouse_left ? :left : :none
+    delta=event.button==Tachikoma.mouse_scroll_up ? -1 : event.button==Tachikoma.mouse_scroll_down ? 1 : 0
+    result=chat_completion_mouse!(state,type,button,event.x-app.area.x,row,app.area.width;
+        height=app.area.height,padding=terminal_integer(app,"editor-padding",0,0,3),wheel_delta=delta)
+    chat_completion_ready!(app,nothing)
+    result.handled
 end
+
 
 function ui_component(app::App, name::Symbol, fallback, argument)
     return with_component(app.session.kernel, name; fallback) do callable
@@ -316,3 +364,6 @@ end
 
 update!(app::App, event::Union{KeyEvent,MouseEvent}) = ui_component(app, :input, default_input!, event)
 view(app::App, frame::Frame) = ui_component(app, :view, default_view!, frame)
+
+"""Complete the current slash command through the shared prompt editor."""
+complete_input!(app::App) = complete_command!(app, matching_commands(app))

@@ -12,11 +12,25 @@ function session_file(store::SessionStore, name::Union{Symbol,AbstractString})
     label = String(name)::String
     validname(label) ? joinpath(store.directory, string(label, ".json")) : nothing
 end
+stored_session_version(message::Message)=2
+stored_session_message(message::Message)=Dict("role"=>String(message.role),"content"=>message.content,"kind"=>String(message.kind))
+function restored_session_message(entry::AbstractDict,version::Int)
+    if haskey(entry,"shell")
+        restored_shell_message(entry,version)
+    else
+        Message(Symbol(entry["role"]),String(entry["content"]),Symbol(entry["kind"]))
+    end
+end
+
 function session_record(session::Session)
     return lock(session.runtime.execution_lock) do
-        messages = [Dict("role" => String(message.role), "content" => message.content,
-            "kind" => String(message.kind)) for message in history_snapshot(session).messages]
-        return (messages=messages, directory=working_directory(session), lineage=session_lineage(session))
+        snapshot = lock(session.conversation.lock) do
+            (messages=copy(session.messages), compaction=session.conversation.compaction)
+        end
+        messages = stored_session_message.(snapshot.messages)
+        version=maximum(stored_session_version,snapshot.messages;init=2)
+        return (messages=messages, version, compaction=snapshot.compaction,
+            directory=working_directory(session), lineage=session_lineage(session))
     end
 end
 
@@ -28,11 +42,14 @@ persist!(store::SessionStore, name, session::Session, ::Nothing) = (ok=false, re
 function persist!(store::SessionStore, name, session::Session, path::AbstractString)
     record = session_record(session)
     lineage = record.lineage
-    data = Dict("format" => "JuliaForever2.session", "version" => 2, "name" => String(name),
+    data = Dict("format" => "JuliaForever2.session", "version" => record.version, "name" => String(name),
         "working_directory" => record.directory, "messages" => record.messages,
         "lineage" => Dict("id" => string(lineage.id),
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
+    if !isnothing(record.compaction)
+        data["compaction"] = saved_compaction(record.compaction)
+    end
     serialized = JSON.json(data) * "\n"
     return lock(store.lock) do
         if session_archived(store, name)
@@ -70,7 +87,7 @@ end
 function validate(::Type{SessionRecord}, data, name::String)
     if get(data, "format", nothing) != "JuliaForever2.session"
         error("Invalid session format: $name")
-    elseif !(get(data, "version", nothing) in (1, 2))
+    elseif !(get(data, "version", nothing) in (1, 2, 3))
         error("Unsupported session version: $name")
     elseif get(data, "name", nothing) != name
         error("Session identity mismatch: $name")
@@ -80,9 +97,28 @@ function validate(::Type{SessionRecord}, data, name::String)
     nothing
 end
 
+saved_compaction(::Nothing) = nothing
+saved_compaction(entry::CompactionEntry) =
+    Dict("summary" => entry.summary, "first_kept" => entry.first_kept)
+
+restored_compaction(::Nothing, messages) = nothing
+function restored_compaction(data::AbstractDict, messages)
+    summary = get(data, "summary", nothing)
+    first_kept = get(data, "first_kept", nothing)
+    if !(summary isa AbstractString && !isempty(strip(summary)) &&
+            first_kept isa Integer && !(first_kept isa Bool) &&
+            1 <= first_kept <= length(messages))
+        error("Invalid saved compaction entry")
+    end
+    return CompactionEntry(String(summary), Int(first_kept))
+end
+restored_compaction(data, messages) = error("Invalid saved compaction entry")
+
 function session_record(record::SessionRecord)
-    messages = Message[Message(Symbol(entry["role"]), String(entry["content"]), Symbol(entry["kind"])) for entry in record.data["messages"]]
-    (messages, directory=String(record.data["working_directory"]), lineage=session_lineage(record))
+    messages = Message[restored_session_message(entry,Int(record.data["version"])) for entry in record.data["messages"]]
+    compaction = restored_compaction(get(record.data, "compaction", nothing), messages)
+    (; messages, compaction, directory=String(record.data["working_directory"]),
+        lineage=session_lineage(record))
 end
 
 function session_lineage(record::SessionRecord)
@@ -112,7 +148,7 @@ end
 
 """Locate an archive marker outside the saved transcript, with validated names."""
 function session_archive_file(store::SessionStore, name::Union{Symbol,AbstractString})
-    label = String(name)
+    label = String(name)::String
     validname(label) ? joinpath(store.directory, ".session-archives", label * ".json") : nothing
 end
 
@@ -206,16 +242,17 @@ end
 function session_summary(store::SessionStore, name::AbstractString)
     path = session_file(store, name)
     if !is_saved_profile_file(path)
-        return nothing
+        nothing
+    else
+        record = SessionRecord(JSON.parsefile(path), store, String(name))
+        lineage = session_lineage(record)
+        Dict{String,Any}(
+            "session" => String(name), "id" => string(lineage.id),
+            "parent" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
+            "root" => string(lineage.root_id),
+            "workingDirectory" => String(record.data["working_directory"]),
+            "messages" => length(record.data["messages"]))
     end
-    record = SessionRecord(JSON.parsefile(path), store, String(name))
-    lineage = session_lineage(record)
-    return Dict{String,Any}(
-        "session" => String(name), "id" => string(lineage.id),
-        "parent" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
-        "root" => string(lineage.root_id),
-        "workingDirectory" => String(record.data["working_directory"]),
-        "messages" => length(record.data["messages"]))
 end
 
 """Enumerate saved session summaries in stable name order without resuming sessions."""
@@ -309,7 +346,10 @@ function load_session(store::SessionStore, name::Union{Symbol,AbstractString}, t
     isnothing(record) ? nothing : Session(target, record; kwargs...)
 end
 
-Session(target::Union{Kernel,AgentDefinition}, record::NamedTuple; kwargs...) = Session(target; messages=record.messages, working_directory=record.directory, id=record.lineage.id, parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
+Session(target::Union{Kernel,AgentDefinition}, record::NamedTuple; kwargs...) =
+    Session(target; messages=record.messages, compaction_entry=record.compaction,
+        working_directory=record.directory, id=record.lineage.id,
+        parent_id=record.lineage.parent_id, root_id=record.lineage.root_id, kwargs...)
 """Publish replaceable native session persistence as an ordinary Julia plugin service."""
 function session_store_plugin(directory; name=:session_store, service_name=:session_store, factory=SessionStore)
     contract = Symbol(service_name)

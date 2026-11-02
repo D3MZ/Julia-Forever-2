@@ -1,0 +1,318 @@
+{
+  "cases": [
+    {
+      "id": "plain-paragraph",
+      "text": "Plain **bold** and *italic* text.\n\nA second paragraph."
+    },
+    {
+      "id": "plain-list",
+      "text": "- one\n- two\n\n> quote"
+    },
+    {
+      "id": "fence-plain",
+      "text": "```\n  first  \n\nlast\n\n```"
+    },
+    {
+      "id": "fence-unknown",
+      "text": "```not-a-language\n  literal **markdown** and \u03bb\u754c\ud83d\ude42  \n```"
+    },
+    {
+      "id": "fence-js-comment",
+      "text": "```javascript\n/* comment starts\n * keeps its state\n */\nconst answer = 42;\n```"
+    },
+    {
+      "id": "fence-js-string",
+      "text": "```js\nconst message = `first line\nsecond ${name}\nlast`;\n```"
+    },
+    {
+      "id": "fence-python-string",
+      "text": "```python\ntext = \"\"\"first line\nsecond line\nlast\"\"\"\nprint(text)\n```"
+    },
+    {
+      "id": "fence-json",
+      "text": "```json\n{\"text\":\"\u03bb\u754c\ud83d\ude42\", \"valid\": true, \"count\": 12}\n```"
+    },
+    {
+      "id": "fence-julia",
+      "text": "```julia\nfunction square(x)\n    x^2\nend\n```"
+    },
+    {
+      "id": "fence-sql",
+      "text": "```sql\nSELECT name, 42 FROM records\nWHERE enabled = TRUE;\n```"
+    },
+    {
+      "id": "fence-lang-info",
+      "text": "```python linenums=true\nprint(\"hello\")\n```"
+    },
+    {
+      "id": "fence-tabs",
+      "text": "```\n\tleft\tcenter\n```"
+    },
+    {
+      "id": "fence-tilde",
+      "text": "~~~~text\n```not nested\n~~~~"
+    },
+    {
+      "id": "fence-embedded-shorter",
+      "text": "````text\n```\nliteral\n````"
+    },
+    {
+      "id": "fence-empty",
+      "text": "```\n```"
+    },
+    {
+      "id": "fence-indent",
+      "text": "   ```text\n   kept?\n   ```"
+    },
+    {
+      "id": "fence-wrap",
+      "text": "```text\n  alpha beta gamma delta epsilon zeta eta theta iota kappa\nabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n```"
+    },
+    {
+      "id": "fence-before-after",
+      "text": "Before paragraph.\n\n```text\nbody\n```\nAfter paragraph."
+    },
+    {
+      "id": "fence-adjacent",
+      "text": "```text\none\n```\n```text\ntwo\n```"
+    },
+    {
+      "id": "fence-quote",
+      "text": "> ```python\n> text = \"\"\"first\n> second\"\"\"\n> ```"
+    },
+    {
+      "id": "fence-quote-prose",
+      "text": "> Intro **bold**.\n>\n> ```text\n> long quoted text should wrap in the actual nested width\n> ```\n>\n> Closing."
+    },
+    {
+      "id": "fence-nested-quote",
+      "text": "> > ```text\n> > nested\n> > ```"
+    },
+    {
+      "id": "fence-list",
+      "text": "- first\n\n  ```text\n  body\n  ```\n\n- second"
+    },
+    {
+      "id": "fence-ordered-list",
+      "text": "3. first\n\n   ```text\n   alpha beta gamma delta epsilon zeta eta theta\n   ```\n\n4. next"
+    },
+    {
+      "id": "fence-nested-list",
+      "text": "- first\n  - inner\n\n    ```text\n    body\n    ```"
+    },
+    {
+      "id": "fence-controls",
+      "text": "```text\nfirst\u001b[31mBAD\u001b[0m\u0000last\n```",
+      "safetyDifference": true
+    },
+    {
+      "id": "fence-julia-multiline",
+      "text": "```julia\n#= multi\ncomment =#\ntext = \"\"\"first\nsecond \u03bb\"\"\"\nflag = true\n```"
+    },
+    {
+      "id": "fence-python-prefix",
+      "text": "```python\ntext = \"\"\"first\nsecond \u03bb"
+    },
+    {
+      "id": "fence-python-single-quotes",
+      "text": "```python\ntext = '''first\nsecond \u03bb"
+    },
+    {
+      "id": "fence-js-prefix",
+      "text": "```javascript\nconst text = `first\nsecond \u03bb"
+    },
+    {
+      "id": "fence-js-comment-prefix",
+      "text": "```javascript\n/* first\nsecond \u03bb"
+    },
+    {
+      "id": "fence-empty-trailing",
+      "text": "```text\n\n\n```"
+    },
+    {
+      "id": "fence-partial-with-newline",
+      "text": "```text\nbody\n``\n"
+    },
+    {
+      "id": "fence-not-terminal",
+      "text": "```text\nbody\n``\n```\nAfter"
+    },
+    {
+      "id": "fence-aborted",
+      "text": "```python\ntext = \"\"\"first\nsecond",
+      "stopReason": "aborted",
+      "errorMessage": "Request was aborted"
+    },
+    {
+      "id": "fence-error",
+      "text": "```javascript\n/* partial",
+      "stopReason": "error",
+      "errorMessage": "Fixture connection failed"
+    },
+    {
+      "id": "stream-backtick/0",
+      "text": "`",
+      "sequence": "stream-backtick",
+      "step": 0,
+      "streaming": true,
+      "input": "initial"
+    },
+    {
+      "id": "stream-backtick/1",
+      "text": "``",
+      "sequence": "stream-backtick",
+      "step": 1,
+      "streaming": true,
+      "input": "`"
+    },
+    {
+      "id": "stream-backtick/2",
+      "text": "```",
+      "sequence": "stream-backtick",
+      "step": 2,
+      "streaming": true,
+      "input": "`"
+    },
+    {
+      "id": "stream-backtick/3",
+      "text": "```python",
+      "sequence": "stream-backtick",
+      "step": 3,
+      "streaming": true,
+      "input": "python"
+    },
+    {
+      "id": "stream-backtick/4",
+      "text": "```python\n",
+      "sequence": "stream-backtick",
+      "step": 4,
+      "streaming": true,
+      "input": "\n"
+    },
+    {
+      "id": "stream-backtick/5",
+      "text": "```python\ntext = \"\"\"first",
+      "sequence": "stream-backtick",
+      "step": 5,
+      "streaming": true,
+      "input": "text = \"\"\"first"
+    },
+    {
+      "id": "stream-backtick/6",
+      "text": "```python\ntext = \"\"\"first\nsecond",
+      "sequence": "stream-backtick",
+      "step": 6,
+      "streaming": true,
+      "input": "\nsecond"
+    },
+    {
+      "id": "stream-backtick/7",
+      "text": "```python\ntext = \"\"\"first\nsecond\"\"\"\n",
+      "sequence": "stream-backtick",
+      "step": 7,
+      "streaming": true,
+      "input": "\"\"\"\n"
+    },
+    {
+      "id": "stream-backtick/8",
+      "text": "```python\ntext = \"\"\"first\nsecond\"\"\"\n`",
+      "sequence": "stream-backtick",
+      "step": 8,
+      "streaming": true,
+      "input": "`"
+    },
+    {
+      "id": "stream-backtick/9",
+      "text": "```python\ntext = \"\"\"first\nsecond\"\"\"\n``",
+      "sequence": "stream-backtick",
+      "step": 9,
+      "streaming": true,
+      "input": "`"
+    },
+    {
+      "id": "stream-backtick/10",
+      "text": "```python\ntext = \"\"\"first\nsecond\"\"\"\n```",
+      "sequence": "stream-backtick",
+      "step": 10,
+      "streaming": false,
+      "input": "`"
+    },
+    {
+      "id": "stream-quote/0",
+      "text": "> ```text\n> body",
+      "sequence": "stream-quote",
+      "step": 0,
+      "streaming": true,
+      "input": "initial"
+    },
+    {
+      "id": "stream-quote/1",
+      "text": "> ```text\n> body\n> `",
+      "sequence": "stream-quote",
+      "step": 1,
+      "streaming": true,
+      "input": "\n> `"
+    },
+    {
+      "id": "stream-quote/2",
+      "text": "> ```text\n> body\n> ``",
+      "sequence": "stream-quote",
+      "step": 2,
+      "streaming": true,
+      "input": "`"
+    },
+    {
+      "id": "stream-quote/3",
+      "text": "> ```text\n> body\n> ```",
+      "sequence": "stream-quote",
+      "step": 3,
+      "streaming": false,
+      "input": "`"
+    },
+    {
+      "id": "stream-tilde/0",
+      "text": "~~~~text\nbody",
+      "sequence": "stream-tilde",
+      "step": 0,
+      "streaming": true,
+      "input": "initial"
+    },
+    {
+      "id": "stream-tilde/1",
+      "text": "~~~~text\nbody\n~",
+      "sequence": "stream-tilde",
+      "step": 1,
+      "streaming": true,
+      "input": "\n~"
+    },
+    {
+      "id": "stream-tilde/2",
+      "text": "~~~~text\nbody\n~~",
+      "sequence": "stream-tilde",
+      "step": 2,
+      "streaming": true,
+      "input": "~"
+    },
+    {
+      "id": "stream-tilde/3",
+      "text": "~~~~text\nbody\n~~~",
+      "sequence": "stream-tilde",
+      "step": 3,
+      "streaming": true,
+      "input": "~"
+    },
+    {
+      "id": "stream-tilde/4",
+      "text": "~~~~text\nbody\n~~~~",
+      "sequence": "stream-tilde",
+      "step": 4,
+      "streaming": false,
+      "input": "~"
+    }
+  ],
+  "widths": [
+    100,
+    40,
+    20
+  ]
+}

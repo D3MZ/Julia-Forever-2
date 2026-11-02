@@ -1,27 +1,32 @@
 using JSON
 
-router_request(url, body, headers, context::ExecutionContext=ExecutionContext()) = http_request(url, "POST", body, headers, context)
+router_request(url, body, headers, context::ExecutionContext=ExecutionContext()) = http_request(url, "POST", body, headers, context; timeout=Inf, idle_timeout_ms=HTTPTransport.http_idle_timeout_ms())
 
 struct OpenRouterProvider{F,P}
     api_key::String
     model::String
     transport::F
     policy::P
+    reasoning::Union{Nothing,String}
 end
-OpenRouterProvider(key::AbstractString, model::AbstractString, transport=router_request; policy=CodeModePolicy()) = OpenRouterProvider(String(key), String(model), transport, policy)
-OpenRouterProvider(provider::OpenRouterProvider, model::AbstractString) = OpenRouterProvider(provider.api_key, model, provider.transport; policy=provider.policy)
+OpenRouterProvider(key::AbstractString, model::AbstractString, transport=router_request; policy=CodeModePolicy(),reasoning=nothing) = OpenRouterProvider(String(key), String(model), transport, policy,isnothing(reasoning) ? nothing : String(reasoning))
+OpenRouterProvider(provider::OpenRouterProvider, model::AbstractString) = OpenRouterProvider(provider.api_key, model, provider.transport; policy=provider.policy,reasoning=provider.reasoning)
+OpenRouterProvider(key::String,model::String,transport,policy) = OpenRouterProvider(key,model,transport,policy,nothing)
+
+"""Preserve the OpenRouter wire protocol while applying a validated reasoning effort."""
+function openrouter_request_payload(provider::OpenRouterProvider,request::ModelRequest)
+    payload=Dict{String,Any}("model"=>provider.model,"messages"=>conversation_messages(request.messages,request.instructions),"response_format"=>request.response_format)
+    reasoning=provider.reasoning
+    if !isnothing(reasoning)
+        payload["reasoning"]=Dict("effort"=>reasoning)
+    end
+    payload
+end
+
 Base.show(io::IO, provider::OpenRouterProvider) = print(io, "OpenRouterProvider(", repr(provider.model), ", [redacted])")
 (provider::OpenRouterProvider)(messages, session) = call_provider(provider, messages, session)
 
-pi_openrouter_key() = apikey(Sys.which("pi"))
-apikey(::Nothing) = ""
-
-function apikey(executable::AbstractString)
-    output = IOBuffer()
-    process = run(pipeline(ignorestatus(`$executable auth print-api-key --provider openrouter`); stdout=output, stderr=devnull))
-    success(process) ? strip(String(take!(output))) : ""
-end
-function openrouter_key(dir::AbstractString; pi_key=pi_openrouter_key, environment=ENV)
+function openrouter_key(dir::AbstractString; pi_key=Returns(""), environment=ENV)
     saved = load_credentials(dir, :openrouter)
     stored = isnothing(saved) ? "" : get(saved, "key", "")
     if isempty(stored)
@@ -44,8 +49,7 @@ function respond(provider::OpenRouterProvider, request::ModelRequest, context::E
 end
 
 function exchange(provider::OpenRouterProvider, request::ModelRequest, context)
-    conversation = conversation_messages(request.messages, request.instructions)
-    body = JSON.json(Dict("model" => provider.model, "messages" => conversation, "response_format" => request.response_format))
+    body = JSON.json(openrouter_request_payload(provider,request))
     headers = ["Authorization" => "Bearer $(provider.api_key)", "Content-Type" => "application/json"]
     response = transport_request(provider.transport, "https://openrouter.ai/api/v1/chat/completions", body, headers, context)
     if response.status == 401
@@ -63,5 +67,5 @@ respond(provider::OpenRouterProvider, messages, session, context::ExecutionConte
 
 provider_identity(provider::OpenRouterProvider) = ProviderIdentity(;
     id=:openrouter, name="OpenRouter", detail="(openrouter) " * provider.model)
-openrouter_status(dir) = !isnothing(load_credentials(dir, :openrouter)) || !isempty(get(ENV, "OPENROUTER_API_KEY", "")) ? "key configured" : "sign in or use Pi credentials"
+openrouter_status(dir) = !isnothing(load_credentials(dir, :openrouter)) || !isempty(get(ENV, "OPENROUTER_API_KEY", "")) ? "key configured" : "sign in or set an API key"
 openrouter_provider_descriptor() = ProviderDescriptor(:openrouter, "OpenRouter", dir -> OpenRouterProvider(; dir); auth=sign_in!, status=openrouter_status)

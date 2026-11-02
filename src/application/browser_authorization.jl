@@ -3,6 +3,7 @@ function run_authorization!(server::Sockets.TCPServer, flow::AuthFlow, provider:
     redirect = "http://127.0.0.1:$(Int(getsockname(server)[2]))/auth/callback"
     protocol = Val(provider)
     attempt = OAuthAttempt(provider, redirect; authorization_registration(protocol, dir)...)
+    begin_auth_callback!(flow, attempt, timeout)
     url = authorization_url(attempt)
     announce(url)
     opener(url)
@@ -35,21 +36,34 @@ function exchange!(flow::AuthFlow, dir, attempt, callback; transport, identity)
     end
     result
 end
-function sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), opener=open_auth_browser, transport=auth_request, identity=nothing, timeout=180.0)
-    server = listen(ip"127.0.0.1", 0)
-    listener_ownership = own_resource!(flow.context, server)
-    started = lock(flow.lock) do
-        active = active_auth(flow)
-        if active
-            flow.listener = server
-        end
-        active
-    end
-    result = started ? run_authorization!(server, flow, provider, dir; announce, opener, transport, identity, timeout) : (ok=false, reason="Sign-in cancelled.")
+"""Claim one listener per flow; a rejected concurrent start never closes the owner's resources."""
+function start_auth_listener!(flow::AuthFlow)
     lock(flow.lock) do
-        release!(listener_ownership)
-        flow.listener = nothing
+        if active_auth(flow) && isnothing(flow.listener) && isnothing(flow.inbox)
+            server=listen(ip"127.0.0.1",0)
+            ownership=own_resource!(flow.context,server)
+            flow.listener=server
+            (;server,ownership)
+        else
+            nothing
+        end
     end
-    close(flow.context)
-    return result
+end
+
+function sign_in!(flow::AuthFlow, provider::Symbol, dir::AbstractString; announce=Returns(nothing), opener=open_auth_browser, transport=auth_request, identity=nothing, timeout=180.0)
+    owned=start_auth_listener!(flow)
+    sign_in_owned!(owned,flow,provider,dir;announce,opener,transport,identity,timeout)
+end
+sign_in_owned!(::Nothing,flow,provider,dir;kwargs...) = (ok=false,reason="Sign-in cancelled or another authorization is already active.")
+
+function sign_in_owned!(owned::NamedTuple,flow::AuthFlow,provider::Symbol,dir::AbstractString;announce,opener,transport,identity,timeout)
+    operation=Threads.@spawn run_authorization!(owned.server,flow,provider,dir;announce,opener,transport,identity,timeout)
+    wait(operation;throw=false)
+    lock(flow.lock) do
+        release!(owned.ownership)
+        flow.listener=nothing
+        flow.inbox=nothing
+    end
+    close(flow)
+    fetch(operation)
 end

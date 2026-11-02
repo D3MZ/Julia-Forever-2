@@ -653,3 +653,15 @@ end
         close(context)
     end
 end
+
+struct InvalidSelectionIdentityProvider end
+JuliaForever2.provider_identity(::InvalidSelectionIdentityProvider)=missing
+@testset "Provider selection identity boundary is explicit and typed" begin
+    identity=JuliaForever2.ProviderIdentity(;id=:fixture,name="Fixture",detail="native fixture")
+    @test JuliaForever2.provider_selection_identity(identity)===identity
+    @test JuliaForever2.provider_selection_identity(nothing).id==:none
+    @test_throws ErrorException JuliaForever2.provider_selection_identity(missing)
+    kernel=Kernel(InvalidSelectionIdentityProvider())
+    @test_throws ErrorException JuliaForever2.provider_selection_snapshot(kernel)
+    close(kernel)
+end
