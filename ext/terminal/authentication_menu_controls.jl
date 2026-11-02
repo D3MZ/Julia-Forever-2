@@ -65,19 +65,32 @@ function auth_menu_observed_status(app,id::Symbol)
     end
 end
 
-"""Build rows only from live registry methods or removal claims supplied by the real logout owner."""
-function auth_menu_options(app,mode::Symbol)
+"""Retain issued removal selections when a registry entry disappears, without discovering or adopting files."""
+function auth_menu_logout_options(app)
+    options=AuthProviderOption[]
+    for id in keys(app.menus.logout_revisions)
+        kind=get(app.menus.logout_kinds,id,nothing)
+        if !isnothing(kind)
+            descriptor=provider_descriptor(app.settings.registry,Symbol(id))
+            name=isnothing(descriptor) ? id : descriptor.label
+            subscription=!isnothing(descriptor) && auth_menu_method(descriptor).subscription
+            status=AuthProviderStatus(;kind,source="stored credential")
+            push!(options,AuthProviderOption(;id,name,kind,subscription,status))
+        end
+    end
+    sort!(options;by=option->lowercase(option.name),alg=Base.Sort.MergeSort)
+end
+
+"""Build login rows only from live callable registry methods and observed credential state."""
+function auth_menu_login_options(app)
     options=AuthProviderOption[]
     for descriptor in provider_descriptors(app.settings.registry)
-        removable=mode==:logout && haskey(app.menus.logout_revisions,String(descriptor.id))
-        available=mode==:login && !isnothing(descriptor.auth)
-        if removable || available
+        if !isnothing(descriptor.auth)
             method=auth_menu_method(descriptor)
-            observed=removable ? (ok=true,status=AuthProviderStatus(;kind=auth_menu_stored_kind(descriptor),source="stored credential")) : auth_menu_observed_status(app,descriptor.id)
+            observed=auth_menu_observed_status(app,descriptor.id)
             if observed.ok
                 status=observed.status
-                kind=removable ? auth_menu_stored_kind(descriptor) : method.kind
-                push!(options,AuthProviderOption(;id=String(descriptor.id),name=descriptor.label,kind,
+                push!(options,AuthProviderOption(;id=String(descriptor.id),name=descriptor.label,kind=method.kind,
                     method_name=method.label,subscription=method.subscription,status))
             else
                 app.status="Credential state is unsafe or unavailable for "*descriptor.label*"; authentication is blocked."
@@ -86,6 +99,12 @@ function auth_menu_options(app,mode::Symbol)
     end
     sort!(options;by=option->lowercase(option.name),alg=Base.Sort.MergeSort)
 end
+
+"""Render only actual owner-issued logout selections or live login methods."""
+auth_menu_options(app,mode::Symbol)=auth_menu_options(app,Val(mode))
+auth_menu_options(app,::Val{:login})=auth_menu_login_options(app)
+auth_menu_options(app,::Val{:logout})=auth_menu_logout_options(app)
+auth_menu_options(app,::Val)=AuthProviderOption[]
 
 auth_menu_bold(::Nothing)=false
 auth_menu_bold(runtime)=runtime.active.bold
@@ -114,6 +133,7 @@ auth_menu_active(app,control::AuthMenuControl)=auth_menu_owned(app,control) && a
 
 function auth_menu_close!(app,control::AuthMenuControl)
     if auth_menu_owned(app,control)
+        control.mode==:logout && clear_logout_controls!(app)
         app.page=:chat
         auth_menu_dispose!(control)
     end

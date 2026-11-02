@@ -267,8 +267,7 @@ menu_page_items(app::App, ::Val{:login}) =
     [menu_node(string(provider.id), provider.label) for provider in app.settings.providers]
 
 menu_page_items(app::App, ::Val{:logout}) =
-    [menu_node(string(provider.id), provider.label) for provider in app.settings.providers
-        if haskey(app.menus.logout_revisions, String(provider.id))]
+    [menu_node(option.id,option.name) for option in auth_menu_logout_options(app)]
 
 """Keep declared but missing command families visible without opening an empty success-shaped menu."""
 menu_unavailable_reason(::Val)=""
@@ -291,6 +290,7 @@ function open_supported_menu!(app::App, name::AbstractString;refresh=true,query=
     if previous isa AuthMenuControl && previous.stage==:auth
         auth_menu_cancel_auth!(app,previous)
     end
+    previous isa AuthMenuControl && previous.mode==:logout && clear_logout_controls!(app)
     auth_menu_dispose!(previous)
     app.menus.auth_menu_control=nothing
     close_session_selectors!(app)

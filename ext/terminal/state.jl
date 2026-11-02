@@ -79,6 +79,7 @@ Base.@kwdef mutable struct MenusState
     fork_menu::Union{Nothing,ForkMenu} = nothing
     resume_revisions::Dict{String,String} = Dict{String,String}()
     logout_revisions::Dict{String,String} = Dict{String,String}()
+    logout_kinds::Dict{String,Symbol} = Dict{String,Symbol}()
 end
 
 mutable struct EventHandler{F}
