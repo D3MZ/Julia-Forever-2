@@ -4,6 +4,11 @@ Base.@kwdef mutable struct HistoryJournals
     observers::Dict{UUID,Any} = Dict{UUID,Any}()
 end
 
+function journal_history!(journal::HistoryJournals, session::Session, operation::Symbol, arguments...)
+    Base.invokelatest(journal, session, operation, arguments...)
+    nothing
+end
+
 function (journals::HistoryJournals)(session::Session, operation::Symbol, arguments...)
     observer = lock(journals.lock) do
         get(journals.observers, session.runtime.id, nothing)
