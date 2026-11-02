@@ -34,12 +34,10 @@ skill_visible(::FilesystemSkillEntry, ::Val) = error("Unknown skill audience")
 """Anchor workspace skills at the nearest Git project, or the supplied directory."""
 function skill_project_root(workspace::AbstractString)
     current = abspath(workspace)
-    while !ispath(joinpath(current, ".git"))
-        parent = dirname(current)
-        parent == current && return abspath(workspace)
-        current = parent
+    while !ispath(joinpath(current, ".git")) && dirname(current) != current
+        current = dirname(current)
     end
-    current
+    ispath(joinpath(current, ".git")) ? current : abspath(workspace)
 end
 
 function filesystem_skill_roots(registry::FilesystemSkillRegistry, workspace)
@@ -73,38 +71,45 @@ function filesystem_skill_header(path::AbstractString)
     while !isempty(prefix) && !isvalid(String, prefix)
         pop!(prefix)
     end
-    isempty(prefix) && return nothing
-    parts = prompt_frontmatter_parts(String(prefix))
-    isnothing(parts.yaml) ? nothing : (yaml=parts.yaml, metadata=prompt_yaml_metadata(parts.yaml))
+    if isempty(prefix)
+        nothing
+    else
+        parts = prompt_frontmatter_parts(String(prefix))
+        isnothing(parts.yaml) ? nothing : (yaml=parts.yaml, metadata=prompt_yaml_metadata(parts.yaml))
+    end
 end
 
 """Accept simple YAML boolean spellings, rejecting ambiguous invocation policy."""
 function filesystem_skill_boolean(yaml::AbstractString, field::AbstractString, default::Bool)
     found = match(Regex("(?m)^" * field * ":[ \\t]*([^\\r\\n#]*)"), yaml)
     if isnothing(found)
-        return occursin(field, yaml) ? nothing : default
+        occursin(field, yaml) ? nothing : default
+    else
+        value = strip(String(found.captures[1]))
+        if length(value) >= 2 && first(value) == last(value) && first(value) in ('"', '\'')
+            value = chop(value; head=1, tail=1)
+        end
+        normalized = lowercase(value)
+        normalized in ("true", "yes", "on", "1") ? true :
+            normalized in ("false", "no", "off", "0") ? false : nothing
     end
-    value = strip(String(found.captures[1]))
-    if length(value) >= 2 && first(value) == last(value) && first(value) in ('"', '\'')
-        value = chop(value; head=1, tail=1)
-    end
-    normalized = lowercase(value)
-    normalized in ("true", "yes", "on", "1") ? true :
-        normalized in ("false", "no", "off", "0") ? false : nothing
 end
 
+filesystem_skill_entry(path::AbstractString, name::AbstractString, ::Nothing) = nothing
+
 function filesystem_skill_entry(path::AbstractString, name::AbstractString, header)
-    isnothing(header) && return nothing
-    occursin(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", name) || return nothing
-    get(header.metadata, "name", "") == name || return nothing
-    description = strip(replace(get(header.metadata, "description", ""), r"\s+" => " "))
-    isempty(description) && return nothing
-    disabled = filesystem_skill_boolean(header.yaml, "disable-model-invocation", false)
-    user = filesystem_skill_boolean(header.yaml, "user-invocable", true)
-    if isnothing(disabled) || isnothing(user)
+    if !occursin(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", name) ||
+            get(header.metadata, "name", "") != name
         nothing
     else
-        FilesystemSkillEntry(Symbol(name), description, String(path), !disabled, user)
+        description = strip(replace(get(header.metadata, "description", ""), r"\s+" => " "))
+        disabled = filesystem_skill_boolean(header.yaml, "disable-model-invocation", false)
+        user = filesystem_skill_boolean(header.yaml, "user-invocable", true)
+        if isempty(description) || isnothing(disabled) || isnothing(user)
+            nothing
+        else
+            FilesystemSkillEntry(Symbol(name), description, String(path), !disabled, user)
+        end
     end
 end
 
@@ -123,21 +128,28 @@ function filesystem_skill_candidate(root::AbstractString, entry::AbstractString)
     end
 end
 
+function filesystem_skill_root_entries(root::AbstractString)
+    if isdir(root) && !islink(root)
+        entries = observe_skill_file(() -> sort!(readdir(root)), root)
+        isnothing(entries) ? String[] : entries
+    else
+        String[]
+    end
+end
+
 function filesystem_skill_entries(registry::FilesystemSkillRegistry, workspace::AbstractString)
     entries = FilesystemSkillEntry[]
     names = Set{Symbol}()
     for root in filesystem_skill_roots(registry, workspace)
-        (isdir(root) && !islink(root)) || continue
-        files = observe_skill_file(() -> sort!(readdir(root)), root)
-        isnothing(files) && continue
-        for filename in files
+        for filename in filesystem_skill_root_entries(root)
             candidate = filesystem_skill_candidate(root, filename)
-            isnothing(candidate) && continue
-            header = observe_skill_file(() -> filesystem_skill_header(candidate.path), candidate.path)
-            entry = filesystem_skill_entry(candidate.path, candidate.name, header)
-            if !isnothing(entry) && !(entry.name in names)
-                push!(entries, entry)
-                push!(names, entry.name)
+            if !isnothing(candidate)
+                header = observe_skill_file(() -> filesystem_skill_header(candidate.path), candidate.path)
+                entry = filesystem_skill_entry(candidate.path, candidate.name, header)
+                if !isnothing(entry) && !(entry.name in names)
+                    push!(entries, entry)
+                    push!(names, entry.name)
+                end
             end
         end
     end
@@ -184,16 +196,17 @@ function load_skill(registry::FilesystemSkillRegistry, name::Union{Symbol,Abstra
     identity = Symbol(name)
     if any(entry -> entry.name == identity,
             skill_catalog(registry.registered, workspace; audience=:all))
-        return load_skill(registry.registered, identity, workspace; audience)
-    end
-    entries = filesystem_skill_entries(registry, workspace)
-    index = findfirst(entry -> entry.name == identity, entries)
-    if isnothing(index)
-        skill_load_failure("Unknown skill: $name")
-    elseif !skill_visible(entries[index], Val(audience))
-        skill_load_failure("Skill $name is not available for $audience")
+        load_skill(registry.registered, identity, workspace; audience)
     else
-        filesystem_skill_load(entries[index], audience)
+        entries = filesystem_skill_entries(registry, workspace)
+        index = findfirst(entry -> entry.name == identity, entries)
+        if isnothing(index)
+            skill_load_failure("Unknown skill: $name")
+        elseif !skill_visible(entries[index], Val(audience))
+            skill_load_failure("Skill $name is not available for $audience")
+        else
+            filesystem_skill_load(entries[index], audience)
+        end
     end
 end
 
