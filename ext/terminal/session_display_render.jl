@@ -10,6 +10,8 @@ Base.@kwdef mutable struct SessionDisplayState
     show_usage::Bool = false
     output_padding::Int = 1
     retry_attempt::Int = 0
+    mermaid_mode::Symbol = :streaming
+    mermaid_cache::MermaidRenderCache = MermaidRenderCache()
 end
 
 const SessionDisplayRows = Vector{Vector{Tachikoma.Span}}
@@ -57,7 +59,7 @@ function session_display_style(kind::Symbol; bg=Tachikoma.NoColor(), bold=false,
         style = theme_token_style(runtime, haskey(tokens, kind) ? tokens[kind] : String(kind); bold, italic)
         Tachikoma.Style(; fg=style.fg, bg, bold, italic, dim=style.dim)
     else
-        colors = (text=(222,224,225), muted=(157,165,169), dim=(126,136,142), accent=(167,152,215),
+        colors = (text=(222,224,225), muted=(157,165,169), dim=(126,136,142), borderMuted=(118,129,134), accent=(167,152,215),
             thinking=(150,160,164), error=(234,127,129), warning=(205,154,34), bash=(94,178,134),
             heading=(205,154,34), link=(105,173,208), linkurl=(157,165,169), code=(167,152,215), codeblock=(104,183,141), user=(222,224,225), tool=(222,224,225))
         fg = haskey(colors, kind) ? Tachikoma.ColorRGB(colors[kind]...) : Tachikoma.NoColor()
@@ -160,8 +162,8 @@ function session_display_text_rows(text::AbstractString,width::Int,padding::Int;
     rows
 end
 
-function session_display_markdown(text::AbstractString,width::Int,padding::Int;kind::Symbol=:default,bg=Tachikoma.NoColor(),italic=false,render_math::Bool=true)
-    lines=session_markdown_spans(text,max(1,width-2padding);kind,italic,render_math)
+function session_display_markdown(text::AbstractString,width::Int,padding::Int;kind::Symbol=:default,bg=Tachikoma.NoColor(),italic=false,render_math::Bool=true,mermaid_mode::Symbol=:off,is_streaming::Bool=false,mermaid_cache::Union{Nothing,MermaidRenderCache}=nothing)
+    lines=session_markdown_spans(text,max(1,width-2padding);kind,italic,render_math,mermaid_mode,is_streaming,mermaid_cache)
     rows=SessionDisplayRows()
     for line in lines
         append!(rows,session_display_wrap(line,width,padding;bg,boundary_styles=true))
@@ -198,7 +200,7 @@ function session_display_user(message::AbstractDict,width::Int,state::SessionDis
     rows=SessionDisplayRows([session_display_blank(width,bg)])
     blocks=session_display_content(get(message,"content",nothing))
     text=join(session_display_string(get(block,"text","")) for block in blocks if session_display_block_kind(block)=="text")
-    isempty(text) || append!(rows,session_display_markdown(text,width,state.output_padding;kind=:user,bg))
+    isempty(text) || append!(rows,session_display_markdown(text,width,state.output_padding;kind=:user,bg,mermaid_mode=state.mermaid_mode,mermaid_cache=state.mermaid_cache))
     for block in blocks
         session_display_block_kind(block) in ("text","image") || append!(rows,session_display_unsupported(block,width,state.output_padding;bg))
     end
@@ -206,7 +208,7 @@ function session_display_user(message::AbstractDict,width::Int,state::SessionDis
     rows
 end
 
-function session_display_assistant(message::AbstractDict,width::Int,state::SessionDisplayState)
+function session_display_assistant(message::AbstractDict,width::Int,state::SessionDisplayState;is_streaming::Bool=false)
     rows=SessionDisplayRows()
     spacer=true
     blocks=session_display_content(get(message,"content",nothing))
@@ -218,7 +220,7 @@ function session_display_assistant(message::AbstractDict,width::Int,state::Sessi
             text=strip(session_display_string(get(block,"text","")))
             if !isempty(text)
                 spacer && push!(rows,session_display_blank(width))
-                append!(rows,session_display_markdown(text,width,state.output_padding))
+                append!(rows,session_display_markdown(text,width,state.output_padding;mermaid_mode=state.mermaid_mode,is_streaming,mermaid_cache=state.mermaid_cache))
                 spacer=false
             end
         elseif kind=="thinking"

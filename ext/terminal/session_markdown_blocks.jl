@@ -49,6 +49,9 @@ Base.@kwdef struct SessionMarkdownBlocks{H}
     terminal_newline::Bool = false
     quote_context::Bool = false
     hyperlinks::Bool = false
+    mermaid_mode::Symbol = :off
+    is_streaming::Bool = false
+    mermaid_cache::Union{Nothing,MermaidRenderCache} = nothing
 end
 
 function session_markdown_plain(text::String,width::Int;kind::Symbol=:default,italic::Bool=false)
@@ -88,12 +91,21 @@ function session_markdown_code(node::CommonMark.Node,context::SessionMarkdownBlo
             text=join(lines,'\n')
         end
     end
-    rows=SessionDisplayRows([[Tachikoma.Span("```"*code.info,session_display_style(:muted))]])
-    for line in context.highlighter(code.info,text)
-        push!(rows,vcat([Tachikoma.Span("  ",Tachikoma.Style())],line))
+    diagram=session_mermaid_block(node,text,context)
+    if isnothing(diagram.rows)
+        rows=SessionDisplayRows([[Tachikoma.Span("```"*code.info,session_display_style(:muted))]])
+        for line in context.highlighter(code.info,text)
+            push!(rows,vcat([Tachikoma.Span("  ",Tachikoma.Style())],line))
+        end
+        push!(rows,[Tachikoma.Span("```",session_display_style(:muted))])
+        if !isempty(diagram.warning)
+            push!(rows,Tachikoma.Span[])
+            push!(rows,[Tachikoma.Span(diagram.warning,session_display_style(:warning)),Tachikoma.Span("  ",context.kind==:user ? session_display_style(:user) : Tachikoma.Style()),Tachikoma.Span("",Tachikoma.Style())])
+        end
+        rows
+    else
+        diagram.rows
     end
-    push!(rows,[Tachikoma.Span("```",session_display_style(:muted))])
-    rows
 end
 
 function session_markdown_quote_style(style::Tachikoma.Style)
@@ -224,7 +236,7 @@ function session_markdown_sequence(node::CommonMark.Node,context::SessionMarkdow
 end
 
 """Return logical native Markdown rows with explicit, whole-block code rendering."""
-function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:default,italic=false,highlighter=SessionMarkdownSyntax(),hyperlinks::Bool=session_markdown_hyperlinks(),render_math::Bool=true)
+function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:default,italic=false,highlighter=SessionMarkdownSyntax(),hyperlinks::Bool=session_markdown_hyperlinks(),render_math::Bool=true,mermaid_mode::Symbol=:off,is_streaming::Bool=false,mermaid_cache::Union{Nothing,MermaidRenderCache}=nothing)
     text=String(session_display_safe(raw))
     parser=CommonMark.Parser()
     CommonMark.disable!(parser,CommonMark.HtmlEntityRule())
@@ -238,7 +250,7 @@ function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:def
     CommonMark.enable!(parser,CommonMark.TaskListRule())
     ast=parser(text)
     session_markdown_resolve_references!(ast)
-    context=SessionMarkdownBlocks(;width=max(1,width),highlighter,kind,italic,terminal_newline=endswith(text,'\n'),hyperlinks)
+    context=SessionMarkdownBlocks(;width=max(1,width),highlighter,kind,italic,terminal_newline=endswith(text,'\n'),hyperlinks,mermaid_mode,is_streaming,mermaid_cache)
     rows=SessionDisplayRows()
     for line in session_markdown_sequence(ast,context,true)
         append!(rows,session_markdown_wrap(line,max(1,width);boundaries=true))

@@ -15,3 +15,16 @@ function toggle_thinking_visibility!(app::App)
     end
     nothing
 end
+
+"""Rerender current and archived Mermaid blocks when a real persisted display mode changes."""
+function apply_setting_effect!(app::App,::Val{Symbol("mermaid-rendering")},value::AbstractString)
+    if value in ("off","final","streaming")
+        app.transcript.display.mermaid_mode=Symbol(value)
+        app.transcript.display_key=nothing
+        app.transcript.preview_dirty=true
+        app.transcript.width=0
+        (ok=true,reason="")
+    else
+        (ok=false,reason="Mermaid rendering mode is invalid")
+    end
+end

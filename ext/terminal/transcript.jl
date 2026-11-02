@@ -109,7 +109,7 @@ function wrap_markdown_spans(spans::Vector{Tachikoma.Span}, width::Int)
 end
 
 """Use the same native block renderer for streaming previews and committed assistant messages."""
-markdown_lines(content::AbstractString,width::Int)=session_markdown_spans(content,width)
+markdown_lines(content::AbstractString,width::Int;kwargs...)=session_markdown_spans(content,width;kwargs...)
 
 function message_layout_key(messages, index)
     message = messages[index]
@@ -119,14 +119,14 @@ function message_layout_key(messages, index)
     return message, paired, continuation
 end
 
-function message_lines(messages, index, width)
+function message_lines(messages, index, width;mermaid_mode::Symbol=:off,is_streaming::Bool=false,mermaid_cache::Union{Nothing,MermaidRenderCache}=nothing)
     message, paired, continuation = message_layout_key(messages, index)
     code = message.role == :assistant && message.kind == :code
     style = message.role == :user ? :user_message : (message.role == :code_result || code) ? :code_result : :text
     lines = TranscriptLine[]
     style in (:user_message, :code_result) && !continuation && push!(lines, ("", style))
     if message.role == :assistant && !code
-        append!(lines, ((line, :markdown) for line in markdown_lines(message.content, max(1, width - 2))))
+        append!(lines, ((line, :markdown) for line in markdown_lines(message.content, max(1, width - 2);mermaid_mode,is_streaming,mermaid_cache)))
     else
         for line in split(message.content, '\n'; keepempty=true)
             append!(lines, ((chunk, style) for chunk in wrap_conversation_line(line, max(1, width - 2))))
@@ -175,7 +175,7 @@ function layout!(transcript::TranscriptState, layout::TranscriptLayout)
     count = length(transcript.chunks)
     for index in layout.first:length(layout.messages)
         reusable = !layout.resized && index <= length(transcript.messages) && index <= count && message_layout_key(transcript.messages, index) == message_layout_key(layout.messages, index)
-        lines = reusable ? transcript.chunks[index] : message_lines(layout.messages, index, layout.width)
+        lines = reusable ? transcript.chunks[index] : message_lines(layout.messages, index, layout.width;mermaid_mode=transcript.display.mermaid_mode,mermaid_cache=transcript.display.mermaid_cache)
         append!(transcript.lines, lines)
         if index <= count
             transcript.chunks[index] = lines
@@ -250,7 +250,7 @@ function preview_lines!(app::App, width::Int)
     if !isnothing(progress) && (transcript.preview_dirty || transcript.preview_width != width)
         messages = Message[Message(:assistant, progress.text, progress.kind)]
         empty!(transcript.preview_lines)
-        append!(transcript.preview_lines, message_lines(messages, 1, width))
+        append!(transcript.preview_lines, message_lines(messages, 1, width;mermaid_mode=transcript.display.mermaid_mode,is_streaming=true,mermaid_cache=transcript.display.mermaid_cache))
         transcript.preview_width = width
         transcript.preview_dirty = false
     end
