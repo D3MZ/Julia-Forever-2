@@ -19,22 +19,40 @@ Base.@kwdef mutable struct CompositeSkillRegistry
     revision::UInt64 = UInt64(0)
 end
 
+const COMPOSITE_SKILL_TOPOLOGY_LOCK = ReentrantLock()
+
+"""Find an indirect cycle before an edge is published to a composite registry."""
+function composite_skill_reaches(source, target::CompositeSkillRegistry,
+        visited=IdDict{Any,Bool}())
+    if source === target
+        true
+    elseif source isa CompositeSkillRegistry && !haskey(visited, source)
+        visited[source] = true
+        any(binding -> composite_skill_reaches(binding.source, target, visited),
+            composite_skill_sources(source).sources)
+    else
+        false
+    end
+end
+
 """Register or explicitly replace a source; higher priority wins name collisions."""
 function register_skill_source!(registry::CompositeSkillRegistry,
         name::Union{Symbol,AbstractString}, source; priority::Int=0, replace::Bool=false)
     identity = Symbol(name)
-    lock(registry.lock) do
-        if isempty(String(identity))
-            (ok=false, reason="Skill source name must not be empty", registration=nothing)
-        elseif source === registry
-            (ok=false, reason="A composite cannot contain itself", registration=nothing)
-        elseif haskey(registry.sources, identity) && !replace
-            (ok=false, reason="Skill source $identity is already registered", registration=nothing)
-        else
-            registry.revision += UInt64(1)
-            generation = registry.revision
-            registry.sources[identity] = SkillSourceBinding(identity, priority, generation, source)
-            (ok=true, reason="", registration=SkillSourceRegistration(identity, generation))
+    lock(COMPOSITE_SKILL_TOPOLOGY_LOCK) do
+        lock(registry.lock) do
+            if isempty(String(identity))
+                (ok=false, reason="Skill source name must not be empty", registration=nothing)
+            elseif composite_skill_reaches(source, registry)
+                (ok=false, reason="A composite skill source cannot form a cycle", registration=nothing)
+            elseif haskey(registry.sources, identity) && !replace
+                (ok=false, reason="Skill source $identity is already registered", registration=nothing)
+            else
+                registry.revision += UInt64(1)
+                generation = registry.revision
+                registry.sources[identity] = SkillSourceBinding(identity, priority, generation, source)
+                (ok=true, reason="", registration=SkillSourceRegistration(identity, generation))
+            end
         end
     end
 end
@@ -42,14 +60,16 @@ end
 """A disposed plugin cannot remove a more recent source replacement."""
 function unregister_skill_source!(registry::CompositeSkillRegistry,
         registration::SkillSourceRegistration)
-    lock(registry.lock) do
-        current = get(registry.sources, registration.name, nothing)
-        active = !isnothing(current) && current.generation == registration.generation
-        if active
-            delete!(registry.sources, registration.name)
-            registry.revision += UInt64(1)
+    lock(COMPOSITE_SKILL_TOPOLOGY_LOCK) do
+        lock(registry.lock) do
+            current = get(registry.sources, registration.name, nothing)
+            active = !isnothing(current) && current.generation == registration.generation
+            if active
+                delete!(registry.sources, registration.name)
+                registry.revision += UInt64(1)
+            end
+            (ok=active, reason=active ? "" : "Skill source registration is no longer active")
         end
-        (ok=active, reason=active ? "" : "Skill source registration is no longer active")
     end
 end
 
