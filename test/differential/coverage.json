@@ -2900,7 +2900,15 @@
       "implementation": "Native Julia SessionStore atomically persists archive status separately from each session's messages and lineage, filters archived saved listings and persisted search, exposes archived-only catalog and session/archive plus session/unarchive RPC operations, and guards resume, open, turn, fork and save. The storage and RPC interfaces remain overridable through Julia multiple dispatch and plugin-owned services.",
       "upstream_reference": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447:packages/workspace/workspace/src/index.ts (archiveSession, unarchiveSession); docs/subsystems/web-client.md (ArchivedFilter)",
       "evidence": "Pinned upstream source inspected. No Julia execution trace, DSH scenario comparison, or completed scheduled quality evidence for this change; not verified parity.",
-      "limits": "Only durable saved-session archives are implemented; live sessions must close first. No upstream stopActivity flow, pin/unpin, Workspace grouping, feed ordering, browser archived-row UI, multi-process coordination, or complete DSH policy/protocol parity."
+      "limits": "Only durable saved-session archives are implemented; live sessions must close first. No upstream stopActivity flow, full live-session pinning, Workspace grouping, feed ordering, browser archived-row UI, multi-process coordination, or complete DSH policy/protocol parity."
+    },
+    {
+      "family": "sessions.saved-pins",
+      "status": "native-implementation-unverified",
+      "implementation": "Native Julia SessionStore provides optional multiple-dispatch pin_session!, unpin_session!, pinned_sessions and session_pinned interfaces. An atomically replaced private registry records ordered, UUID-bound saved identities; pinning is idempotent and newest-first, repeated pins preserve order, archived sessions cannot be pinned, archiving clears pins, and stale or recreated session identities do not inherit pins. Julia-native session/pin, session/unpin and session/list/pinned RPC operations require no DSH process, SDK or Web runtime.",
+      "upstream_reference": "deepseek-ai/deepseek-harness@ce7073d51254c26cd63b22a60835b8f948deb447:packages/workspace/workspace/src/index.ts (pinnedSessionIds, pinSession, unpinSession, archiveSession); packages/api/workspace-controller/README.md (pin order and durable registry semantics)",
+      "evidence": "Pinned upstream implementation and API documentation inspected. No executed Julia pin scenario, DSH runtime trace, differential comparison, or scheduled-quality execution is available for this change.",
+      "limits": "Only already-persisted Julia sessions are pinnable. Upstream live/unsaved session pins, workspace membership/order, browser pin controls, follow-feed events, remote access filtering, concurrent multi-process writes, and full DSH SDK/API equivalence remain unverified. Pin and archive metadata are separately atomically persisted, not a multi-file transaction."
     }
   ]
 }

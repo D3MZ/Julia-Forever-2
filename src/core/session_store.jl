@@ -166,6 +166,7 @@ function archive_session!(store::SessionStore, name::Union{Symbol,AbstractString
                 directory = dirname(marker)
                 islink(directory) && error("Refusing symbolic-link session archive directory")
                 mkpath(directory; mode=0o700)
+                unpin_session!(store, name)
                 data = Dict("format" => "JuliaForever2.session-archive", "version" => 1,
                     "name" => String(name), "id" => string(session_lineage(record).id))
                 mktemp(directory) do temporary, output
