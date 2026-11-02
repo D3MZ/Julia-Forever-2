@@ -86,7 +86,7 @@ function filesystem_skill_boolean(yaml::AbstractString, field::AbstractString, d
     end
     value = strip(String(found.captures[1]))
     if length(value) >= 2 && first(value) == last(value) && first(value) in ('"', '\'')
-        value = value[2:end-1]
+        value = chop(value; head=1, tail=1)
     end
     normalized = lowercase(value)
     normalized in ("true", "yes", "on", "1") ? true :
