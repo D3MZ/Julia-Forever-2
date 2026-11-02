@@ -129,10 +129,6 @@ Base.propertynames(session::Session, private::Bool=false) = (fieldnames(typeof(s
 
 """Commit an optional durable journal before changing visible session history."""
 journal_history!(journal, session::Session, operation::Symbol, arguments...) = nothing
-function journal_history!(journal::HistoryJournals, session::Session, operation::Symbol, arguments...)
-    Base.invokelatest(journal, session, operation, arguments...)
-    nothing
-end
 journal_history!(session::Session, operation::Symbol, arguments...) = journal_history!(component(session.kernel, :history_journals), session, operation, arguments...)
 
 function append_message!(session::Session, message)
