@@ -139,7 +139,7 @@ function verify_semantics()
         ("python", "@decorator\ndef f(x):\n    return x * 3\n"),
         ("python", "print('héllo')\n"), ("bash", "echo hello && printf 'ok'\n"),
         ("typescript", "const fn = <T>(value: T) => value;\n"),
-        ("toml", "[section]\nlabel=\"value\"\n"))
+        ("toml", "[section]\nlabel=\"value\"\n")]
     for (index, (language, source)) in enumerate(extra)
         left = syntax_response(Baseline, language, source)
         right = syntax_response(Candidate, language, source)
