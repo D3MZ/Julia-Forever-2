@@ -57,7 +57,7 @@ public SessionTitleService, session_title, rename_session_title!, refresh_sessio
 public normalize_session_title, fallback_session_title
 public session_markdown, session_markdown_entry
 public SessionAPI, session_api_plugin, session_api_request!, session_api_peer, session_workspace_groups
-public WorkspaceRegistry, workspace_registry_plugin, workspace_snapshot, workspace_changes
+public WorkspaceRegistry, workspace_registry_plugin, workspace_snapshot, workspace_changes, workspace_wait_changes
 public register_workspace!, rename_workspace!, delete_workspace!, move_workspace!, move_workspace_session!, registered_workspace_groups
 public start_web_server, web_server_plugin, web_url, web_launch_url
 

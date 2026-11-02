@@ -76,12 +76,19 @@ function validate_workspace_state(state)
         end
         foreach(id -> UUID(id), order)
     end
+    previous_revision = nothing
     for event in state["events"]
         if !(event isa AbstractDict) ||
                 !(get(event, "revision", nothing) isa Integer && metadata_number(event["revision"])) ||
-                !(get(event, "type", nothing) isa String)
+                !(get(event, "type", nothing) isa String) ||
+                event["revision"] < 1 || event["revision"] > state["revision"] ||
+                (!isnothing(previous_revision) && event["revision"] != previous_revision + 1)
             error("Invalid native workspace change")
         end
+        previous_revision = event["revision"]
+    end
+    if !isnothing(previous_revision) && previous_revision != state["revision"]
+        error("Native workspace journal is incomplete")
     end
     nothing
 end
@@ -168,6 +175,28 @@ function workspace_changes(registry::WorkspaceRegistry; since=nothing)
                 "events" => deepcopy([event for event in events if event["revision"] > since]))
         end
     end
+end
+
+"""Fallback for third-party registries that implement only immediate change snapshots."""
+workspace_wait_changes(registry; since=nothing, wait_ms=0) = workspace_changes(registry; since)
+
+"""Wait for a workspace revision without holding registry locks between observations."""
+function workspace_wait_changes(registry::WorkspaceRegistry; since=nothing, wait_ms::Integer=0)
+    result = workspace_changes(registry; since)
+    duration = min(max(wait_ms, 0), 10_000)
+    if !isnothing(since) && duration > 0 &&
+            result["type"] == "delta" && isempty(result["events"])
+        deadline = time_ns() + UInt64(duration) * UInt64(1_000_000)
+        while result["type"] == "delta" && isempty(result["events"])
+            current = time_ns()
+            if current >= deadline
+                break
+            end
+            sleep(min(0.25, Float64(deadline - current) / 1_000_000_000))
+            result = workspace_changes(registry; since)
+        end
+    end
+    result
 end
 
 workspace_title(title) = title isa AbstractString &&

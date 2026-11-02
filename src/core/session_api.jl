@@ -320,11 +320,14 @@ end
 
 function api_workspace_feed(api::SessionAPI, params::AbstractDict)
     since = get(params, "since", nothing)
-    if isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0)
-        registry = api_workspace_registry(api)
-        registry isa RpcError ? registry : workspace_changes(registry; since)
-    else
+    wait_ms = get(params, "waitMs", 0)
+    if !(isnothing(since) || (since isa Integer && !(since isa Bool) && since >= 0))
         RpcError(-32602, "Workspace cursor must be a nonnegative integer")
+    elseif !(wait_ms isa Integer && !(wait_ms isa Bool) && 0 <= wait_ms <= 10_000)
+        RpcError(-32602, "Workspace waitMs must be an integer from 0 to 10000")
+    else
+        registry = api_workspace_registry(api)
+        registry isa RpcError ? registry : workspace_wait_changes(registry; since, wait_ms)
     end
 end
 
