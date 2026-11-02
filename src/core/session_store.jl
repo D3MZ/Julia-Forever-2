@@ -21,12 +21,8 @@ function session_record(session::Session)
 end
 
 """Atomically persist a session's messages and workspace, excluding transient execution metadata."""
-function save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session)
-    lock(store.lock) do
-        session_archived(store, name) ? (ok=false, reason="Session is archived: $name") :
-            persist!(store, name, session, session_file(store, name))
-    end
-end
+save_session!(store::SessionStore, name::Union{Symbol,AbstractString}, session::Session) =
+    persist!(store, name, session, session_file(store, name))
 persist!(store::SessionStore, name, session::Session, ::Nothing) = (ok=false, reason="Invalid session name")
 
 function persist!(store::SessionStore, name, session::Session, path::AbstractString)
@@ -38,17 +34,21 @@ function persist!(store::SessionStore, name, session::Session, path::AbstractStr
             "parent_id" => isnothing(lineage.parent_id) ? nothing : string(lineage.parent_id),
             "root_id" => string(lineage.root_id)))
     serialized = JSON.json(data) * "\n"
-    lock(store.lock) do
-        mkpath(store.directory; mode=0o700)
-        mktemp(store.directory) do temporary, output
-            chmod(temporary, 0o600)
-            write(output, serialized)
-            close(output)
-            Base.Filesystem.rename(temporary, path)
+    return lock(store.lock) do
+        if session_archived(store, name)
+            (ok=false, reason="Session is archived: $name")
+        else
+            mkpath(store.directory; mode=0o700)
+            mktemp(store.directory) do temporary, output
+                chmod(temporary, 0o600)
+                write(output, serialized)
+                close(output)
+                Base.Filesystem.rename(temporary, path)
+            end
+            store.revision += UInt64(1)
+            (ok=true, reason="")
         end
-        store.revision += UInt64(1)
     end
-    return (ok=true, reason="")
 end
 
 function saved_session_record(store::SessionStore, name::Union{Symbol,AbstractString})
