@@ -21,24 +21,31 @@ mutable struct WebAccess
     origin::String
     expires_at::Float64
     deadline::UInt64
+    invitation_expires_at::Float64
+    invitation_deadline::UInt64
+    session_lifetime::Float64
     browser_only::Bool
     local_bearer::String
 end
 
-function WebAccess(token::String; public_origin="", lifetime=86400, browser_only=!isempty(public_origin))
+function WebAccess(token::String; public_origin="", lifetime=86400, session_lifetime=31536000, browser_only=!isempty(public_origin))
     origin = String(public_origin)
     if isempty(token) || !isempty(origin) && ncodeunits(token) < 32
         error("Web invitation requires at least 32 characters of random entropy")
     elseif !(lifetime isa Real && 0 < lifetime <= 86400 && isfinite(lifetime))
-        error("Web lifetime must be positive and at most 24 hours")
+        error("Web invitation lifetime must be positive and at most 24 hours")
+    elseif !(session_lifetime isa Real && 0 < session_lifetime <= 31536000 && isfinite(session_lifetime))
+        error("Web browser-session lifetime must be positive and at most 365 days")
     elseif !isempty(origin) && isnothing(match(r"\Ahttps://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?\z", origin))
         error("Remote Web requires one exact HTTPS origin without a path")
     elseif !isempty(origin) && !browser_only
         error("Remote Web requires browser-only access; invitations are never bearer tokens")
     else
         cookie = web_secret()
+        expires_at = time() + lifetime
+        deadline = time_ns() + UInt64(round(lifetime * 1e9))
         WebAccess(web_digest(token), cookie, web_digest(cookie), ReentrantLock(), false, false,
-            origin, time() + lifetime, time_ns() + UInt64(round(lifetime * 1e9)), browser_only, browser_only ? "" : token)
+            origin, expires_at, deadline, expires_at, deadline, Float64(session_lifetime), browser_only, browser_only ? "" : token)
     end
 end
 
@@ -56,9 +63,14 @@ end
 """Spend the invitation atomically; a second browser can never obtain the session cookie."""
 function redeem_web_access!(access::WebAccess, credential::AbstractString)
     lock(access.lock) do
-        accepted = web_access_alive(access) && !access.redeemed &&
+        accepted = !access.revoked && !access.redeemed &&
+            time() < access.invitation_expires_at && time_ns() < access.invitation_deadline &&
             web_equal(access.invitation, web_digest(credential))
-        access.redeemed |= accepted
+        if accepted
+            access.redeemed = true
+            access.expires_at = time() + access.session_lifetime
+            access.deadline = time_ns() + UInt64(round(access.session_lifetime * 1e9))
+        end
         accepted
     end
 end
@@ -85,9 +97,10 @@ function trusted_remote_web_request(access::WebAccess, request::HTTP.Request)
     host = HTTP.header(request, "Host")
     origin = HTTP.header(request, "Origin")
     fetch_site = lowercase(HTTP.header(request, "Sec-Fetch-Site"))
+    invitation_entry = request.method == "GET" && HTTP.URI(String(request.target)).path == "/join"
     isempty(HTTP.header(request, "Authorization")) && host == access.origin[9:end] &&
         (isempty(origin) || origin == access.origin) &&
-        fetch_site in ("", "none", "same-origin")
+        (fetch_site in ("", "none", "same-origin") || invitation_entry && fetch_site in ("same-site", "cross-site"))
 end
 
 function browser_mutation(request::HTTP.Request, access::WebAccess)
@@ -168,3 +181,15 @@ end
 Base.show(io::IO, access::WebAccess) = print(io, "WebAccess(redeemed=", access.redeemed,
     ", revoked=", access.revoked, ", capability=<redacted>)")
 Base.show(io::IO, ::MIME"text/plain", access::WebAccess) = show(io, access)
+
+"""Expire under the same lock as redemption so an invitation timer cannot revoke a new session."""
+function expire_web_access!(access::WebAccess)
+    lock(access.lock) do
+        expired = !web_access_alive(access)
+        if expired
+            access.revoked = true
+            access.cookie = ""
+        end
+        expired
+    end
+end

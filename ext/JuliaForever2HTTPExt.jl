@@ -177,30 +177,33 @@ WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(p
 """Start a token-authenticated loopback Web server backed only by Julia-native sessions."""
 JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0,
         token=web_secret(), handler=web_request, request_trust=trusted_web_request,
-        public_origin="", lifetime=86400, workspace=pwd(), browser_only=!isempty(public_origin)) =
-    serve(api, WebAddress(host, port), token, handler, request_trust, public_origin, lifetime, workspace, browser_only)
+        public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin)) =
+    serve(api, WebAddress(host, port), token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
 
-function serve(api, address::WebAddress, token, handler, request_trust, public_origin, lifetime, workspace, browser_only)
+function serve(api, address::WebAddress, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
     remote_web_api_allowed(api, public_origin, workspace) || error("Public Web requires a dedicated chat-only API; pass a native OpenAIProvider instead of an ambient SessionAPI")
-    access = WebAccess(String(token); public_origin, lifetime, browser_only)
+    access = WebAccess(String(token); public_origin, lifetime, session_lifetime, browser_only)
     controller = WebController(api; workspace, access)
     server = HTTP.serve!(request -> authorize_web_request(controller, access, handler, request, request_trust),
         address.host, address.port; verbose=false, max_body_bytes=1_048_576)
-    expiry = Timer(lifetime) do _
-        revoke_web_access!(access)
-        cancel_web_turns!(controller)
+    interval = min(1.0, Float64(lifetime), Float64(session_lifetime))
+    expiry = Timer(interval; interval) do timer
+        if expire_web_access!(access)
+            cancel_web_turns!(controller)
+            close(timer)
+        end
     end
     WebServer(server, address.host, Int(HTTP.port(server)), String(token), access, controller, expiry)
 end
 """Publish a replaceable native Web service with optional pinned HTTPS origin and bounded lifetime."""
 function JuliaForever2.web_server_plugin(; name=:web_server, service_name=:web_server,
         api_service=:session_api, host="127.0.0.1", port=0, token=web_secret(), handler=web_request,
-        request_trust=trusted_web_request, public_origin="", lifetime=86400, workspace=pwd(), browser_only=!isempty(public_origin))
+        request_trust=trusted_web_request, public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin))
     contract = Symbol(service_name)
     dependency = Symbol(api_service)
     setup = context -> JuliaForever2.provide!(context, contract,
         JuliaForever2.start_web_server(JuliaForever2.service(context, dependency);
-            host, port, token, handler, request_trust, public_origin, lifetime, workspace, browser_only); cleanup=close)
+            host, port, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only); cleanup=close)
     JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
 end
 

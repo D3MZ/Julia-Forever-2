@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   let rpcId = 0, active = null, sessions = [], operation = null, busy = false, cancelling = false;
-  let pollTimer = null, viewEpoch = 0, authorized = true, capabilities = {}, pendingSubmission = null;
+  let pollTimer = null, viewEpoch = 0, authorized = true, capabilities = {}, pendingSubmission = null, menuAnchor = null;
   const preference = (name, fallback) => { try { return localStorage.getItem("jf2." + name) ?? fallback; } catch { return fallback; } };
   function setting(name, value) { try { localStorage.setItem("jf2." + name, value); } catch {} }
   function notice(text = "", error = false) { $("status").textContent = text; $("status").classList.toggle("error",error); }
@@ -34,11 +34,24 @@
     try { await fn(); } catch (error) { notice(error.message || String(error),true); }
     finally { busy = false; enable(); }
   }
-  function closeMenus() { $("tools-menu").hidden = true; $("chat-menu").hidden = true; $("tools").setAttribute("aria-expanded","false"); }
-  function sidebar(open) { document.body.classList.toggle("sidebar-open",open); $("scrim").hidden = !open; $("menu").setAttribute("aria-expanded",String(open)); }
+  function closeMenus(restoreFocus = false) {
+    $("tools-menu").hidden = true; $("chat-menu").hidden = true;
+    $("tools").setAttribute("aria-expanded","false"); $("chat-menu-button").setAttribute("aria-expanded","false");
+    const anchor = menuAnchor; menuAnchor = null; if (restoreFocus) anchor?.focus();
+  }
+  function sidebar(open) {
+    const compact = innerWidth <= 700, wasOpen = document.body.classList.contains("sidebar-open");
+    document.body.classList.toggle("sidebar-open",open);
+    $("scrim").hidden = !(open && compact);
+    $("sidebar").inert = compact && !open;
+    $("main").inert = compact && open;
+    $("menu").setAttribute("aria-expanded",String(open));
+    if (open && compact) $("collapse").focus();
+    else if (wasOpen && compact) $("menu").focus();
+  }
   function popover(menu, anchor) {
     const wasOpen = !menu.hidden; closeMenus(); if (wasOpen) return;
-    menu.hidden = false;
+    menu.hidden = false; menuAnchor = anchor;
     const rect = anchor.getBoundingClientRect(), height = menu.getBoundingClientRect().height;
     menu.style.left = Math.min(Math.max(12,rect.left),innerWidth-menu.offsetWidth-12) + "px";
     menu.style.top = (rect.top > height + 20 ? rect.top-height-8 : rect.bottom+8) + "px";
@@ -149,8 +162,13 @@
   $("tools").addEventListener("click",event => { event.stopPropagation(); popover($("tools-menu"),$("tools")); });
   $("chat-menu-button").addEventListener("click",event => { event.stopPropagation(); popover($("chat-menu"),$("chat-menu-button")); });
   document.addEventListener("click",event => { if (!event.target.closest(".popover")) closeMenus(); });
-  document.addEventListener("keydown",event => { if (event.key === "Escape") { closeMenus(); sidebar(false); } });
-  window.addEventListener("resize",closeMenus);
+  document.addEventListener("keydown",event => { if (event.key === "Escape") {
+    closeMenus(true);
+    const hadSidebar = document.body.classList.contains("sidebar-open"); sidebar(false);
+    if (hadSidebar) $("menu").focus();
+  } });
+  window.addEventListener("resize",() => { closeMenus(); sidebar(document.body.classList.contains("sidebar-open")); });
+  sidebar(false);
   $("appearance").value = preference("appearance","system"); document.documentElement.dataset.theme = $("appearance").value;
   $("appearance").addEventListener("change",() => { document.documentElement.dataset.theme = $("appearance").value; setting("appearance",$("appearance").value); });
   $("enter-send").checked = preference("enter-send","true") === "true";
