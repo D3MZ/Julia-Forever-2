@@ -24,12 +24,39 @@ session_markdown_entry(role::Val{:assistant}, ::Val{:answer}, content::AbstractS
 """Project one message role; other packages can define additional role-specific formats."""
 session_markdown_entry(::Val, content::AbstractString) = nothing
 
+"""Quote user Markdown lines directly from UTF-8 bytes without temporary line arrays."""
 function session_markdown_entry(::Val{:user}, content::AbstractString)
-    lines = split(replace(content, r"\r\n?" => "\n"), '\n'; keepempty=true)
-    while !isempty(lines) && isempty(last(lines))
-        pop!(lines)
+    bytes = codeunits(String(content))
+    output = IOBuffer()
+    pending_empty = 0
+    written = false
+    line_start = 1
+    index = 1
+    last = length(bytes)
+    while index <= last + 1
+        if index > last || bytes[index] == 0x0a || bytes[index] == 0x0d
+            if index == line_start
+                pending_empty += 1
+            else
+                for _ in 1:pending_empty
+                    written && print(output, '\n')
+                    print(output, '>')
+                    written = true
+                end
+                pending_empty = 0
+                written && print(output, '\n')
+                print(output, "> ")
+                write(output, @view bytes[line_start:index-1])
+                written = true
+            end
+            if index < last && bytes[index] == 0x0d && bytes[index + 1] == 0x0a
+                index += 1
+            end
+            line_start = index + 1
+        end
+        index += 1
     end
-    return isempty(lines) ? nothing : join((isempty(line) ? ">" : "> " * line for line in lines), "\n")
+    written ? String(take!(output)) : nothing
 end
 
 function session_markdown_entry(::Val{:assistant}, content::AbstractString)
