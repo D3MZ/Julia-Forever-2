@@ -96,10 +96,40 @@ function own_resource!(context::ExecutionContext, value; cleanup=close)
         end
     end
     accepted || release!(registration)
+    track_action_resource!(get(task_local_storage(), :JuliaForever2_action_resources, nothing), context, registration)
     return registration
 end
 
+mutable struct ActionResourceScope{C,P,E}
+    context::C
+    parent::P
+    executor::E
+    registrations::Vector{ResourceRegistration}
+    cleanup_failures::Vector{Task}
+    output_start::Int
+end
+
+ActionResourceScope(context::ExecutionContext, executor) = ActionResourceScope(context,
+    get(task_local_storage(), :JuliaForever2_action_resources, nothing), executor, ResourceRegistration[], Task[], 0)
+
+action_uses_executor(::Nothing, executor) = false
+action_uses_executor(scope::ActionResourceScope, executor) = scope.executor === executor || action_uses_executor(scope.parent, executor)
+
+function note_component_cleanup_failure!(scope::ActionResourceScope, task::Task)
+    push!(scope.cleanup_failures, task)
+    note_component_cleanup_failure!(scope.parent, task)
+    nothing
+end
+
+track_action_resource!(::Nothing, context, registration) = nothing
+function track_action_resource!(scope::ActionResourceScope, context, registration)
+    scope.context === context && push!(scope.registrations, registration)
+    track_action_resource!(scope.parent, context, registration)
+    nothing
+end
+
 track_component_lease!(context::ExecutionContext, lease::ComponentLease) = own_resource!(context, lease; cleanup=release!)
+release_action_resources!(scope::ActionResourceScope) = foreach(release!, Iterators.reverse(scope.registrations))
 transfer_component_lease!(registration::ResourceRegistration) = detach_resource!(registration)
 
 function cancel!(context::ExecutionContext)

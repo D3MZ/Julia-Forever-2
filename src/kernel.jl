@@ -86,6 +86,13 @@ function retire!(pending, entry::ComponentEntry)
     return ready_to_clean!(pending, entry)
 end
 
+note_component_cleanup_failure!(scope, task::Task) = nothing
+
+function failed_component_cleanup!(task::Task)
+    note_component_cleanup_failure!(get(task_local_storage(), :JuliaForever2_action_resources, nothing), task)
+    fetch(task)
+end
+
 function clean_entries!(kernel::Kernel, pending)
     failures = Task[]
     while !isempty(pending)
@@ -103,7 +110,7 @@ function clean_entries!(kernel::Kernel, pending)
             empty!(entry.dependencies)
         end
     end
-    isempty(failures) || fetch(first(failures))
+    isempty(failures) || failed_component_cleanup!(first(failures))
     return nothing
 end
 

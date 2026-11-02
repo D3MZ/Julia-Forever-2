@@ -1,5 +1,7 @@
 module JuliaForever2
 
+import Distributed
+
 export greet, Kernel, ComponentSpec, component, install!, remove!, acquire!, release!, Session, Message, Reply, run_turn!, spawn_agent!
 export with_component, wrap_component!, evaluate!, submit_turn!, submit_evaluation!, run_child!, cancel!
 export ExecutionContext, ExecutionResult, HarnessEvent, ProviderResult, TaskHandle

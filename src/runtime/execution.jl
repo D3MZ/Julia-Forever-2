@@ -69,9 +69,58 @@ function commit!(session::Session, decision, reply, context::ExecutionContext)
         Base.invokelatest(apply_decision!, session, decision, context)
     end
 end
+struct CapturedActionFailure{E,B}
+    exception::E
+    backtrace::B
+end
+
+"""Capture one action on the calling task without replaying its effects."""
+capture_action(f) = Distributed.wrap_on_error(_ -> Some(Base.invokelatest(f)),
+    exception -> CapturedActionFailure(exception, catch_backtrace()))(nothing)
+
+action_exception(exception) = exception
+action_exception(exception::LoadError) = action_exception(exception.error)
+action_failure_text(failure::CapturedActionFailure) = action_failure_text(capture_action(() -> sprint(showerror, failure.exception)), failure)
+action_failure_text(value::Some, failure) = something(value)::String
+action_failure_text(::CapturedActionFailure, failure) = "Action failed with exception " * string(nameof(typeof(action_exception(failure.exception)))) * "."
+
+action_failure_output(executor, scope::ActionResourceScope) = ""
+action_failure_output(executor::JuliaExecutor, scope::ActionResourceScope) = julia_action_output!(executor, scope)
+action_failure_task(exception) = nothing
+action_failure_task(exception::LoadError) = action_failure_task(exception.error)
+action_failure_task(exception::TaskFailedException) = exception.task
+
+function action_outcome(result::CapturedActionFailure, scope::ActionResourceScope, session::Session)
+    task = action_failure_task(result.exception)
+    if !isnothing(task) && any(failed -> failed === task, scope.cleanup_failures)
+        fetch(task)
+    else
+        release_action_resources!(scope)
+        output = action_failure_output(session.runtime.executor, scope)
+        separator = isempty(output) || endswith(output, "\n") ? "" : "\n"
+        ExecutionResult(false, output * separator * action_failure_text(result))
+    end
+end
+
+function action_outcome(result::Some, scope::ActionResourceScope, session::Session)
+    value = execution_result(something(result))
+    value.ok || release_action_resources!(scope)
+    value
+end
+
+invoke_component(session, ::Val{name}, implementation, args...) where {name} = Base.invokelatest(implementation, session, args...)
+function invoke_component(session, ::Val{:executor}, implementation, args...)
+    scope = ActionResourceScope(current_execution_context(), session.runtime.executor)
+    begin_action_output!(session.runtime.executor, scope)
+    result = task_local_storage(:JuliaForever2_action_resources, scope) do
+        capture_action(() -> Base.invokelatest(implementation, session, args...))
+    end
+    action_outcome(result, scope, session)
+end
+
 function use_component(fallback, session::Session, name::Symbol, args...)
     with_component(session.kernel, name; fallback) do implementation
-        Base.invokelatest(implementation, session, args...)
+        invoke_component(session, Val(name), implementation, args...)
     end
 end
 
