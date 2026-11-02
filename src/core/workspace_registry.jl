@@ -177,8 +177,7 @@ function register_workspace!(registry::WorkspaceRegistry, path::AbstractString; 
     end
 end
 
-register_workspace_label!(registry::WorkspaceRegistry, directory::AbstractString, ::Nothing) =
-    workspace_failure("Workspace title must not be blank")
+register_workspace_label!(registry::WorkspaceRegistry, directory::AbstractString, ::Nothing) = workspace_failure("Workspace title must not be blank")
 
 function register_workspace_label!(registry::WorkspaceRegistry, directory::AbstractString, label::String)
     workspace_mutate!(registry) do items
@@ -200,8 +199,7 @@ function register_workspace_label!(registry::WorkspaceRegistry, directory::Abstr
 end
 
 """Rename only the registry entry; sessions and filesystem contents are unaffected."""
-rename_workspace_label!(registry::WorkspaceRegistry, id::AbstractString, ::Nothing) =
-    workspace_failure("Workspace title must not be blank")
+rename_workspace_label!(registry::WorkspaceRegistry, id::AbstractString, ::Nothing) = workspace_failure("Workspace title must not be blank")
 
 function rename_workspace_label!(registry::WorkspaceRegistry, id::AbstractString, label::String)
     workspace_mutate!(registry) do items
