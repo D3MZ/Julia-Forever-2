@@ -116,7 +116,9 @@ saved_summaries(error::RpcError) = error
 saved_summaries(store) = session_summaries(store)
 saved_summaries(error::RpcError, archived) = error
 saved_summaries(store, ::Nothing) = session_summaries(store)
-saved_summaries(store, archived::Bool) = session_summaries(store; archived)
+saved_summaries(store, archived::Bool) = archived ?
+    RpcError(-32601, "Session archive service is not configured") : session_summaries(store)
+saved_summaries(store::SessionStore, archived::Bool) = session_summaries(store; archived)
 
 function api_saved_session_list(api::SessionAPI, params::AbstractDict)
     archived = get(params, "archived", nothing)
@@ -157,6 +159,8 @@ function api_set_saved_archive!(api::SessionAPI, params::AbstractDict, archived:
                     Dict("archived" => archived)
                 elseif startswith(result.reason, "Session was not saved:")
                     RpcError(-32004, result.reason)
+                elseif result.reason == "Session archive service is not configured"
+                    RpcError(-32601, result.reason)
                 else
                     RpcError(-32602, result.reason)
                 end

@@ -116,6 +116,9 @@ function session_archive_file(store::SessionStore, name::Union{Symbol,AbstractSt
     validname(label) ? joinpath(store.directory, ".session-archives", label * ".json") : nothing
 end
 
+"""Stores without optional archive support keep their existing session operations."""
+session_archived(store, name) = false
+
 """An archive marker applies only to the matching durable session identity."""
 function session_archived(store::SessionStore, name::Union{Symbol,AbstractString})
     marker = session_archive_file(store, name)
@@ -141,6 +144,10 @@ function session_archived(store::SessionStore, name::Union{Symbol,AbstractString
         end
     end
 end
+
+"""Unsupported optional archive operations return a typed status, not a MethodError."""
+archive_session!(store, name) = (ok=false, reason="Session archive service is not configured")
+unarchive_session!(store, name) = (ok=false, reason="Session archive service is not configured")
 
 """Archive a saved session without moving its history, workspace or lineage."""
 function archive_session!(store::SessionStore, name::Union{Symbol,AbstractString})
