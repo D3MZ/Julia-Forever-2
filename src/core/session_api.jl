@@ -127,7 +127,11 @@ function close_reserved_session!(api::SessionAPI, name::String, session::Session
     wait(worker; throw=false)
     saved = istaskfailed(worker) ? (ok=false, reason="Persistence failed") : fetch(worker)
     saved = normalize_close_save(saved)
-    if !saved.ok
+    failed = !saved.ok
+    if !(failed isa Bool)
+        lock(() -> delete!(api.closing, name), api.lock)
+        RpcError(-32000, "Session could not be saved: invalid persistence status")
+    elseif failed
         lock(() -> delete!(api.closing, name), api.lock)
         RpcError(-32000, "Session could not be saved: $(saved.reason)")
     else
