@@ -16,17 +16,20 @@ end
 api_key_build_model(builder::APIKeyProviderBuilder,directory,id)=api_key_model_provider(builder.catalog,builder.label,
     builder.endpoint,builder.protocol,builder.header,builder.transport,builder.options,directory,id)
 
+"""Keep each implemented protocol's catalog and authentication contract paired."""
+api_key_protocol_config(::OpenAIChatProtocol) = (api="openai-completions",header=:bearer)
+api_key_protocol_config(::AnthropicMessagesProtocol) = (api="anthropic-messages",header=:anthropic)
+api_key_protocol_config(protocol) = error("No implemented API key transport for this protocol")
+
 """Bind an implemented protocol, catalog and validator into a genuinely callable native provider."""
 function api_key_provider_descriptor(id::Symbol,label::AbstractString;models::AbstractVector{<:ModelSpec},
         endpoint::AbstractString,models_url::AbstractString,protocol=OpenAIChatProtocol(),
         name=String(label)*" API key",transport=nothing,options=Dict{String,Any}(),paginate::Bool=false)
-    supported=protocol isa Union{OpenAIChatProtocol,AnthropicMessagesProtocol}
-    supported || error("No implemented API key transport for this protocol")
-    expected_api=protocol isa OpenAIChatProtocol ? "openai-completions" : "anthropic-messages"
-    valid=!isempty(models) && all(model->model.provider==id && model.kind==:chat && model.api==expected_api,models)
+    config=api_key_protocol_config(protocol)
+    valid=!isempty(models) && all(model->model.provider==id && model.kind==:chat && model.api==config.api,models)
     valid || error("API key registration requires a nonempty matching native chat catalog")
     catalog=deepcopy(models)
-    header=protocol isa AnthropicMessagesProtocol ? :anthropic : :bearer
+    header=config.header
     base=String(rstrip(endpoint,'/'))
     urls=[String(models_url),model_endpoint(protocol,base,first(catalog))]
     native=APIKeyHTTPTransport(;urls,pagination_urls=paginate ? [String(models_url)] : String[])
