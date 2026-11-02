@@ -126,6 +126,7 @@ function close_reserved_session!(api::SessionAPI, name::String, session::Session
     worker = spawn_scoped(() -> persist_before_close!(api.store, name, session, handle))
     wait(worker; throw=false)
     saved = istaskfailed(worker) ? (ok=false, reason="Persistence failed") : fetch(worker)
+    saved = saved === nothing ? (ok=false, reason="Persistence failed") : saved
     if !saved.ok
         lock(() -> delete!(api.closing, name), api.lock)
         RpcError(-32000, "Session could not be saved: $(saved.reason)")
