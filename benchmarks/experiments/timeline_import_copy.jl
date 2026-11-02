@@ -244,9 +244,9 @@ function profile_case(f, label)
             index = findfirst(frame -> endswith(string(frame.file), "session_timeline.jl"),
                 allocation.stacktrace)
             frame = allocation.stacktrace[isnothing(index) ? 1 : index]
-            label = string(frame.file, ":", frame.line, " ", frame.func)
-            count, bytes = get(allocations, label, (0, 0))
-            allocations[label] = (count+1, bytes+allocation.size)
+            site = string(frame.file, ":", frame.line, " ", frame.func)
+            count, bytes = get(allocations, site, (0, 0))
+            allocations[site] = (count+1, bytes+allocation.size)
         end
     end
     ranked = [(site=label, count=value[1], bytes=value[2])
