@@ -76,7 +76,7 @@ function workspace_file_resolved(root::String, segments::Vector{String}, relativ
 end
 
 workspace_file_version(statinfo) = bytes2hex(SHA.sha256(
-    string(statinfo.device, ':', statinfo.inode, ':', statinfo.size, ':', statinfo.mtime)))
+    string(statinfo.device, ':', statinfo.inode, ':', statinfo.size, ':', statinfo.mtime, ':', statinfo.ctime)))
 
 function workspace_file_identity(path::AbstractString)
     information = stat(path)
@@ -140,30 +140,53 @@ function workspace_file_read(files::WorkspaceFileService, workspace_id, relative
     end
 end
 
-function workspace_file_read_page(files::WorkspaceFileService, metadata::AbstractDict, offset::Int, limit::Int)
+"""Verify the opened descriptor and name refer to the observed regular file."""
+function workspace_file_read_checked(metadata::AbstractDict, offset::Int, count::Int)
     path = metadata["absolutePath"]
-    bytes = open(path, "r") do stream
-        read(stream, files.max_file_bytes + 1)
+    expected = metadata["version"]
+    open(path, "r") do stream
+        initial = workspace_file_version(stat(stream))
+        if initial != expected || islink(path) || !isfile(path) ||
+                realpath(path) != path || workspace_file_version(stat(path)) != expected
+            workspace_file_unavailable("Workspace file changed before reading")
+        else
+            seek(stream, offset)
+            bytes = read(stream, count)
+            if workspace_file_version(stat(stream)) != expected || islink(path) ||
+                    !isfile(path) || realpath(path) != path ||
+                    workspace_file_version(stat(path)) != expected
+                workspace_file_unavailable("Workspace file changed while reading")
+            else
+                bytes
+            end
+        end
     end
-    current = workspace_file_identity(path)
-    size = length(bytes)
-    text = String(bytes)
-    if size > files.max_file_bytes
+end
+
+function workspace_file_read_page(files::WorkspaceFileService, metadata::AbstractDict, offset::Int, limit::Int)
+    bytes = workspace_file_read_checked(metadata, 0, files.max_file_bytes + 1)
+    if bytes isa RpcError
+        bytes
+    elseif length(bytes) > files.max_file_bytes
         workspace_file_unavailable("Workspace file exceeds the text inspection limit")
-    elseif current["version"] != metadata["version"]
-        workspace_file_unavailable("Workspace file changed while it was being read")
-    elseif !isvalid(text) || occursin('\0', text)
+    else
+        workspace_file_text_page(metadata, offset, limit, String(bytes))
+    end
+end
+
+function workspace_file_text_page(metadata::AbstractDict, offset::Int, limit::Int, text::String)
+    if !isvalid(text) || occursin('\0', text)
         workspace_file_unavailable("Workspace file is not UTF-8 text")
     else
         lines = split(text, '\n'; keepempty=true)
         endswith(text, "\n") && pop!(lines)
-        first_line = Int(offset)
-        last_line = first_line > length(lines) ? length(lines) : min(length(lines), first_line + limit - 1)
-        count = max(0, last_line - first_line + 1)
-        page = count == 0 ? "" : join(@view(lines[first_line:last_line]), "\n")
-        Dict{String,Any}("absolutePath" => path, "version" => metadata["version"],
-            "bytes" => metadata["bytes"], "offset" => first_line, "lines" => count,
-            "text" => page, "eof" => last_line >= length(lines))
+        last_line = offset > length(lines) ? length(lines) : min(length(lines), offset + limit - 1)
+        count = max(0, last_line - offset + 1)
+        page = count == 0 ? "" : join(@view(lines[offset:last_line]), "\n")
+        Dict{String,Any}("absolutePath" => metadata["absolutePath"],
+            "version" => metadata["version"], "bytes" => metadata["bytes"],
+            "offset" => offset, "lines" => count, "text" => page,
+            "eof" => last_line >= length(lines))
     end
 end
 
@@ -185,18 +208,14 @@ end
 
 function workspace_file_read_bytes(files::WorkspaceFileService, metadata::AbstractDict,
         offset::Int, count::Int)
-    path = metadata["absolutePath"]
-    bytes = open(path, "r") do stream
-        seek(stream, offset)
-        read(stream, count)
-    end
-    current = workspace_file_identity(path)
-    if current["version"] != metadata["version"]
-        workspace_file_unavailable("Workspace file changed while it was being read")
+    bytes = workspace_file_read_checked(metadata, offset, count)
+    if bytes isa RpcError
+        bytes
     else
-        Dict{String,Any}("absolutePath" => path, "version" => metadata["version"],
-            "bytes" => metadata["bytes"], "offset" => offset,
-            "data" => bytes, "eof" => offset >= metadata["bytes"] ||
+        Dict{String,Any}("absolutePath" => metadata["absolutePath"],
+            "version" => metadata["version"], "bytes" => metadata["bytes"],
+            "offset" => offset, "data" => bytes,
+            "eof" => offset >= metadata["bytes"] ||
                 length(bytes) >= metadata["bytes"] - offset)
     end
 end
