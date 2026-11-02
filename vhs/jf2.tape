@@ -15,6 +15,10 @@ Output artifacts/vhs/jf2-terminal.gif
 Type "./bin/jf2"
 Enter
 Sleep 6s
+# Isolated first launch has no provider; exercise the real selection before chat.
+Wait+Screen /Configured provider is unavailable/
+Enter
+Sleep 2s
 Wait+Screen /Julia Forever 2 v/
 Screenshot artifacts/vhs/chat.png
 

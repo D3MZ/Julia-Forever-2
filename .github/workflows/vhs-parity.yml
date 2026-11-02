@@ -59,7 +59,7 @@ jobs:
               "reference_pi_commit": pin["commit"],
               "reference_pi_tree": pin["tree"],
               "recorded_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-              "capture_tool": "VHS v0.12.0",
+              "capture_tool": "VHS v0.12.1",
               "screenshots": sorted(str(path) for path in Path("artifacts/vhs").glob("*.png")),
               "parity_verified": False,
               "note": "Screenshots are evidence only; the scheduled parity agent assesses them against approved reference behavior.",
