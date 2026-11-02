@@ -1,0 +1,58 @@
+name: Experimental Anthropic buffered streaming performance
+on:
+  push:
+    branches:
+      - perf/anthropic-buffered-deltas-20261101-2009
+
+permissions:
+  contents: read
+
+jobs:
+  paired-experiment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      JULIA_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      JULIA_PKG_PRECOMPILE_AUTO: '0'
+      BASELINE_SHA: d56bf08bb1621a194463556263fa2eaf2610cf15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - name: Record exact worktree and runner
+        shell: bash
+        run: |
+          mkdir -p benchmark-evidence
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/anthropic-baseline" "$BASELINE_SHA"
+          git rev-parse HEAD > benchmark-evidence/candidate-sha.txt
+          git -C "$RUNNER_TEMP/anthropic-baseline" rev-parse HEAD > benchmark-evidence/baseline-sha.txt
+          julia --version > benchmark-evidence/julia-version.txt
+          uname -a > benchmark-evidence/runner-os.txt
+          lscpu > benchmark-evidence/runner-cpu.txt
+          env | grep -E '^(JULIA_|OPENBLAS_|GITHUB_RUN_ID=|RUNNER_OS=|RUNNER_ARCH=)' | sort > benchmark-evidence/relevant-environment.txt
+          git diff "$BASELINE_SHA" HEAD -- src benchmarks > benchmark-evidence/candidate.diff
+          sha256sum Project.toml benchmarks/Project.toml > benchmark-evidence/project-hashes.txt
+          sha256sum "$RUNNER_TEMP/anthropic-baseline/Project.toml" "$RUNNER_TEMP/anthropic-baseline/benchmarks/Project.toml" > benchmark-evidence/baseline-project-hashes.txt
+      - name: Install identical project dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=benchmarks -e 'using Pkg; Pkg.instantiate(); Pkg.status()' 2>&1 | tee benchmark-evidence/packages.log
+      - name: Seven alternating warmed-up paired integration benchmarks and profiles
+        shell: bash
+        run: |
+          set -o pipefail
+          julia --project=benchmarks benchmarks/experiments/anthropic_buffered_stream.jl "$RUNNER_TEMP/anthropic-baseline" "$GITHUB_WORKSPACE/benchmark-evidence" 2>&1 | tee benchmark-evidence/benchmark.log
+      - name: Archive raw timings, allocations, CPU profiles, output consistency and environment even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anthropic-buffered-stream-paired-evidence
+          path: benchmark-evidence/
+          if-no-files-found: warn
+          retention-days: 30
