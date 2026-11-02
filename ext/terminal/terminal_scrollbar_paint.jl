@@ -1,30 +1,5 @@
-# Native cell painter follows Pi layout.ts at 2c8d1feb; MIT, see licenses/pi-LICENSE.
-"""Combine a source scrollbar foreground with only the original cell background, not its text attributes."""
-function terminal_scrollbar_cell_style(style::Tachikoma.Style,background::Tachikoma.AbstractColor)
-    Tachikoma.Style(;fg=style.fg,bg=style.bg isa Tachikoma.NoColor ? background : style.bg,
-        bold=style.bold,dim=style.dim,italic=style.italic,underline=style.underline,strikethrough=style.strikethrough)
-end
-
-"""Replace an entire intersected wide glyph without leaving an orphan continuation cell."""
-function terminal_scrollbar_replace!(buffer::Tachikoma.Buffer,column::Int,row::Int,glyph::Char,
-        style::Tachikoma.Style,preserve::Bool)
-    if Tachikoma.in_bounds(buffer,column,row)
-        first=column;last=column
-        while first>buffer.area.x && buffer.content[Tachikoma.buf_index(buffer,first,row)].char=='\0'
-            first-=1
-        end
-        while last+1<buffer.area.x+buffer.area.width && buffer.content[Tachikoma.buf_index(buffer,last+1,row)].char=='\0'
-            last+=1
-        end
-        target=buffer.content[Tachikoma.buf_index(buffer,first,row)]
-        background=preserve ? target.style.bg : Tachikoma.NoColor()
-        for x in first:last
-            Tachikoma.set!(buffer,x,row,Tachikoma.Cell(' ',Tachikoma.Style(;bg=background)))
-        end
-        Tachikoma.set!(buffer,column,row,Tachikoma.Cell(glyph,terminal_scrollbar_cell_style(style,background)))
-    end
-    nothing
-end
+# Tachikoma.set_char! owns cell-background preservation and wide-glyph cleanup.
+# Keep Pi-specific overlay visibility and image-row exclusion in this adapter.
 
 """Paint only document cells, retaining auto-overlay backgrounds and excluding native image-line owners."""
 function terminal_scroll_control_draw!(control::TerminalScrollControl,buffer::Tachikoma.Buffer;
@@ -44,7 +19,7 @@ function terminal_scroll_control_draw!(control::TerminalScrollControl,buffer::Ta
                         thumb=geometry.thumb_top<=offset+1<geometry.thumb_top+geometry.thumb_height
                         glyph=thumb ? (control.scroll.active ? '█' : '┃') : '│'
                         token=thumb ? :scrollbarThumb : :scrollbarTrack
-                        terminal_scrollbar_replace!(buffer,column,row,glyph,style(token),control.scroll.mode!=:always)
+                        Tachikoma.set_char!(buffer,column,row,glyph,style(token))
                     end
                 end
             end

@@ -1,0 +1,89 @@
+name: Verify Tachikoma reuse in an interactive terminal
+
+on:
+  push:
+    branches:
+      - refactor/tachikoma-native-reuse-20261102
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terminal-verification:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Precompile actual JF2 terminal application
+        run: julia --project=app -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+      - name: Exercise JF2 App, menu search, and native Tachikoma framebuffer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          cat > "$RUNNER_TEMP/terminal_smoke.jl" <<'JULIA'
+          using JuliaForever2, Tachikoma, CommonMark
+          terminal = Base.get_extension(JuliaForever2, :JuliaForever2TerminalExt)
+          isnothing(terminal) && error("JF2 terminal extension not loaded")
+          expected = Tachikoma.truncate_to_width("界ab", 3; ellipsis="")
+          actual = terminal.menu_clip("界ab", 3)
+          actual == expected || error("Unicode menu clipping diverges from Tachikoma")
+          terminal.menu_clip("abcd", 2; ellipsis=true) == ".." || error("Narrow ellipsis clipped incorrectly")
+          alpha = terminal.SettingSpec("alpha", "Alpha provider", "description", "true", String["true", "false"])
+          beta = terminal.SettingSpec("beta", "Beta provider", "description", "true", String["true", "false"])
+          first(terminal.search_settings([beta, alpha], "alpha")).id == "alpha" ||
+              error("Shared fuzzy search failed")
+          menu = terminal.App(JuliaForever2.default_kernel(); settings_dir=mktempdir())
+          area = Tachikoma.Rect(1, 1, 100, 32)
+          backend = Tachikoma.TestBackend(area.width, area.height)
+          frame = Tachikoma.Frame(backend.buf, area, Tachikoma.GraphicsRegion[], Tachikoma.PixelSnapshot[])
+          Tachikoma.view(menu, frame)
+          startup = join((Tachikoma.row_text(backend, row) for row in 1:area.height), "\n")
+          write("evidence/startup-terminal.txt", startup)
+          isempty(strip(startup)) && error("JF2 startup screen is blank")
+          terminal.open_menu!(menu, "settings")
+          Tachikoma.reset!(backend.buf)
+          Tachikoma.view(menu, frame)
+          settings = join((Tachikoma.row_text(backend, row) for row in 1:area.height), "\n")
+          write("evidence/settings-terminal.txt", settings)
+          isempty(strip(settings)) && error("JF2 settings screen is blank")
+          scroll = terminal.TerminalScrollControl()
+          terminal.terminal_scroll_control_mode!(scroll, :always)
+          rows = [Tachikoma.Span[Tachikoma.Span("row $i", Tachikoma.Style())] for i in 1:25]
+          scroll_area = Tachikoma.Rect(1, 1, 20, 8)
+          terminal.terminal_scroll_control_layout!(scroll, rows, scroll_area)
+          scroll_buffer = Tachikoma.Buffer(scroll_area)
+          terminal.terminal_scroll_control_draw!(scroll, scroll_buffer;
+              style=token -> Tachikoma.Style(; fg=Tachikoma.ColorRGB(190, 190, 190)))
+          any(cell -> cell.char in ('│', '┃', '█'), scroll_buffer.content) ||
+              error("JF2 Tachikoma-backed scrollbar did not paint")
+          println("JF2 terminal and native Tachikoma rendering smoke verified")
+          JULIA
+          julia --project=app "$RUNNER_TEMP/terminal_smoke.jl" 2>&1 | tee evidence/terminal-smoke.log
+      - uses: charmbracelet/vhs-action@v2.1.1
+        with:
+          version: 'v0.12.0'
+      - name: Launch real JF2 terminal and capture interactive screenshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/vhs
+          echo "JULIAFOREVER_CONFIG_DIR=$RUNNER_TEMP/jf2-visual-config" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/jf2-visual-config"
+          vhs vhs/jf2.tape 2>&1 | tee evidence/vhs.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tachikoma-reuse-terminal-evidence
+          path: |
+            evidence/
+            artifacts/vhs/
+          if-no-files-found: warn
+          retention-days: 10
