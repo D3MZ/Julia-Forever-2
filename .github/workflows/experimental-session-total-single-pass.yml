@@ -53,7 +53,7 @@ jobs:
             @test_throws ErrorException Candidate.session_reported_total([Inf],Float64)
             @test_throws InexactError Candidate.session_reported_total([1.25],Int)
             @test_throws Exception Candidate.session_reported_total(Any[nothing,missing],Int)
-            @test which(Candidate.session_total_add,(Int,Int)).sig == Tuple{typeof(Candidate.session_total_add),Int,Int}
+            @test Candidate.session_total_add(1,2) == 3 && Candidate.session_total_add(1.0,2.0) == 3.0
             @test Candidate.session_reported_total(Any[nothing,nothing],Float64).reported == 0
             println("SOURCE_NUMERIC_PROBES_PASSED")
           '
@@ -65,8 +65,8 @@ jobs:
             using JuliaForever2, Tachikoma, CommonMark
             backend=Tachikoma.TestBackend(80,24)
             frame=Tachikoma.Frame(backend.buf,backend.buf.area,Tachikoma.GraphicsRegion[],Tachikoma.PixelSnapshot[])
-            Tachikoma.set_char!(backend.buf,2,2,\x27Z\x27,Tachikoma.Style())
-            @assert Tachikoma.char_at(backend,2,2)==\x27Z\x27
+            Tachikoma.set_char!(backend.buf,2,2,Char(0x5a),Tachikoma.Style())
+            @assert Tachikoma.char_at(backend,2,2)==Char(0x5a)
             extension=Base.get_extension(JuliaForever2,:JuliaForever2TerminalExt)
             @assert !isnothing(extension)
             rendered=extension.terminal_compile_workload()
