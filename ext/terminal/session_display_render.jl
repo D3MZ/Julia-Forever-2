@@ -160,8 +160,8 @@ function session_display_text_rows(text::AbstractString,width::Int,padding::Int;
     rows
 end
 
-function session_display_markdown(text::AbstractString,width::Int,padding::Int;kind::Symbol=:default,bg=Tachikoma.NoColor(),italic=false)
-    lines=session_markdown_spans(text,max(1,width-2padding);kind,italic)
+function session_display_markdown(text::AbstractString,width::Int,padding::Int;kind::Symbol=:default,bg=Tachikoma.NoColor(),italic=false,render_math::Bool=true)
+    lines=session_markdown_spans(text,max(1,width-2padding);kind,italic,render_math)
     rows=SessionDisplayRows()
     for line in lines
         append!(rows,session_display_wrap(line,width,padding;bg,boundary_styles=true))

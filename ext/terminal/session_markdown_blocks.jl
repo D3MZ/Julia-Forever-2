@@ -179,6 +179,8 @@ function session_markdown_block(node::CommonMark.Node,context::SessionMarkdownBl
         session_markdown_quote(node,context,terminal)
     elseif node.t isa CommonMark.List
         session_markdown_list(node,context,terminal)
+    elseif node.t isa SessionMarkdownMathBlock
+        session_math_block_rows(node.t,context)
     elseif node.t isa CommonMark.Table
         session_markdown_table(node,context)
     elseif node.t isa CommonMark.ReferenceDefinition
@@ -196,6 +198,16 @@ function session_markdown_block(node::CommonMark.Node,context::SessionMarkdownBl
     end
 end
 
+"""Read list trailing-blank evidence without mutating CommonMark's consumed finalization cache."""
+function session_markdown_ends_blank(node::CommonMark.Node)
+    current=node;found=false
+    while !CommonMark.isnull(current)
+        found|=current.last_line_blank
+        current=current.t isa CommonMark.List||current.t isa CommonMark.Item||current.t isa CommonMark.TaskItem ? current.last_child : CommonMark.NULL_NODE
+    end
+    found
+end
+
 function session_markdown_sequence(node::CommonMark.Node,context::SessionMarkdownBlocks,terminal::Bool)
     children=session_markdown_children(node)
     rows=SessionDisplayRows()
@@ -203,7 +215,7 @@ function session_markdown_sequence(node::CommonMark.Node,context::SessionMarkdow
         append!(rows,session_markdown_block(child,context,terminal&&index==length(children)))
         if index<length(children)
             next=children[index+1]
-            gap=next.sourcepos[1][1]>child.sourcepos[2][1]+1 || child.last_line_blank
+            gap=next.sourcepos[1][1]>child.sourcepos[2][1]+1 || session_markdown_ends_blank(child)
             spacing=gap||!(child.t isa CommonMark.List)&&!(child.t isa CommonMark.ReferenceDefinition)&&!(child.t isa CommonMark.Paragraph&&next.t isa CommonMark.List)
             spacing&&push!(rows,Tachikoma.Span[])
         end
@@ -212,10 +224,11 @@ function session_markdown_sequence(node::CommonMark.Node,context::SessionMarkdow
 end
 
 """Return logical native Markdown rows with explicit, whole-block code rendering."""
-function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:default,italic=false,highlighter=SessionMarkdownSyntax(),hyperlinks::Bool=session_markdown_hyperlinks())
+function session_markdown_spans(raw::AbstractString,width::Int;kind::Symbol=:default,italic=false,highlighter=SessionMarkdownSyntax(),hyperlinks::Bool=session_markdown_hyperlinks(),render_math::Bool=true)
     text=String(session_display_safe(raw))
     parser=CommonMark.Parser()
     CommonMark.disable!(parser,CommonMark.HtmlEntityRule())
+    CommonMark.enable!(parser,SessionMarkdownMathRule(text,render_math))
     CommonMark.enable!(parser,SessionMarkdownReferenceRule(String.(split(text,'\n';keepempty=true))))
     CommonMark.enable!(parser,SessionMarkdownLabelRule())
     CommonMark.enable!(parser,CommonMark.StrikethroughRule())
