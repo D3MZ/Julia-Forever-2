@@ -35,15 +35,25 @@ function timeline_epoch_milliseconds(timestamp::AbstractString)
     days * 86_400_000 + hour * 3_600_000 + minute * 60_000 + second * 1000 + millis
 end
 
+"""Require a defensive copy only when legacy null content needs validation repair."""
+function timeline_context_requires_repair(entry)
+    message = get(entry, "type", nothing) == "message" ? get(entry, "message", nothing) : nothing
+    message isa AbstractDict && isnothing(get(message, "content", nothing)) &&
+        get(message, "role", nothing) in ("system", "user", "assistant", "toolResult")
+end
+
 function timeline_context_index(entries)
-    checked = deepcopy(entries)
-    for entry in checked
-        if get(entry, "type", nothing) == "message"
-            message = get(entry, "message", nothing)
-            if message isa AbstractDict && isnothing(get(message, "content", nothing))
-                role = get(message, "role", nothing)
-                if role in ("system", "user", "assistant", "toolResult")
-                    message["content"] = role == "system" ? "" : Any[]
+    repair = any(timeline_context_requires_repair, entries)
+    checked = repair ? deepcopy(entries) : entries
+    if repair
+        for entry in checked
+            if get(entry, "type", nothing) == "message"
+                message = get(entry, "message", nothing)
+                if message isa AbstractDict && isnothing(get(message, "content", nothing))
+                    role = get(message, "role", nothing)
+                    if role in ("system", "user", "assistant", "toolResult")
+                        message["content"] = role == "system" ? "" : Any[]
+                    end
                 end
             end
         end
