@@ -371,6 +371,8 @@ end
 
 function page_input!(app::App, ::Val{:pi_menu}, event::KeyEvent, raw::AbstractVector{UInt8}=UInt8[])
     items = menu_page_items(app)
+    packet=menu_packet(event,raw);selectors=native_selector_context(app)
+    navigation=native_selector_navigation(selectors,packet)
     control=app.menus.auth_menu_control
     if app.menus.path == ["trust"]
         project_trust_input!(app,event,raw)
@@ -388,16 +390,16 @@ function page_input!(app::App, ::Val{:pi_menu}, event::KeyEvent, raw::AbstractVe
         model_controls_input!(app, event, raw)
     elseif app.menus.path in (["settings"], ["settings", "warnings"])
         settings_input!(app, event, raw)
-    elseif event.key == :escape
+    elseif native_selector_matches(selectors,:cancel,packet)
         if length(app.menus.path) > 1
             pop!(app.menus.path)
             app.menus.cursor = 1
         else
             app.page = :chat
         end
-    elseif event.key in (:up, :down) && !isempty(items)
-        app.menus.cursor = mod1(app.menus.cursor + (event.key == :up ? -1 : 1), length(items))
-    elseif event.key == :enter && !isempty(items)
+    elseif navigation in (:up,:down) && !isempty(items)
+        app.menus.cursor = mod1(app.menus.cursor + (navigation==:up ? -1 : 1), length(items))
+    elseif native_selector_matches(selectors,:confirm,packet) && !isempty(items)
         menu_select!(app, items[clamp(app.menus.cursor, 1, length(items))]["id"])
     end
     return nothing

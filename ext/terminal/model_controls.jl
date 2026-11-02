@@ -183,14 +183,14 @@ function model_controls_input!(app::App, event::KeyEvent, raw)
     name = first(app.menus.path)
     model, scoped, thinking = app.menus.model_menu, app.menus.scoped_menu, app.menus.thinking_menu
     if name == "model" && !isnothing(model)
-        action = model_menu_input!(model, packet)
+        action = model_menu_input!(model,packet;selectors=native_selector_context(app))
         if action.kind in (:select, :default)
             configuration_action!(app, selector_key(action.value); save_default=action.kind == :default)
         elseif action.kind == :cancel
             close_model_controls!(app)
         end
     elseif name == "scoped-models" && !isnothing(scoped)
-        action = scoped_models_input!(scoped, packet)
+        action = scoped_models_input!(scoped,packet;selectors=native_selector_context(app))
         if action.kind == :change
             app.menus.enabled_models = deepcopy(action.value)
         elseif action.kind == :persist
@@ -201,7 +201,7 @@ function model_controls_input!(app::App, event::KeyEvent, raw)
             close_model_controls!(app)
         end
     elseif name == "thinking" && !isnothing(thinking)
-        thinking_input!(thinking, packet)
+        thinking_input!(thinking,packet;selectors=native_selector_context(app))
     end
     nothing
 end
@@ -210,11 +210,11 @@ function model_controls_lines(app::App, width)
     name = first(app.menus.path)
     model, scoped, thinking = app.menus.model_menu, app.menus.scoped_menu, app.menus.thinking_menu
     if name == "model" && !isnothing(model)
-        model_menu_lines(model, width)
+        model_menu_lines(model,width;selectors=native_selector_context(app))
     elseif name == "scoped-models" && !isnothing(scoped)
-        scoped_models_lines(scoped, width)
+        scoped_models_lines(scoped,width;selectors=native_selector_context(app))
     elseif name == "thinking" && !isnothing(thinking)
-        thinking_lines(thinking,width;cycle_hint=native_keybinding_hint(app,"app.thinking.cycle"))
+        thinking_lines(thinking,width;cycle_hint=native_keybinding_hint(app,"app.thinking.cycle"),selectors=native_selector_context(app))
     else
         Vector{Tachikoma.Span}[]
     end

@@ -353,12 +353,13 @@ function resume_start_delete!(menu::ResumeMenu)
 end
 
 """Route default key packets while preserving independent owner effect boundaries."""
-function resume_input!(menu::ResumeMenu,data::AbstractString)
+function resume_input!(menu::ResumeMenu,data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     result=(action=:none,invoked=false,outcome=nothing)
     confirming=menu.confirming_delete
+    navigation=native_selector_navigation(selectors,data)
     if !menu.disposed
         if menu.mode==:rename
-            if data in ("\e","\x03")
+            if native_selector_matches(selectors,:cancel,data)
                 resume_exit_rename!(menu)
             elseif menu_search_input!(menu.rename_input,data)==:submit
                 value=String(strip(menu.rename_input.value))
@@ -368,11 +369,11 @@ function resume_input!(menu::ResumeMenu,data::AbstractString)
                 end
             end
         elseif !isnothing(confirming)
-            if data in ("\r","\n")
+            if native_selector_matches(selectors,:confirm,data)
                 path=confirming
                 resume_confirming!(menu,nothing)
                 result=resume_request_mutation!(menu,:delete,path)
-            elseif data in ("\e","\x03")
+            elseif native_selector_matches(selectors,:cancel,data)
                 resume_confirming!(menu,nothing)
             end
         elseif data=="\t"
@@ -412,32 +413,42 @@ function resume_input!(menu::ResumeMenu,data::AbstractString)
             if isempty(menu.search.value)
                 resume_start_delete!(menu)
             else
-                menu_search_input!(menu.search,data)
+                submitted=menu_search_input!(menu.search,data)==:submit
+                path=resume_selected(menu)
+                if submitted && !isnothing(path)
+                    resume_status!(menu,nothing);resume_cancel_loads!(menu)
+                    result=(action=:select,invoked=true,outcome=menu.on_select(path),path=path)
+                end
                 resume_filter!(menu)
             end
         else
             menu.selection_touched=true
-            if data=="\e[A"
+            if navigation==:up
                 menu.cursor=max(1,menu.cursor-1)
-            elseif data=="\e[B"
+            elseif navigation==:down
                 menu.cursor=min(length(menu.rows),menu.cursor+1)
-            elseif data=="\e[5~"
+            elseif navigation==:page_up
                 menu.cursor=max(1,menu.cursor-menu.maximum_rows)
-            elseif data=="\e[6~"
+            elseif navigation==:page_down
                 menu.cursor=min(length(menu.rows),menu.cursor+menu.maximum_rows)
-            elseif data in ("\r","\n")
+            elseif native_selector_matches(selectors,:confirm,data)
                 path=resume_selected(menu)
                 if !isnothing(path)
                     resume_status!(menu,nothing)
                     resume_cancel_loads!(menu)
                     result=(action=:select,invoked=true,outcome=menu.on_select(path),path=path)
                 end
-            elseif data in ("\e","\x03")
+            elseif native_selector_matches(selectors,:cancel,data)
                 resume_status!(menu,nothing)
                 resume_cancel_loads!(menu)
                 result=(action=:cancel,invoked=true,outcome=menu.on_cancel())
             else
-                menu_search_input!(menu.search,data)
+                submitted=menu_search_input!(menu.search,data)==:submit
+                path=resume_selected(menu)
+                if submitted && !isnothing(path)
+                    resume_status!(menu,nothing);resume_cancel_loads!(menu)
+                    result=(action=:select,invoked=true,outcome=menu.on_select(path),path=path)
+                end
                 resume_filter!(menu)
             end
         end

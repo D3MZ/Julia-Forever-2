@@ -179,26 +179,27 @@ function theme_menu_cancel!(menu::ThemeMenu)
 end
 
 """Navigate with wrap/page semantics; theme selectors intentionally do not interpret typing as search."""
-function theme_menu_input!(menu::ThemeMenu,data::AbstractString)
+function theme_menu_input!(menu::ThemeMenu,data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     items = theme_menu_items(menu)
     count = length(items)
     previous = menu.cursor
     result = nothing
+    navigation=native_selector_navigation(selectors,data)
     if menu.open
-        if data in ("\e[A","\eOA")
-            menu.cursor = menu.cursor==1 ? count : menu.cursor-1
+        if navigation==:up
+            count>0 && (menu.cursor = menu.cursor==1 ? count : menu.cursor-1)
             result = theme_menu_selection!(menu)
-        elseif data in ("\e[B","\eOB")
-            menu.cursor = menu.cursor==count ? 1 : menu.cursor+1
+        elseif navigation==:down
+            count>0 && (menu.cursor = menu.cursor==count ? 1 : menu.cursor+1)
             result = theme_menu_selection!(menu)
-        elseif data in ("\e[5~","\e[6~") && count>0
-            menu.cursor = clamp(menu.cursor+(data=="\e[5~" ? -1 : 1)*min(count,10),1,count)
+        elseif navigation in (:page_up,:page_down) && count>0
+            menu.cursor = clamp(menu.cursor+(navigation==:page_up ? -1 : 1)*min(count,10),1,count)
             if previous!=menu.cursor
                 result = theme_menu_selection!(menu)
             end
-        elseif data=="\r" || data==" " && menu.mode==:automatic && menu.child==:none
+        elseif native_selector_matches(selectors,:confirm,data) || data==" " && menu.mode==:automatic && menu.child==:none
             result = theme_menu_activate!(menu)
-        elseif data in ("\e","\x03")
+        elseif native_selector_matches(selectors,:cancel,data)
             result = theme_menu_cancel!(menu)
         end
     end
@@ -260,7 +261,7 @@ function theme_select_lines!(menu,width,lines)
 end
 
 """Draw the automatic-mode settings with exact value alignment and selected descriptions."""
-function theme_automatic_lines!(menu,width,lines)
+function theme_automatic_lines!(menu,width,lines;selectors::NativeSelectorBindings=NativeSelectorBindings())
     items = theme_menu_items(menu)
     theme = menu.runtime.active
     menu.list_start,menu.list_row,menu.list_count = 1,length(lines),length(items)
@@ -292,7 +293,7 @@ function theme_automatic_lines!(menu,width,lines)
         end
     end
     push!(lines,theme_line("",theme))
-    hint = "  Enter/Space to change · Esc to cancel"
+    hint = "  "*native_selector_hint(selectors,:confirm,"Enter";capitalize=true)*"/Space to change · "*native_selector_hint(selectors,:cancel,"Esc";capitalize=true)*" to cancel"
     clipped = menu_search_width(hint)>width
     push!(lines,[theme_span(menu_search_slice(hint,0,max(0,width-(clipped ? 3 : 0))),theme,:text_dim),
         theme_span(clipped ? first("...",min(max(0,width),3)) : "",theme)])
@@ -300,7 +301,7 @@ function theme_automatic_lines!(menu,width,lines)
 end
 
 """Render the actual open selector, including mixed construction-time/live preview colors."""
-function theme_menu_lines(menu::ThemeMenu,width::Integer;outer_border::Bool=true)
+function theme_menu_lines(menu::ThemeMenu,width::Integer;outer_border::Bool=true,selectors::NativeSelectorBindings=NativeSelectorBindings())
     columns = Int(width)
     lines = Vector{Tachikoma.Span}[]
     theme = menu.runtime.active
@@ -318,7 +319,7 @@ function theme_menu_lines(menu::ThemeMenu,width::Integer;outer_border::Bool=true
             push!(lines,theme_line("",theme))
         end
         if menu.mode==:automatic && menu.child==:none
-            theme_automatic_lines!(menu,columns,lines)
+            theme_automatic_lines!(menu,columns,lines;selectors)
         else
             title = menu.child==:light ? "Light Theme" : menu.child==:dark ? "Dark Theme" : "Theme"
             description = menu.child==:light ? "Select the theme to use for light terminal appearance" : menu.child==:dark ?
@@ -329,7 +330,7 @@ function theme_menu_lines(menu::ThemeMenu,width::Integer;outer_border::Bool=true
             push!(lines,theme_line("",theme))
             theme_select_lines!(menu,columns,lines)
             push!(lines,theme_line("",theme))
-            append!(lines,theme_text_lines("  Enter to select · Esc to go back",columns,menu.header_theme,:text_dim))
+            append!(lines,theme_text_lines("  "*native_selector_hint(selectors,:confirm,"Enter";capitalize=true)*" to select · "*native_selector_hint(selectors,:cancel,"Esc";capitalize=true)*" to go back",columns,menu.header_theme,:text_dim))
         end
     end
     if outer_border

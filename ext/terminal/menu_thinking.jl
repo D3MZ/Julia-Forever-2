@@ -111,32 +111,35 @@ function thinking_default!(menu::ThinkingMenu, callback)
 end
 
 """Handle the list's keyboard contract, separate from the selector's page-key routing."""
-function thinking_list_input!(menu::ThinkingMenu, data::AbstractString)
+function thinking_list_input!(menu::ThinkingMenu, data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
     count = length(menu.filtered)
+    navigation=native_selector_navigation(selectors,data)
     result = thinking_result()
-    if data in ("\e[A", "\eOA")
+    if navigation==:up
         menu.cursor = menu.cursor == 1 ? count : menu.cursor - 1
-    elseif data in ("\e[B", "\eOB")
+    elseif navigation==:down
         menu.cursor = menu.cursor == count ? 1 : menu.cursor + 1
-    elseif data in ("\e[5~", "\e[6~") && count > 0
-        menu.cursor = data == "\e[5~" ? 1 : count
-    elseif data in ("\r", "\n")
+    elseif navigation in (:page_up,:page_down) && count > 0
+        menu.cursor = navigation==:page_up ? 1 : count
+    elseif native_selector_matches(selectors,:confirm,data)
         result = thinking_select!(menu)
-    elseif data in ("\e", "\x03")
+    elseif native_selector_matches(selectors,:cancel,data)
         result = thinking_result(:cancel, nothing, menu.on_cancel())
     end
     result
 end
 
 """Route selector keys exactly; page keys edit neither selection nor the query."""
-function thinking_input!(menu::ThinkingMenu, data::AbstractString)
-    if data == "\x13" && !isnothing(menu.on_default)
+function thinking_input!(menu::ThinkingMenu, data::AbstractString;selectors::NativeSelectorBindings=NativeSelectorBindings())
+    if menu.search.pasting || occursin("\e[200~",data)
+        menu_search_input!(menu.search,data);thinking_filter!(menu);thinking_result()
+    elseif data == "\x13" && !isnothing(menu.on_default)
         thinking_default!(menu, menu.on_default)
-    elseif data in ("\e[A", "\eOA", "\e[B", "\eOB", "\r", "\e", "\x03")
-        thinking_list_input!(menu, data)
+    elseif native_selector_navigation(selectors,data) in (:up,:down) || native_selector_matches(selectors,:confirm,data) || native_selector_matches(selectors,:cancel,data)
+        thinking_list_input!(menu,data;selectors)
     else
         action = menu_search_input!(menu.search, data)
-        result = action == :submit ? thinking_select!(menu) : thinking_result()
+        result = action==:submit ? thinking_list_input!(menu,"\r";selectors) : thinking_result()
         thinking_filter!(menu)
         result
     end
@@ -214,7 +217,7 @@ function thinking_item_line(item, selected::Bool, width::Int, primary_width::Int
 end
 
 """Render the actual selector and retain zero-based hit-test coordinates after wrapping."""
-function thinking_lines(menu::ThinkingMenu, width::Integer; cycle_hint::AbstractString="Shift+Tab")
+function thinking_lines(menu::ThinkingMenu, width::Integer; cycle_hint::AbstractString="Shift+Tab",selectors::NativeSelectorBindings=NativeSelectorBindings())
     columns = Int(width)
     lines = Vector{Tachikoma.Span}[]
     push!(lines, thinking_line(repeat("─", max(1, columns)), :menu_border))
@@ -236,7 +239,7 @@ function thinking_lines(menu::ThinkingMenu, width::Integer; cycle_hint::Abstract
     end
     menu.list_height = max(1, length(items))
     push!(lines, thinking_line())
-    append!(lines, thinking_text_lines("  Enter to select · Ctrl+S to set as default · Escape/Ctrl+C to cancel", columns; style=:text_dim))
+    append!(lines, thinking_text_lines("  "*native_selector_text(selectors,:confirm;capitalize=true)*" to select · Ctrl+S to set as default · "*native_selector_text(selectors,:cancel;capitalize=true)*" to cancel", columns; style=:text_dim))
     push!(lines, thinking_line(repeat("─", max(1, columns)), :menu_border))
     menu.width = columns
     menu.height = length(lines)

@@ -177,7 +177,9 @@ function settings_lines(app::App, width::Integer)
     end
     push!(lines, menu_line())
     unavailable=!isempty(items) && !isempty(setting_unavailable_reason(items[clamp(app.menus.cursor,1,length(items))].id))
-    hint = unavailable ? "  Unavailable in this build · Esc to cancel" : settings_searchable(app) ? "  Type to search · Enter/Space to change · Esc to cancel" : "  Enter/Space to change · Esc to cancel"
+    selectors=native_selector_context(app)
+    confirm=native_selector_hint(selectors,:confirm,"Enter";capitalize=true);cancel=native_selector_hint(selectors,:cancel,"Esc";capitalize=true)
+    hint = unavailable ? "  Unavailable in this build · "*cancel*" to cancel" : (settings_searchable(app) ? "  Type to search · " : "  ")*confirm*"/Space to change · "*cancel*" to cancel"
     push!(lines, menu_clipped_line(hint, width, :text_dim))
     push!(lines, menu_line(repeat("─", max(0, width)), :menu_border))
     lines
@@ -208,13 +210,20 @@ end
 function settings_input!(app::App, event::KeyEvent, raw::AbstractVector{UInt8}=UInt8[])
     items = visible_settings(app)
     count = length(items)
-    navigation=menu_select_navigation(menu_packet(event,raw))
+    packet=menu_packet(event,raw);selectors=native_selector_context(app)
+    navigation=native_selector_navigation(selectors,packet)
     if menu_search_pasting(app.menus.search, raw)
         menu_search_input!(app.menus.search, event, raw)
         app.menus.cursor = 1
     elseif navigation==:release
         nothing
-    elseif event.key == :escape
+    elseif navigation in (:up,:down)
+        count>0 && (app.menus.cursor=mod1(app.menus.cursor+(navigation==:up ? -1 : 1),count))
+    elseif navigation in (:page_up,:page_down)
+        count>0 && (app.menus.cursor=clamp(app.menus.cursor+(navigation==:page_up ? -10 : 10),1,count))
+    elseif native_selector_matches(selectors,:confirm,packet) || (event.key==:char && event.char==' ' && isempty(Tachikoma.text(app.menus.search)))
+        activate_setting!(app)
+    elseif native_selector_matches(selectors,:cancel,packet)
         if isempty(app.menus.parents)
             app.page = :chat
         else
@@ -223,12 +232,6 @@ function settings_input!(app::App, event::KeyEvent, raw::AbstractVector{UInt8}=U
             app.menus.cursor = cursor
             Tachikoma.set_text!(app.menus.search, query)
         end
-    elseif navigation in (:up, :down) && count > 0
-        app.menus.cursor = mod1(app.menus.cursor + (navigation == :up ? -1 : 1), count)
-    elseif navigation in (:page_up, :page_down) && count > 0
-        app.menus.cursor = clamp(app.menus.cursor + (navigation == :page_up ? -10 : 10), 1, count)
-    elseif event.key == :enter || (event.key == :char && event.char == ' ' && isempty(Tachikoma.text(app.menus.search)))
-        activate_setting!(app)
     elseif settings_searchable(app)
         edit_menu_search!(app.menus.search, event, raw)
         app.menus.cursor = 1
