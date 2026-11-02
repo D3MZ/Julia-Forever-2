@@ -48,8 +48,8 @@ function session_stats_model_key(entry::AbstractDict,payload::AbstractDict)
     end
 end
 
-session_total_add(total::T,value::T) where {T<:Integer} = Base.Checked.checked_add(total,value)
-function session_total_add(total::T,value::T) where {T<:Real}
+session_total_add(total,value,::Type{<:Integer}) = Base.Checked.checked_add(total,value)
+function session_total_add(total,value,::Type{<:Real})
     result=total+value
     isfinite(result) || error("Session usage sum overflowed")
     result
@@ -59,7 +59,7 @@ function session_reported_total(values::AbstractVector,::Type{T}) where {T<:Real
     total=zero(T);reported=0
     for value in values
         if !isnothing(value)
-            total=session_total_add(total,convert(T,value))
+            total=session_total_add(total,convert(T,value),T)
             reported+=1
         end
     end
