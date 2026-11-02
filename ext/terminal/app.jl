@@ -87,20 +87,22 @@ function JuliaForever2.main(; settings_dir::AbstractString=config_dir(), registr
     schedule(terminal_task)
     wait(terminal_task; throw=false)
     capture_was_enabled || Tachikoma.disable_raw_capture!()
+    result = 0
     if terminal_lease_failed(app)
         preference_attempt(()->finish_shutdown!(app))
         preference_attempt(()->close_user_shell!(app))
         preference_attempt(()->close(app.session))
         preference_attempt(()->close(app.session.kernel))
-        return 1
+        result = 1
+    else
+        finish_shutdown!(app)
+        close(app.session.kernel)
+        if istaskfailed(terminal_task)
+            errors = Base.current_exceptions(terminal_task)
+            error(isempty(errors) ? "Terminal application failed" : sprint(showerror, last(errors).exception))
+        end
     end
-    finish_shutdown!(app)
-    close(app.session.kernel)
-    if istaskfailed(terminal_task)
-        errors = Base.current_exceptions(terminal_task)
-        error(isempty(errors) ? "Terminal application failed" : sprint(showerror, last(errors).exception))
-    end
-    return 0
+    return result
 end
 
 """Attach the actual terminal sink for clipboard, color queries and graphics capability checks."""

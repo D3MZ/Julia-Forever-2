@@ -338,9 +338,12 @@ end
 
 update!(app::App, event::Union{KeyEvent,MouseEvent}) = terminal_lease_failed(app) ? nothing : ui_component(app, :input, default_input!, event)
 function view(app::App, frame::Frame)
-    terminal_lease_failed(app) && return nothing
-    app.area = frame.area
-    ui_component(app, :view, default_view!, frame)
+    if terminal_lease_failed(app)
+        nothing
+    else
+        app.area = frame.area
+        ui_component(app, :view, default_view!, frame)
+    end
 end
 
 """Complete the current slash command through the shared prompt editor."""

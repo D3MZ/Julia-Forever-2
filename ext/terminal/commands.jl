@@ -162,11 +162,12 @@ function command!(app::App, parts::AbstractVector{<:AbstractString})
     end
 end
 function update!(app::App, event::TaskEvent)
-    terminal_lease_failed(app) && return nothing
-    handlers = get(app.event_handlers, event.id, nothing)
-    if !isnothing(handlers)
-        for handler in copy(handlers)
-            Base.invokelatest(handler.action, app, event.value)
+    if !terminal_lease_failed(app)
+        handlers = get(app.event_handlers, event.id, nothing)
+        if !isnothing(handlers)
+            for handler in copy(handlers)
+                Base.invokelatest(handler.action, app, event.value)
+            end
         end
     end
     nothing
