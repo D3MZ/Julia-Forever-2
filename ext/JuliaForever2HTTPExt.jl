@@ -3,33 +3,40 @@ module JuliaForever2HTTPExt
 using HTTP
 using JSON
 using UUIDs: uuid4
+using Random: RandomDevice, rand
+using SHA: sha256
 using JuliaForever2
 
-mutable struct WebAccess
-    token::String
-    cookie::String
-    lock::ReentrantLock
-    redeemed::Bool
+include("web/access.jl")
+include("web/controller.jl")
+include("web/chat_only.jl")
 
-    WebAccess(token::String) = isempty(token) ? error("Web token must not be empty") : new(token, string(uuid4(), uuid4()), ReentrantLock(), false)
-end
-
-WebAccess(token::AbstractString) = WebAccess(String(token))
-
-struct WebServer{S}
+struct WebServer{S,C}
     backend::S
     host::String
     port::Int
     token::String
+    access::WebAccess
+    controller::C
+    expiry::Timer
 end
 
-Base.close(server::WebServer) = HTTP.forceclose(server.backend)
-JuliaForever2.web_url(server::WebServer) = "http://$(server.host):$(server.port)"
-JuliaForever2.web_launch_url(server::WebServer) = JuliaForever2.web_url(server) * "/?access=" * HTTP.URIs.escapeuri(server.token)
+Base.show(io::IO, server::WebServer) = print(io, "WebServer(host=", server.host, ", port=", server.port, ", capability=<redacted>)")
+Base.show(io::IO, ::MIME"text/plain", server::WebServer) = show(io, server)
+
+function Base.close(server::WebServer)
+    close(server.expiry)
+    revoke_web_access!(server.access)
+    cancel_web_turns!(server.controller)
+    wait_settled_web_saves!(server.controller)
+    HTTP.forceclose(server.backend)
+end
+JuliaForever2.web_url(server::WebServer) = isempty(server.access.origin) ? "http://$(server.host):$(server.port)" : server.access.origin
+JuliaForever2.web_launch_url(server::WebServer) = JuliaForever2.web_url(server) * "/join#invite=" * HTTP.URIs.escapeuri(server.token)
 
 response(status::Integer, body::AbstractString, mime::AbstractString="application/json") = HTTP.Response(status; headers=["Content-Type" => mime, "Cache-Control" => "no-store", "X-Content-Type-Options" => "nosniff", "Referrer-Policy" => "no-referrer"], body)
 
-rpc_response(api::JuliaForever2.SessionAPI, request::HTTP.Request) = length(request.body) <= 1_048_576 ? dispatch(api, JSON.parse(String(request.body))) : response(413, "{\"error\":\"Payload too large\"}")
+rpc_response(api::JuliaForever2.SessionAPI, request::HTTP.Request) = length(request.body) <= 1_048_576 ? dispatch(api, JuliaForever2.parse_json(String(request.body))) : response(413, "{\"error\":\"Payload too large\"}")
 
 dispatch(api::JuliaForever2.SessionAPI, frame) = response(400, "{\"error\":\"Invalid JSON-RPC request\"}")
 
@@ -65,9 +72,29 @@ function web_request(api::JuliaForever2.SessionAPI, token::AbstractString, reque
     end
 end
 
+const WEB_ASSET_DIRECTORY = normpath(joinpath(@__DIR__, "..", "assets", "web"))
+
+"""Load fixed, packaged Julia-native browser assets without any upstream runtime dependency."""
+web_asset(::Val{:index}) = read(joinpath(WEB_ASSET_DIRECTORY, "index.html"), String)
+web_asset(::Val{:script}) = read(joinpath(WEB_ASSET_DIRECTORY, "app.js"), String)
+web_asset(::Val{:style}) = read(joinpath(WEB_ASSET_DIRECTORY, "app.css"), String)
+
+function web_index()
+    page = response(200, web_asset(Val(:index)), "text/html; charset=utf-8")
+    HTTP.setheader(page, "Content-Security-Policy" =>
+        "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; " *
+        "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+    HTTP.setheader(page, "X-Frame-Options" => "DENY")
+    page
+end
+
 function route(api, request, target)
     if request.method == "GET" && target == "/"
-        response(200, "<!doctype html><html lang=\"en\"><head><title>JuliaForever2</title></head><body><h1>JuliaForever2</h1><p>Native session API: /api/rpc</p></body></html>", "text/html; charset=utf-8")
+        web_index()
+    elseif request.method == "GET" && target == "/app.js"
+        response(200, web_asset(Val(:script)), "text/javascript; charset=utf-8")
+    elseif request.method == "GET" && target == "/app.css"
+        response(200, web_asset(Val(:style)), "text/css; charset=utf-8")
     elseif request.method == "GET" && target == "/api/sessions"
         response(200, JSON.json(JuliaForever2.session_api_request!(api, "session/list")))
     elseif request.method == "POST" && target == "/api/rpc"
@@ -77,38 +104,58 @@ function route(api, request, target)
     end
 end
 
-"""Redeem a browser launch credential once while retaining the existing bearer handler."""
-function redeem_web_access!(access::WebAccess, credential::AbstractString)
-    lock(access.lock) do
-        accepted = !access.redeemed && credential == access.token
-        access.redeemed |= accepted
-        accepted
-    end
-end
-
-web_session_cookie(access::WebAccess, request::HTTP.Request) = any(part -> strip(part) == "juliaforever2_session=$(access.cookie)", split(HTTP.header(request, "Cookie"), ';'))
-
-function authorize_web_request(api, access::WebAccess, handler, request::HTTP.Request)
-    uri = HTTP.URI(String(request.target))
-    query = HTTP.queryparams(uri)
-    if request.method == "GET" && uri.path == "/" && haskey(query, "access")
-        redeem_web_access!(access, query["access"]) ? redirect(access) : response(401, "{\"error\":\"Invalid or redeemed launch token\"}")
+"""Parse a browser-facing bare authority without trusting forwarded headers."""
+function web_authority(value::AbstractString)
+    parsed = match(r"\A(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::([0-9]{1,5}))?\z"i, value)
+    if isnothing(parsed)
+        nothing
     else
-        authorize(api, access, handler, request)
-    end
-end
-
-redirect(access::WebAccess) = HTTP.Response(303; headers=["Location" => "/", "Set-Cookie" => "juliaforever2_session=$(access.cookie); HttpOnly; SameSite=Strict; Path=/", "Cache-Control" => "no-store", "Referrer-Policy" => "no-referrer", "X-Content-Type-Options" => "nosniff"], body="")
-
-function authorize(api, access::WebAccess, handler, request::HTTP.Request)
-    browser = web_session_cookie(access, request) && HTTP.header(request, "Authorization") != "Bearer $(access.token)"
-    if browser && request.method in ("POST", "PUT", "PATCH", "DELETE") && HTTP.header(request, "X-JuliaForever2-Request") != "1"
-        response(403, "{\"error\":\"Browser request token required\"}")
-    else
-        if browser
-            HTTP.setheader(request, "Authorization" => "Bearer $(access.token)")
+        digits = parsed.captures[2]
+        port = isnothing(digits) ? nothing : parse(Int, digits)
+        if isnothing(port) || port <= 65535
+            (host=lowercase(String(parsed.captures[1])), port=port)
+        else
+            nothing
         end
-        Base.invokelatest(handler, api, access.token, request)
+    end
+end
+
+"""Recognize loopback host authorities without accepting deceptive DNS suffixes."""
+function web_loopback_host(host::AbstractString)
+    parts = split(host, '.')
+    host in ("localhost", "[::1]") || (length(parts) == 4 && parts[1] == "127" &&
+        all(part -> !isempty(part) && length(part) <= 3 &&
+            all(isdigit, part) && parse(Int, part) <= 255, parts[2:end]))
+end
+
+web_origin_port(port, scheme) = isnothing(port) ? (scheme == "https" ? 443 : 80) : port
+
+"""Require a complete HTTP(S) Origin with the same normalized Host authority."""
+function web_same_origin(authority, origin::AbstractString)
+    parsed = match(r"\A(https?)://(.+)\z"i, origin)
+    if isnothing(parsed)
+        false
+    else
+        other = web_authority(parsed.captures[2])
+        scheme = lowercase(String(parsed.captures[1]))
+        !isnothing(other) && authority.host == other.host &&
+            web_origin_port(authority.port, scheme) == web_origin_port(other.port, scheme)
+    end
+end
+
+web_has_header(request::HTTP.Request, name::AbstractString) =
+    any(field -> lowercase(first(field)) == lowercase(name), request.headers)
+
+"""Default loopback Web policy: reject DNS rebinding and cross-site browser requests."""
+function trusted_web_request(request::HTTP.Request)
+    authority = web_authority(HTTP.header(request, "Host"))
+    if isnothing(authority) || !web_loopback_host(authority.host)
+        false
+    elseif lowercase(HTTP.header(request, "Sec-Fetch-Site")) == "cross-site"
+        false
+    else
+        !web_has_header(request, "Origin") ||
+            web_same_origin(authority, HTTP.header(request, "Origin"))
     end
 end
 
@@ -129,22 +176,36 @@ end
 
 WebAddress(host::AbstractString, port::Integer) = WebAddress(String(host), Int(port))
 """Start a token-authenticated loopback Web server backed only by Julia-native sessions."""
-JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0, token=string(uuid4()), handler=web_request) = serve(api, WebAddress(host, port), token, handler)
+JuliaForever2.start_web_server(api::JuliaForever2.SessionAPI; host::AbstractString="127.0.0.1", port::Integer=0,
+        token=web_secret(), handler=web_request, request_trust=trusted_web_request,
+        public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin)) =
+    serve(api, WebAddress(host, port), token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
 
-function serve(api, address::WebAddress, token, handler)
-    access = WebAccess(String(token))
-    server = HTTP.serve!(request -> authorize_web_request(api, access, handler, request), address.host, address.port; verbose=false, max_body_bytes=1_048_576)
-    WebServer(server, address.host, Int(HTTP.port(server)), String(token))
+function serve(api, address::WebAddress, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only)
+    remote_web_api_allowed(api, public_origin, workspace) || error("Public Web requires a dedicated chat-only API; pass a native OpenAIProvider instead of an ambient SessionAPI")
+    access = WebAccess(String(token); public_origin, lifetime, session_lifetime, browser_only)
+    controller = WebController(api; workspace, access)
+    server = HTTP.serve!(request -> authorize_web_request(controller, access, handler, request, request_trust),
+        address.host, address.port; verbose=false, max_body_bytes=1_048_576)
+    interval = min(1.0, Float64(lifetime), Float64(session_lifetime))
+    expiry = Timer(interval; interval) do timer
+        if expire_web_access!(access)
+            cancel_web_turns!(controller)
+            close(timer)
+        end
+    end
+    WebServer(server, address.host, Int(HTTP.port(server)), String(token), access, controller, expiry)
 end
-"""An optional HTTP extension publishes an independently replaceable native Web service."""
+"""Publish a replaceable native Web service with optional pinned HTTPS origin and bounded lifetime."""
 function JuliaForever2.web_server_plugin(; name=:web_server, service_name=:web_server,
-        api_service=:session_api, host="127.0.0.1", port=0, token=string(uuid4()), handler=web_request)
+        api_service=:session_api, host="127.0.0.1", port=0, token=web_secret(), handler=web_request,
+        request_trust=trusted_web_request, public_origin="", lifetime=86400, session_lifetime=31536000, workspace=pwd(), browser_only=!isempty(public_origin))
     contract = Symbol(service_name)
     dependency = Symbol(api_service)
     setup = context -> JuliaForever2.provide!(context, contract,
         JuliaForever2.start_web_server(JuliaForever2.service(context, dependency);
-            host, port, token, handler); cleanup=close)
-    return JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
+            host, port, token, handler, request_trust, public_origin, lifetime, session_lifetime, workspace, browser_only); cleanup=close)
+    JuliaForever2.PluginSpec(name, setup; requires=[dependency], provides=[contract])
 end
 
 end

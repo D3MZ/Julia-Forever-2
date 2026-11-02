@@ -9,11 +9,11 @@ function runtime_notify! end
 """Finish a gracefully stopped backend; alternative runtimes may extend their own shutdown wait."""
 finish_runtime!(backend::AbstractRuntimeBackend; timeout=2.0) = close(backend)
 
-mutable struct JsonRpcRuntime{P} <: AbstractRuntimeBackend
+Base.@kwdef mutable struct JsonRpcRuntime{P} <: AbstractRuntimeBackend
     peer::P
     process::Base.Process
-    lock::ReentrantLock
-    closed::Bool
+    lock::ReentrantLock = ReentrantLock()
+    closed::Bool = false
 end
 
 """Launch a caller-selected executable with a bidirectional, framework-neutral JSON-RPC transport."""
@@ -23,7 +23,7 @@ function start_runtime(command::Cmd; on_request=nothing, on_notification=nothing
     istaskfailed(worker) ? RpcResult(RpcError(nothing, JSONRPCTransport.task_failure_message(worker))) : start!(JsonRpcRuntime(fetch(worker); on_request, on_notification))
 end
 
-JsonRpcRuntime(process::Base.Process; on_request=nothing, on_notification=nothing) = JsonRpcRuntime(JsonRpcPeer(process, process; on_request, on_notification), process, ReentrantLock(), false)
+JsonRpcRuntime(process::Base.Process; on_request=nothing, on_notification=nothing) = JsonRpcRuntime(; peer=JsonRpcPeer(process, process; on_request, on_notification), process)
 
 function JSONRPCTransport.start!(runtime::JsonRpcRuntime)
     start!(runtime.peer)
@@ -55,10 +55,10 @@ function Base.close(runtime::JsonRpcRuntime)
     return nothing
 end
 
-mutable struct ProcessFeature
+Base.@kwdef mutable struct ProcessFeature
     process::Base.Process
-    lock::ReentrantLock
-    closed::Bool
+    lock::ReentrantLock = ReentrantLock()
+    closed::Bool = false
 end
 
 """Run a frontend or other process feature with caller-selected IO and an owned lifetime."""
@@ -69,7 +69,7 @@ function launch_feature(command::Cmd; stdin=devnull, stdout=Base.stdout, stderr=
         RpcResult(ProcessFeature(fetch(worker)))
 end
 
-ProcessFeature(process::Base.Process) = ProcessFeature(process, ReentrantLock(), false)
+ProcessFeature(process::Base.Process) = ProcessFeature(; process)
 
 Base.isopen(feature::ProcessFeature) = !feature.closed && process_running(feature.process)
 Base.wait(feature::ProcessFeature) = (wait(feature.process); feature)

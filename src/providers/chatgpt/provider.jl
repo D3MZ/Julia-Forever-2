@@ -1,11 +1,12 @@
 using JSON
 
-openai_request(url, method, body, headers, context::ExecutionContext=ExecutionContext(), sink=nothing) = http_request(url, method, body, headers, context; timeout=180.0, sink)
+openai_request(url, method, body, headers, context::ExecutionContext=ExecutionContext(), sink=nothing) = http_request(url, method, body, headers, context; timeout=Inf, sink, idle_timeout_ms=HTTPTransport.http_idle_timeout_ms())
 
 Base.@kwdef mutable struct ModelCatalog
     lock::ReentrantLock = ReentrantLock()
     models::Vector{String} = String[]
     expires_at::Float64 = 0.0
+    selected_model::String = ""
 end
 
 struct OpenAIProvider{F,G,P}
@@ -16,10 +17,32 @@ struct OpenAIProvider{F,G,P}
     policy::P
     catalog::ModelCatalog
     catalog_ttl::Float64
+    reasoning::Union{Nothing,String}
+    reasoning_summary::Union{Nothing,String}
 end
-OpenAIProvider(dir::AbstractString=config_dir(), transport=openai_request, auth_transport=auth_request; model=get(ENV, "CHATGPT_MODEL", ""), policy=CodeModePolicy(), catalog_ttl=300.0) = OpenAIProvider(String(dir), String(model), transport, auth_transport, policy, ModelCatalog(), Float64(catalog_ttl))
+OpenAIProvider(dir::AbstractString=config_dir(), transport=openai_request, auth_transport=auth_request; model=get(ENV, "CHATGPT_MODEL", ""), policy=CodeModePolicy(), catalog_ttl=300.0, reasoning=nothing,reasoning_summary=isnothing(reasoning) || reasoning=="none" ? nothing : "auto") = OpenAIProvider(String(dir), String(model), transport, auth_transport, policy, ModelCatalog(), Float64(catalog_ttl), isnothing(reasoning) ? nothing : String(reasoning),isnothing(reasoning_summary) ? nothing : String(reasoning_summary))
 OpenAIProvider(provider::OpenAIProvider, model::AbstractString) = OpenAIProvider(provider.dir, String(model),
-    provider.transport, provider.auth_transport, provider.policy, provider.catalog, provider.catalog_ttl)
+    provider.transport, provider.auth_transport, provider.policy, provider.catalog, provider.catalog_ttl, provider.reasoning,provider.reasoning_summary)
+OpenAIProvider(dir::String,model::String,transport,auth_transport,policy,catalog::ModelCatalog,catalog_ttl::Float64) =
+    OpenAIProvider(dir,model,transport,auth_transport,policy,catalog,catalog_ttl,nothing,nothing)
+OpenAIProvider(dir::String,model::String,transport,auth_transport,policy,catalog::ModelCatalog,catalog_ttl::Float64,reasoning::Union{Nothing,String}) =
+    OpenAIProvider(dir,model,transport,auth_transport,policy,catalog,catalog_ttl,reasoning,isnothing(reasoning) || reasoning=="none" ? nothing : "auto")
+
+"""Construct the subscription request without changing authentication or transport."""
+function chatgpt_request_payload(provider::OpenAIProvider,request::ModelRequest,model::AbstractString)
+    conversation=conversation_messages(request.messages,request.instructions;system_role="developer")
+    payload=Dict{String,Any}("model"=>model,"input"=>conversation,"store"=>false,"stream"=>true,"text"=>Dict("format"=>request.response_format))
+    reasoning=provider.reasoning
+    if !isnothing(reasoning)
+        payload["reasoning"]=Dict("effort"=>reasoning)
+        summary=provider.reasoning_summary
+        if !isnothing(summary)
+            payload["reasoning"]["summary"]=summary
+        end
+    end
+    model_image_payload(Val(:responses),payload)
+end
+
 (provider::OpenAIProvider)(messages, session) = call_provider(provider, messages, session)
 
 function available_models!(provider::OpenAIProvider, headers, context)
@@ -35,18 +58,32 @@ function discover!(provider::OpenAIProvider, headers, context)
 end
 
 discover!(provider::OpenAIProvider, data) = (models=String[], reason="ChatGPT model discovery returned invalid JSON.")
-discover!(provider::OpenAIProvider, data::AbstractDict) = discover!(provider, get(data, "models", []))
-
-function discover!(provider::OpenAIProvider, models::AbstractVector)
-    discovered = String[model["slug"] for model in models if model isa AbstractDict && get(model, "visibility", "") == "list" && get(model, "slug", nothing) isa AbstractString]
-    lock(provider.catalog.lock) do
-        if time() >= provider.catalog.expires_at
-            provider.catalog.models = discovered
-            provider.catalog.expires_at = time() + provider.catalog_ttl
-        end
-        (models=provider.catalog.models, reason="")
+function discover!(provider::OpenAIProvider,data::AbstractDict)
+    if haskey(data,"data") && data["data"] isa AbstractVector
+        modern=data["data"]
+        valid=all(model->model isa AbstractDict && get(model,"id",nothing) isa AbstractString && !isempty(model["id"]),modern)
+        valid ? cache_discovered_models!(provider,unique(String[model["id"] for model in modern])) : (models=String[],reason="ChatGPT model discovery returned invalid model records.")
+    elseif haskey(data,"models") && data["models"] isa AbstractVector
+        discover!(provider,data["models"])
+    else
+        (models=String[],reason="ChatGPT model discovery returned invalid JSON.")
     end
 end
+
+function discover!(provider::OpenAIProvider,models::AbstractVector)
+    discovered=String[model["slug"] for model in models if model isa AbstractDict && get(model,"visibility","")=="list" && get(model,"slug",nothing) isa AbstractString && !isempty(model["slug"])]
+    cache_discovered_models!(provider,unique(discovered))
+end
+function cache_discovered_models!(provider::OpenAIProvider,discovered::Vector{String})
+    lock(provider.catalog.lock) do
+        if time()>=provider.catalog.expires_at
+            provider.catalog.models=discovered
+            provider.catalog.expires_at=time()+provider.catalog_ttl
+        end
+        (models=copy(provider.catalog.models),reason="")
+    end
+end
+
 mutable struct ChatGPTStream{C,P}
     context::C
     policy::P
@@ -111,16 +148,27 @@ function select(provider::OpenAIProvider, request, context, headers, catalog)
         provider_failure("No ChatGPT models are available for this account.")
     else
         model = isempty(provider.model) ? first(catalog.models) : provider.model
-        model in catalog.models ? respond(provider, request, context, headers, model) : provider_failure("The configured ChatGPT model is not available for this account.")
+        if model in catalog.models
+            lock(provider.catalog.lock) do
+                provider.catalog.selected_model = model
+            end
+            respond(provider, request, context, headers, model)
+        else
+            provider_failure("The configured ChatGPT model is not available for this account.")
+        end
     end
 end
 
 function respond(provider::OpenAIProvider, request::ModelRequest, context, headers, model)
-    conversation = conversation_messages(request.messages, request.instructions; system_role="developer")
-    body = JSON.json(Dict("model" => model, "input" => conversation, "store" => false, "stream" => true, "text" => Dict("format" => request.response_format)))
-    stream = ChatGPTStream(context, request.protocol)
-    response = transport_request(provider.transport, OPENAI_RESOURCE * "/responses", "POST", body, headers, context, SSEDecoder(stream))
-    200 <= response.status < 300 ? result(stream, request.protocol) : transport_failure(response, "ChatGPT")
+    payload=chatgpt_request_payload(provider,request,model)
+    if payload isa ModelImagePolicyFailure
+        provider_failure(payload.reason)
+    else
+        body = JSON.json(payload)
+        stream = ChatGPTStream(context, request.protocol)
+        response = transport_request(provider.transport, OPENAI_RESOURCE * "/responses", "POST", body, headers, context, SSEDecoder(stream))
+        200 <= response.status < 300 ? result(stream, request.protocol) : transport_failure(response, "ChatGPT")
+    end
 end
 
 result(stream::ChatGPTStream, protocol) = stream.completed && !stream.failed ? ProviderResult(decode_reply(protocol, String(take!(stream.text))), stream.usage) : provider_failure("ChatGPT response ended before successful completion.")

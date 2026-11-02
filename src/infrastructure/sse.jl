@@ -8,16 +8,16 @@ struct SSEEvent
     id::String
 end
 
-mutable struct SSEDecoder{F} <: IO
+Base.@kwdef mutable struct SSEDecoder{F} <: IO
     sink::F
-    line::Vector{UInt8}
-    data::Vector{String}
-    event::String
-    id::String
-    after_cr::Bool
-    first_line::Bool
+    line::Vector{UInt8} = UInt8[]
+    data::Vector{String} = String[]
+    event::String = ""
+    id::String = ""
+    after_cr::Bool = false
+    first_line::Bool = true
 end
-SSEDecoder(sink) = SSEDecoder(sink, UInt8[], String[], "", "", false, true)
+SSEDecoder(sink) = SSEDecoder(; sink)
 Base.isopen(::SSEDecoder) = true
 Base.iswritable(::SSEDecoder) = true
 Base.flush(::SSEDecoder) = nothing

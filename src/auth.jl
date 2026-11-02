@@ -1,4 +1,6 @@
 include("application/authentication.jl")
+include("application/manual_authorization.jl")
+include("application/api_key_authorization.jl")
 include("providers/chatgpt/authentication.jl")
 include("providers/openrouter/authentication.jl")
 include("providers/codex/authentication.jl")

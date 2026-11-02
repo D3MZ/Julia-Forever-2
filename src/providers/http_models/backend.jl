@@ -1,3 +1,5 @@
+public response_usage_provenance, message_usage_accounting
+
 struct HTTPModelBackend{P,C,T,O}
     protocol::P
     endpoint::String
@@ -11,13 +13,17 @@ HTTPModelBackend(protocol, endpoint::AbstractString; credentials=Returns(Pair{St
 Base.show(io::IO, backend::HTTPModelBackend) = print(io, "HTTPModelBackend(", nameof(typeof(backend.protocol)), ")")
 
 """Send an owned streaming request; custom transports implement this same context-aware signature."""
-model_http_transport(url, method, body, headers, context, sink) = HTTPTransport.http_request(url, method, body, headers, context; sink)
+model_http_transport(url, method, body, headers, context, sink) = HTTPTransport.http_request(url, method, body, headers, context; sink, timeout=Inf, idle_timeout_ms=HTTPTransport.http_idle_timeout_ms())
 
 struct StreamedCompletion{R,U,M}
     reply::R
     usage::U
     message::M
+    provenance::Union{Nothing,Dict{String,Any}}
 end
+StreamedCompletion(reply,usage,message) = StreamedCompletion(reply,usage,message,nothing)
+response_usage_provenance(result) = nothing
+response_usage_provenance(result::StreamedCompletion) = deepcopy(result.provenance)
 response_reply(result::StreamedCompletion) = result.reply
 response_usage(result::StreamedCompletion) = result.usage
 
@@ -37,12 +43,87 @@ function empty_model_message(model::ModelSpec)
         "stopReason" => "pending", "timestamp" => round(Int, time() * 1000))
 end
 
+"""Actual validated metering observations, independent of source-compatible initialized wire counters."""
+Base.@kwdef mutable struct ModelUsageMeter
+    input::Union{Nothing,Int} = nothing
+    output::Union{Nothing,Int} = nothing
+    cache_read::Union{Nothing,Int} = nothing
+    cache_write::Union{Nothing,Int} = nothing
+    cache_write_1h::Union{Nothing,Int} = nothing
+end
+
+"""Only calculate catalog estimates when metered components and applicable prices are known."""
+function model_metered_cost(meter::ModelUsageMeter,metadata)
+    rates=get(metadata,"cost",nothing)
+    values=(meter.input,meter.output,meter.cache_read,meter.cache_write)
+    prices=map(name->usage_cost(usage_detail(rates,name)),("input","output","cacheRead","cacheWrite"))
+    hourly=usage_cost(usage_detail(rates,"cacheWrite1h"))
+    hourly_present=rates isa AbstractDict && haskey(rates,"cacheWrite1h")
+    cost=nothing
+    if all(!isnothing,values) && all(!isnothing,prices) && (!hourly_present || !isnothing(hourly))
+        counts=map(value->something(value,0),values)
+        known_prices=map(value->something(value,0.0),prices)
+        hourly_rate=hourly_present ? something(hourly,0.0) : known_prices[4]
+        observed_hourly=meter.cache_write_1h
+        split_known=counts[4]==0 || hourly_rate==known_prices[4] || !isnothing(observed_hourly)
+        if split_known
+            one_hour=min(something(observed_hourly,0),counts[4])
+            ordinary=counts[4]-one_hour
+            cost=usage_cost(known_prices[1]/1_000_000*counts[1]+known_prices[2]/1_000_000*counts[2]+
+                known_prices[3]/1_000_000*counts[3]+known_prices[4]/1_000_000*ordinary+hourly_rate/1_000_000*one_hour)
+        end
+    end
+    cost
+end
+
+"""Expose only observed token fields; computed cost is explicitly a catalog estimate, not a bill."""
+function model_usage_provenance(report::UsageReport)
+    values=Dict{String,Any}()
+    fields=String[]
+    for (name,value) in (("input",report.input_tokens),("output",report.output_tokens),
+            ("cacheRead",report.cache_read_tokens),("cacheWrite",report.cache_write_tokens))
+        if !isnothing(value)
+            values[name]=value
+            push!(fields,name)
+        end
+    end
+    isnothing(report.cost) || (values["cost"]=report.cost)
+    Dict{String,Any}("format"=>"JuliaForever2.usage-provenance.v1","observedFields"=>fields,
+        "usage"=>values,"costSource"=>isnothing(report.cost) ? "unknown" : "catalog-estimate")
+end
+
+"""Read native presence metadata without rewriting imports or calling legacy declared cost a verified charge."""
+function message_usage_accounting(message)
+    raw=usage_detail(message,"usage")
+    marker=usage_detail(usage_detail(message,"jf2"),"usageProvenance")
+    native=marker isa AbstractDict && isequal(get(marker,"format",nothing),"JuliaForever2.usage-provenance.v1")
+    report=UsageReport(raw)
+    provenance=raw isa AbstractDict ? :legacy : :absent
+    cost_source=isnothing(report.cost) ? :unknown : :legacy_declared
+    if native
+        data=usage_detail(marker,"usage")
+        fields=get(marker,"observedFields",nothing)
+        observed=fields isa AbstractVector ? fields : Any[]
+        input=any(isequal("input"),observed) ? usage_tokens(usage_detail(data,"input")) : nothing
+        output=any(isequal("output"),observed) ? usage_tokens(usage_detail(data,"output")) : nothing
+        read=any(isequal("cacheRead"),observed) ? usage_tokens(usage_detail(data,"cacheRead")) : nothing
+        written=any(isequal("cacheWrite"),observed) ? usage_tokens(usage_detail(data,"cacheWrite")) : nothing
+        complete=all(!isnothing,(input,output,read,written))
+        estimated=isequal(get(marker,"costSource",nothing),"catalog-estimate")
+        cost=complete && estimated ? usage_cost(usage_detail(data,"cost")) : nothing
+        report=UsageReport(input,output,cost,read,written)
+        provenance=:native
+        cost_source=isnothing(cost) ? :unknown : :catalog_estimate
+    end
+    (;report,provenance,cost_source)
+end
+
 mutable struct ModelStreamState{M,C}
     model::M
     context::C
     message::Dict{String,Any}
     blocks::Dict{Any,Int}
-    arguments::Dict{Int,String}
+    arguments::Dict{Int,IOBuffer}
     text_buffers::Dict{Int,IOBuffer}
     closed_blocks::Set{Int}
     received_start::Bool
@@ -51,8 +132,18 @@ mutable struct ModelStreamState{M,C}
     finished::Bool
     error::String
     started_at::UInt64
+    metering::ModelUsageMeter
 end
-ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,String}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns())
+ModelStreamState(model, context) = ModelStreamState(model, context, empty_model_message(model), Dict{Any,Int}(), Dict{Int,IOBuffer}(), Dict{Int,IOBuffer}(), Set{Int}(), false, false, false, false, "", time_ns(), ModelUsageMeter())
+
+"""Preserve the prior positional stream-state constructor without inventing metering observations."""
+ModelStreamState(model,context,message,blocks,arguments,text_buffers,closed_blocks,received_start,received_stop,started,finished,error,started_at) =
+    ModelStreamState(model,context,message,blocks,arguments,text_buffers,closed_blocks,received_start,received_stop,started,finished,error,started_at,ModelUsageMeter())
+
+function model_reported_usage(state::ModelStreamState)
+    meter=state.metering
+    UsageReport(meter.input,meter.output,model_metered_cost(meter,model_metadata(state.model)),meter.cache_read,meter.cache_write)
+end
 
 function model_event!(state::ModelStreamState, kind::AbstractString; fields...)
     event = Dict{String,Any}("type" => String(kind))
@@ -160,6 +251,21 @@ function parse_model_tool_arguments(text::AbstractString)
     return isnothing(parsed) ? parse_json(repair_model_json(text)) : parsed
 end
 
+"""Read accumulated streamed tool arguments without resetting the append position."""
+function model_tool_argument_text(buffer::IOBuffer)
+    seekstart(buffer)
+    text = read(buffer, String)
+    seekend(buffer)
+    text
+end
+
+"""Accumulate fragments in linear time; parse only at a possible object boundary."""
+function append_model_tool_arguments!(state::ModelStreamState, index::Int, fragment::AbstractString)
+    buffer = state.arguments[index]
+    write(buffer, fragment)
+    possible_tool_object(String(fragment)) ? parse_json(model_tool_argument_text(buffer)) : nothing
+end
+
 function finish_model_block!(state::ModelStreamState, index::Int)
     if !(index in state.closed_blocks)
         complete!(state, index)
@@ -172,8 +278,8 @@ function complete!(state::ModelStreamState, index::Int)
     block = state.message["content"][index]
     kind = block["type"]
     if kind == "toolCall"
-        if haskey(state.arguments, index) && !isempty(state.arguments[index])
-            arguments = parse_model_tool_arguments(state.arguments[index])
+        if haskey(state.arguments, index) && position(state.arguments[index]) > 0
+            arguments = parse_model_tool_arguments(model_tool_argument_text(state.arguments[index]))
             arguments isa AbstractDict && (block["arguments"] = arguments)
         end
         model_event!(state, "toolcall_end"; contentIndex=index - 1, toolCall=deepcopy(block))
@@ -229,9 +335,7 @@ end
 
 function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     message = state.message
-    usage = message["usage"]
-    report = UsageReport(usage["input"] + usage["cacheRead"] + usage["cacheWrite"],
-        usage["output"], haskey(model_metadata(state.model), "cost") ? Float64(usage["cost"]["total"]) : nothing)
+    report = model_completion_usage(state)
     text = join(block["text"] for block in message["content"] if block["type"] == "text")
     reply = if message["stopReason"] in ("error", "aborted")
         Reply(:error, get(message, "errorMessage", "Model request failed."))
@@ -242,14 +346,22 @@ function StreamedCompletion(state::ModelStreamState, request::ModelRequest)
     else
         decode_reply(request.protocol, text)
     end
-    return StreamedCompletion(reply, report, message)
+    return StreamedCompletion(reply, report, message, model_completion_provenance(state,report))
 end
+
+"""Retain native transport provenance separately from provider-controlled event strings."""
+struct ModelHTTPFailure
+    status::Int
+    reason::String
+end
+Base.show(io::IO,failure::ModelHTTPFailure)=print(io,"ModelHTTPFailure(status=",failure.status,")")
+model_http_failure_text(response)="Model HTTP request failed ($(response.status)): $(response.reason)"
+model_http_failure_outcome(transport,state::ModelStreamState,response)=state
 
 function respond_model(backend::HTTPModelBackend, model::ModelSpec, request::ModelRequest, context::ExecutionContext)
     state = ModelStreamState(model, context)
-    if !cancelled(context)
-        exchange!(backend, state, request)
-    end
+    outcome=cancelled(context) ? state : exchange!(backend, state, request)
+    sanitize_model_failure!(backend.transport,state,outcome)
     finish_model_stream!(state)
     StreamedCompletion(state, request)
 end
@@ -257,24 +369,41 @@ end
 function exchange!(backend::HTTPModelBackend, state::ModelStreamState, request::ModelRequest)
     model, context = state.model, state.context
     options = model_request_options(backend.options, model, request)
-    headers = Pair{String,String}["Content-Type" => "application/json"]
-    append!(headers, model_protocol_headers(backend.protocol))
-    append!(headers, Base.invokelatest(backend.credentials, model, context))
-    payload = model_payload(backend.protocol, model, request, options)
-    decoder = SSEDecoder() do event
-        if !cancelled(context)
-            consume_model_event!(backend.protocol, state, event)
+    payload = model_image_payload(backend.protocol,model_payload(backend.protocol, model, request, options))
+    outcome=state
+    if payload isa ModelImagePolicyFailure
+        state.error=payload.reason
+        outcome=payload
+    else
+        headers = Pair{String,String}["Content-Type" => "application/json"]
+        append!(headers, model_protocol_headers(backend.protocol,model,options,request))
+        append!(headers, Base.invokelatest(backend.credentials, model, context))
+        prepare_protocol_state!(backend.protocol,state,payload,options)
+        progress=HTTPModelProgress(;policy=request.protocol)
+        decoder = SSEDecoder() do event
+            if !cancelled(context)
+                consume_model_event!(backend.protocol, state, event)
+                publish_model_progress!(progress,state;force=state.received_stop || state.message["stopReason"]!="pending")
+            end
+        end
+        response = Base.invokelatest(backend.transport, model_endpoint(backend.protocol, backend.endpoint, model), "POST", JSON.json(payload), headers, context, decoder)
+        if response.status in 200:299
+            start_model_stream!(state)
+            finish_protocol_stream!(backend.protocol, state)
+            publish_model_progress!(progress,state;force=true)
+        else
+            state.error = model_http_failure_text(response)
+            outcome=model_http_failure_outcome(backend.transport,state,response)
         end
     end
-    response = Base.invokelatest(backend.transport, model_endpoint(backend.protocol, backend.endpoint, model), "POST", JSON.json(payload), headers, context, decoder)
-    if response.status in 200:299
-        start_model_stream!(state)
-        finish_protocol_stream!(backend.protocol, state)
-    else
-        state.error = "Model HTTP request failed ($(response.status)): $(response.reason)"
-    end
-    state
+    outcome
 end
 model_protocol_headers(protocol) = Pair{String,String}[]
+model_protocol_headers(protocol,model,options,request)=model_protocol_headers(protocol)
+prepare_protocol_state!(protocol,state,payload,options)=nothing
+
+sanitize_model_failure!(transport,state::ModelStreamState)=nothing
+sanitize_model_failure!(transport,state::ModelStreamState,outcome)=sanitize_model_failure!(transport,state)
+sanitize_model_failure!(transport,state::ModelStreamState,::ModelImagePolicyFailure)=nothing
 
 completion_result(state::ModelStreamState, request::ModelRequest) = StreamedCompletion(state, request)

@@ -19,6 +19,16 @@ end
 Message(role::Symbol, content::AbstractString, kind::Symbol=:text; metadata=nothing) = Message(role, String(content), kind, metadata)
 message_result(message::Message) = message.metadata
 
+"""Retain protocol-owned reply context without adding it to user-visible prompt text."""
+struct ProviderMessageMetadata{M}
+    original::M
+    context::Dict{String,Any}
+end
+message_result(message::Message{<:ProviderMessageMetadata})=message.metadata.original
+provider_message_context(metadata)=nothing
+provider_message_context(metadata::ProviderMessageMetadata)=metadata.context
+response_context_message(message::Message,response)=message
+
 struct Reply
     kind::Symbol
     content::String

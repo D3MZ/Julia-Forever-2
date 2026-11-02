@@ -54,7 +54,7 @@ function update_installed!(app::App, task::Task)
         app.updates.latest = nothing
         app.status = "Update installed. Restart to use it."
     elseif result == :compile_failed
-        app.status = "Update downloaded but Julia precompilation did not complete."
+        app.status = "Checkout advanced, but Julia precompilation failed. Resolve it before restarting."
     elseif result == :merge_failed
         app.status = "Git could not safely fast-forward the installation."
     elseif result == :dirty
@@ -70,6 +70,7 @@ end
 """Toggle whether updates are installed automatically after detection."""
 function toggle_auto_updates!(app::App; installer=apply_update!)
     app.updates.automatic = set_auto_updates!(app.settings.directory, !app.updates.automatic)
+    app.updates.monitor_enabled[] = app.updates.automatic
     app.status = app.updates.automatic ? "Automatic updates enabled." : "Automatic updates disabled."
     if app.updates.automatic
         start_update_install!(app; installer)
@@ -90,14 +91,19 @@ function update_command!(app::App, arguments)
     return nothing
 end
 
-"""Check on startup and hourly while the terminal is running."""
-function start_update_monitor!(app::App; root::AbstractString=installation_root(), interval_seconds::Real=3600)
-    if ispath(joinpath(root, ".git"))
+"""Check in the background only while automatic updates are explicitly enabled."""
+function start_update_monitor!(app::App; root::AbstractString=installation_root(), interval_seconds::Real=3600,
+        checker=check_for_updates)
+    monitor = app.updates.monitor
+    if ispath(joinpath(root, ".git")) && (isnothing(monitor) || istaskdone(monitor))
         app.updates.monitor = Threads.@spawn begin
             while !app.operations.closing[]
-                check = check_for_updates(root)
-                enqueue_event!(app, TaskEvent(:update_checked, check))
-                timedwait(() -> app.operations.closing[], interval_seconds; pollint=0.5)
+                enabled = app.updates.monitor_enabled[]
+                if enabled
+                    check = checker(root)
+                    app.updates.monitor_enabled[] && !app.operations.closing[] && enqueue_event!(app, TaskEvent(:update_checked, check))
+                end
+                timedwait(() -> app.operations.closing[] || app.updates.monitor_enabled[] != enabled, interval_seconds; pollint=0.5)
             end
         end
     end
