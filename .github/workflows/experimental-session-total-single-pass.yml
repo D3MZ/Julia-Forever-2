@@ -121,6 +121,7 @@ jobs:
               os.killpg(process.pid, signal.SIGTERM)
           process.wait(timeout=8)
           os.close(master)
+          print("JF2_PTY_OUTPUT_REPR", repr(bytes(capture[-4096:])))
           print("JF2_REAL_CLI_PTY_BYTES", len(capture), "escaped_screen", bytes([27,91]) in capture,
                 "exit_status", process.returncode)
           assert len(capture) > 150 and bytes([27,91]) in capture, "Actual terminal entrypoint did not render a screen"
