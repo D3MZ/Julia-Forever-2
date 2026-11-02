@@ -1,0 +1,49 @@
+name: Experimental timeline-label benchmark (branch only)
+on:
+  push:
+    branches:
+      - perf/experiment-timeline-label-order-20261102-0611
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      JULIA_NUM_THREADS: '2'
+      BASELINE_SHA: '072eddefbbd6588d7eadcddf1e734e61f1542f0c'
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install Julia 1.13.3
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.13.3'
+      - name: Exact baseline worktree
+        run: |
+          set -euo pipefail
+          git cat-file -e "$BASELINE_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/jf2-baseline" "$BASELINE_SHA"
+          git -C "$RUNNER_TEMP/jf2-baseline" diff --exit-code HEAD -- src
+      - name: Instantiate root and benchmark environments
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.instantiate()'
+          julia --project=benchmarks -e 'using Pkg; Pkg.instantiate()'
+      - name: BenchmarkTools and contract checks, CPU and allocation profiles, acceptance gate
+        run: |
+          mkdir -p evidence
+          set +e
+          julia --project=benchmarks --threads=2 benchmarks/experiments/timeline_label_order.jl "$RUNNER_TEMP/jf2-baseline" evidence
+          code=$?
+          echo "$code" > evidence/exit-code.txt
+          exit "$code"
+      - name: Always archive raw trials and environment
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: timeline-label-order-experiment
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 30
