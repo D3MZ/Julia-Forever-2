@@ -5,7 +5,9 @@ function start_update_check!(app::App; root::AbstractString=installation_root(),
         app.updates.checking = true
         app.status = "Checking for updates..."
         task = Threads.@spawn checker(root)
-        notify_completion!(app, :update_checked, task, task)
+        app.updates.check_task = task
+        app.updates.check_tasks[task] = nothing
+        notify_completion!(app, :update_checked, task, ManualUpdateCompletion(task))
     end
     return nothing
 end
@@ -15,10 +17,13 @@ function start_update_install!(app::App; installer=apply_update!, automatic=fals
     check = app.updates.latest
     if !isnothing(check) && update_available(check) && !app.updates.installing && !app.operations.closing[]
         generation = app.updates.permission_generation[]
+        latest_generation = app.updates.latest_generation
         app.updates.installing = true
         app.status = "Installing update..."
         task = Threads.@spawn run_update_install!(app, check, installer, automatic, generation)
-        notify_completion!(app, :update_installed, task, task)
+        app.updates.install_task = task
+        app.updates.install_tasks[task] = latest_generation
+        notify_completion!(app, :update_installed, task, InstallUpdateCompletion(task, latest_generation))
     end
     return nothing
 end
@@ -38,7 +43,9 @@ function update_checked!(app::App, check::UpdateCheck; installer=apply_update!)
     if app.updates.checking
         Threads.atomic_add!(app.updates.manual_generation, UInt64(1))
     end
+    app.updates.check_task = nothing
     app.updates.checking = false
+    app.updates.latest_generation += UInt64(1)
     app.updates.latest = check
     if update_available(check)
         if app.updates.automatic || app.updates.requested_install
@@ -72,16 +79,75 @@ function update_checked!(app::App, result::BackgroundUpdateResult; installer=app
     nothing
 end
 
-update_check_finished!(app::App, task::Task) = update_checked!(app, fetch(task))
+function update_check_finished!(app::App, task::Task)
+    if haskey(app.updates.check_tasks, task)
+        update_check_finished!(app, ManualUpdateCompletion(task))
+    else
+        update_checked!(app, fetch(task))
+    end
+    nothing
+end
 update_check_finished!(app::App, check::UpdateCheck) = update_checked!(app, check)
 update_check_finished!(app::App, result::BackgroundUpdateResult) = update_checked!(app, result)
 
+function update_check_finished!(app::App, completion::ManualUpdateCompletion)
+    task = completion.task
+    if app.updates.check_task === task && istaskdone(task)
+        app.updates.check_task = nothing
+        if istaskfailed(task)
+            failed_update_check!(app)
+        else
+            checked = fetch(task)
+            checked isa UpdateCheck ? update_checked!(app, checked) : failed_update_check!(app)
+        end
+    end
+    nothing
+end
+
+function failed_update_check!(app::App)
+    if app.updates.checking
+        Threads.atomic_add!(app.updates.manual_generation, UInt64(1))
+    end
+    app.updates.checking = false
+    app.updates.requested_install = false
+    app.status = "Update check failed. Retry after checking the installation."
+    nothing
+end
+
 function update_installed!(app::App, task::Task)
-    result = fetch(task)
+    generation = get(app.updates.install_tasks, task, nothing)
+    if isnothing(generation)
+        publish_update_install!(app, fetch(task), nothing)
+    else
+        update_installed!(app, InstallUpdateCompletion(task, generation))
+    end
+    nothing
+end
+
+function update_installed!(app::App, completion::InstallUpdateCompletion)
+    task = completion.task
+    if app.updates.install_task === task && istaskdone(task)
+        app.updates.install_task = nothing
+        if istaskfailed(task)
+            app.updates.installing = false
+            app.status = "Update task failed. Verify the installation before restarting."
+        else
+            publish_update_install!(app, fetch(task), completion.latest_generation)
+        end
+    end
+    nothing
+end
+
+function publish_update_install!(app::App, result, generation::Union{Nothing,UInt64})
     app.updates.installing = false
+    current = isnothing(generation) || generation == app.updates.latest_generation
     if result === :installed
-        app.updates.latest = nothing
-        app.status = "Update installed. Restart to use it."
+        if current
+            app.updates.latest = nothing
+            app.status = "Update installed. Restart to use it."
+        else
+            app.status = "Update installed. Another check completed; verify the installation before restarting."
+        end
     elseif result === :compile_failed
         app.status = "Checkout advanced, but Julia precompilation failed. Resolve it before restarting."
     elseif result === :merge_failed
@@ -93,7 +159,7 @@ function update_installed!(app::App, task::Task)
     elseif result isa UpdateAdmissionCancelled
         app.status = "Update installation was not admitted."
     elseif result === :current
-        app.status = "Already up to date."
+        app.status = current ? "Already up to date." : "The installer reported no update. Another check completed; verify the installation."
     else
         app.status = "Update outcome is unknown. Verify the installation before restarting."
     end
