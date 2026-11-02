@@ -1,0 +1,44 @@
+name: Verify clean first-launch release-note acknowledgement
+
+on:
+  push:
+    branches:
+      - fix/first-launch-release-notes-directory-20261102
+
+permissions:
+  contents: read
+
+jobs:
+  first-launch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.13.3'
+      - uses: julia-actions/cache@v2
+      - name: Instantiate JuliaForever2
+        run: julia --project -e 'using Pkg; Pkg.instantiate()'
+      - name: Exercise first-launch version acknowledgement with missing parent directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          julia --project -e '
+            using JuliaForever2
+            root=mktempdir()
+            path=joinpath(root,"never-created","startup-release.json")
+            ispath(dirname(path)) && error("Precondition: directory must not exist")
+            actual=JuliaForever2.acknowledge_startup_release!(path,v"0.3.0",nothing)
+            actual.version==v"0.3.0" || error("Acknowledgement version mismatch")
+            isfile(path) || error("First-launch acknowledgement file missing")
+            stat(dirname(path)).mode & 0o777 == 0o700 || error("Config dir must be private")
+            try
+                JuliaForever2.acknowledge_startup_release!(path,v"0.3.0",nothing)
+                error("CAS must reject an existing file")
+            catch exception
+                occursin("Session file changed",sprint(showerror,exception)) ||
+                    rethrow()
+            end
+            println("First-launch acknowledgement and CAS semantics verified")
+          '

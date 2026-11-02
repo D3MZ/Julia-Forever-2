@@ -35,6 +35,7 @@ function startup_release_notes(snapshot::Union{Nothing,ReleaseChangelog},previou
     notes
 end
 function acknowledge_startup_release!(path::AbstractString,version::VersionNumber,expected)
+    mkpath(dirname(path);mode=0o700)
     text=JSON.json(Dict("format"=>"JuliaForever2.startup-release.v1","version"=>string(version)))*"\n"
     digest=timeline_replace_file(path,text,expected)
     actual=startup_release_state(path)
