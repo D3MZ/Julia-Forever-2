@@ -890,7 +890,8 @@ function invoke(scope::ExtensionScope, invocation::EventInvocation, arguments, c
     wait(tool_cleanup; throw=false)
     workers = (worker, guard_cleanup, tool_cleanup)
     failed = findfirst(istaskfailed, workers)
-    isnothing(failed) ? tool_result(fetch(worker)) : ExecutionResult(false, sprint(showerror, TaskFailedException(workers[failed])))
+    result = isnothing(failed) ? tool_result(fetch(worker)) : ExecutionResult(false, sprint(showerror, TaskFailedException(workers[failed])))
+    cancelled(context) && result.ok ? ExecutionResult(false, "Tool call aborted") : result
 end
 struct ToolCall{A}
     name::Symbol
