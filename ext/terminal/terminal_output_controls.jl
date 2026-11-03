@@ -14,9 +14,10 @@ function terminal_output_frame!(app::App; now::Real=time_ns()/1e9)
     nothing
 end
 function Tachikoma.post_render!(app::App)
-    terminal_lease_failed(app) && return nothing
-    terminal_output_frame!(app)
-    acknowledge_notice_frame!(app)
+    if !terminal_lease_failed(app)
+        terminal_output_frame!(app)
+        acknowledge_notice_frame!(app)
+    end
     nothing
 end
 

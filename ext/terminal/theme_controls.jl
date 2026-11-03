@@ -64,14 +64,15 @@ end
 
 """Apply color and file notifications on the UI owner before rendering the next frame."""
 function Tachikoma.pre_render!(app::App)
-    terminal_lease_failed(app) && return nothing
-    input = app.settings.theme_input
-    if !isnothing(input) && theme_input_poll!(input)
-        refresh_theme_controls!(app)
-    end
-    runtime = app.menus.theme_runtime
-    if !isnothing(runtime) && ACTIVE_NATIVE_THEME[] !== runtime
-        activate_theme_runtime!(runtime)
+    if !terminal_lease_failed(app)
+        input = app.settings.theme_input
+        if !isnothing(input) && theme_input_poll!(input)
+            refresh_theme_controls!(app)
+        end
+        runtime = app.menus.theme_runtime
+        if !isnothing(runtime) && ACTIVE_NATIVE_THEME[] !== runtime
+            activate_theme_runtime!(runtime)
+        end
     end
     nothing
 end
