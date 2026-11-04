@@ -45,7 +45,9 @@ api_session(api::SessionAPI, name) = RpcError(-32602, "Expected a session identi
 
 function api_session(api::SessionAPI, name::AbstractString)
     lock(api.lock) do
-        api.closed ? RpcError(-32000, "Session API is closed") : get(api.sessions, String(name), RpcError(-32004, "Unknown session: $name"))
+        api.closed ? RpcError(-32000, "Session API is closed") :
+            String(name) in api.closing ? RpcError(-32000, "Session is closing: $name") :
+            get(api.sessions, String(name), RpcError(-32004, "Unknown session: $name"))
     end
 end
 
@@ -97,20 +99,82 @@ restore(target::Union{Kernel,AgentDefinition}, ::Nothing, directory) = api_creat
 restore(target::Union{Kernel,AgentDefinition}, record, directory) = api_create_session(target; messages=record.messages, compaction_entry=record.compaction,
     working_directory=record.directory, id=record.lineage.id,
     parent_id=record.lineage.parent_id, root_id=record.lineage.root_id)
+
+"""Reserve the name before waiting or saving, without holding the API lock."""
 function api_close_session!(api::SessionAPI, params::AbstractDict)
     apply(api_session(api, params)) do session
         name = String(params["session"])
-        lock(api.lock) do
-            pop!(api.sessions, name, nothing)
-            pop!(api.handles, name, nothing)
-            push!(api.closing, name)
+        reserved = lock(api.lock) do
+            if api.closed || get(api.sessions, name, nothing) !== session || name in api.closing
+                false
+            else
+                push!(api.closing, name)
+                true
+            end
         end
-        close(session)
-        lock(api.lock) do
-            delete!(api.closing, name)
+        if !reserved
+            RpcError(-32000, "Session is not available: $name")
+        elseif !isnothing(api.store) && executing_owned_work(session)
+            lock(() -> delete!(api.closing, name), api.lock)
+            RpcError(-32000, "A session cannot synchronously close its own work")
+        else
+            close_reserved_session!(api, name, session)
         end
-        Dict("closed" => true)
     end
+end
+
+function close_reserved_session!(api::SessionAPI, name::String, session::Session)
+    handle = lock(() -> get(api.handles, name, nothing), api.lock)
+    worker = spawn_scoped(() -> persist_before_close!(api.store, name, session, handle))
+    wait(worker; throw=false)
+    saved = istaskfailed(worker) ? (ok=false, reason="Persistence failed") : fetch(worker)
+    saved = normalize_close_save(saved)
+    failed = !saved.ok
+    if !(failed isa Bool)
+        lock(() -> delete!(api.closing, name), api.lock)
+        RpcError(-32000, "Session could not be saved: invalid persistence status")
+    elseif failed
+        lock(() -> delete!(api.closing, name), api.lock)
+        RpcError(-32000, "Session could not be saved: $(saved.reason)")
+    else
+        removed = lock(api.lock) do
+            if api.closed || get(api.sessions, name, nothing) !== session
+                false
+            else
+                pop!(api.sessions, name)
+                pop!(api.handles, name, nothing)
+                true
+            end
+        end
+        if removed
+            close(session)
+            lock(() -> delete!(api.closing, name), api.lock)
+            Dict("closed" => true)
+        else
+            lock(() -> delete!(api.closing, name), api.lock)
+            RpcError(-32000, "Session is not available: $name")
+        end
+    end
+end
+
+"""Reject missing status without inspecting custom persistence results on another task."""
+normalize_close_save(::Nothing) = (ok=false, reason="Persistence failed")
+normalize_close_save(saved::NamedTuple) = haskey(saved, :ok) && applicable(!, saved.ok) ? saved : (ok=false, reason="Persistence failed")
+normalize_close_save(saved) = saved
+
+persist_before_close!(::Nothing, name, session::Session, handle) = (ok=true, reason="")
+
+function persist_before_close!(store, name, session::Session, handle)
+    settle_for_close!(handle)
+    save_session!(store, name, session)
+end
+
+settle_for_close!(::Nothing) = nothing
+
+function settle_for_close!(handle::TaskHandle)
+    istaskdone(handle) || cancel!(handle)
+    wait(handle; throw=false)
+    nothing
 end
 api_session_detail(api::SessionAPI, params::AbstractDict) = apply(session -> api_session_summary(params["session"], session), api_session(api, params))
 api_session_messages(api::SessionAPI, params::AbstractDict) = apply(session -> api_message.(history_snapshot(session).messages), api_session(api, params))
@@ -589,7 +653,7 @@ function api_session_turn!(api::SessionAPI, params::AbstractDict)
         else
             lock(api.lock) do
                 previous = get(api.handles, name, nothing)
-                if api.closed || get(api.sessions, name, nothing) !== session
+                if api.closed || get(api.sessions, name, nothing) !== session || name in api.closing
                     RpcError(-32000, "Session is not available: $name")
                 elseif !isnothing(api.store) && session_archived(api.store, name)
                     RpcError(-32000, "Session is archived: $name")
@@ -690,6 +754,8 @@ function api_fork_locked!(api::SessionAPI, source::String, destination::String, 
         RpcError(-32000, "Session API is closed")
     elseif !haskey(api.sessions, source)
         RpcError(-32004, "Unknown session: $source")
+    elseif source in api.closing
+        RpcError(-32000, "Session is closing: $source")
     elseif haskey(api.sessions, destination) || destination in api.closing
         RpcError(-32000, "Session is already open: $destination")
     elseif !isnothing(api.store) && session_archived(api.store, destination)

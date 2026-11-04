@@ -156,7 +156,7 @@ function start_web_turn!(controller::WebController, params::AbstractDict)
                 if !isnothing(replay)
                     web_equal(replay.prompt_digest, web_digest(prompt)) ?
                         Dict("accepted" => true, "turn" => replay.id) : JuliaForever2.RpcError(-32602, "Submission identity does not match its message")
-                elseif controller.api.closed || isnothing(session)
+                elseif controller.api.closed || isnothing(session) || String(name) in controller.api.closing
                     JuliaForever2.RpcError(-32004, "Session is not available")
                 elseif !isnothing(previous) && !istaskdone(previous) ||
                         !isnothing(previous_turn) && !web_turn_settled(previous_turn)
@@ -187,7 +187,7 @@ function persist_web_turn!(controller::WebController, name::String, session, han
     api = controller.api
     lock(controller.save_lock) do
         lock(api.lock) do
-            if api.closed || get(api.sessions, name, nothing) !== session
+            if api.closed || name in api.closing || get(api.sessions, name, nothing) !== session
                 (ok=false, reason="Conversation closed before automatic save")
             else
                 JuliaForever2.save_session!(api.store, name, session)
