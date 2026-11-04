@@ -37,7 +37,7 @@ public PluginSpec, PluginRegistry, PluginHost, PluginContext, Profile, ProfileSt
 public Skill, SkillRegistry, SkillRegistration, FilesystemSkillRegistry, CompositeSkillRegistry, SkillSourceRegistration, register_skill!, unregister_skill!, register_skill_source!, unregister_skill_source!, skill_catalog, skill_catalog_snapshot, load_skill, skill_registry_plugin, filesystem_skill_plugin, composite_skill_plugin, skill_request
 public register_plugin!, unregister_plugin!, activate!, deactivate!, provide!, effect!, service, plugin_snapshot
 public ExtensionScope, on!, dispatch_event!, event_scope_plugin
-public ToolSpec, ToolCall, ToolExecutor, ToolBatch, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!, invoke_tool_batch!, tool_concurrency_safe
+public ToolSpec, ToolCall, ToolExecutor, ToolBatch, ToolSet, ToolActivationContext, resolve_tool_set, tool_activation, register_tool!, register_tool_guard!, restrict_tools!, tools_snapshot, tool, invoke_tool!, invoke_tool_batch!, tool_concurrency_safe
 public CheckedJSONSchema, tool_argument_violations, tool_output_violations, tool_schema_definition, tool_output_text
 public AbstractToolApprovalRequest, ToolApprovalRequest, tool_approval_reason, tool_approval_outcome
 public ToolResultBlock, ToolResultText, ToolResultValue, tool_completion_decision, apply_tool_completion

@@ -11,7 +11,13 @@ ToolBatch(calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4) = ToolBatc
 batch_aborted_result() = ExecutionResult(false, "Tool call aborted before dispatch")
 
 """Unknown, withdrawn, or invalid concurrency declarations are exclusive."""
-tool_batch_parallel(scope::ExtensionScope, call::ToolCall) = parallel(tool(scope, call.name), call)
+function tool_batch_parallel(scope::ExtensionScope, call::ToolCall; tool_set=nothing)
+    specification = lock(scope.lock) do
+        entry = admitted_tool_entry(scope, call.name, tool_set)
+        isnothing(entry) ? nothing : entry.spec
+    end
+    parallel(specification, call)
+end
 parallel(::Nothing, call::ToolCall) = false
 
 function parallel(specification::ToolSpec, call::ToolCall)
@@ -31,9 +37,9 @@ end
 
 """Start a call and always report its settlement, including an unexpected worker failure."""
 function start_tool_batch!(pending::Dict{Int,Task}, completed::Channel{Int},
-        scope::ExtensionScope, call::ToolCall, index::Int, context::ExecutionContext)
+        scope::ExtensionScope, call::ToolCall, index::Int, context::ExecutionContext, tool_set=nothing)
     worker = spawn_scoped(() -> cancelled(context) ? batch_aborted_result() :
-        invoke_tool!(scope, call.name, call.arguments; context))
+        invoke_tool!(scope, call.name, call.arguments; context, tool_set))
     pending[index] = worker
     spawn_scoped() do
         wait(worker; throw=false)
@@ -48,13 +54,16 @@ mutable struct BatchExecution{C,L,E}
     calls::C
     limit::L
     context::E
+    tool_set::Union{Nothing,ToolSet}
     results::Vector{ExecutionResult}
     pending::Dict{Int,Task}
     completed::Channel{Int}
     index::Int
 
-    BatchExecution(scope::ExtensionScope, calls::C, limit::L, context::E) where {C,L<:Integer,E} = limit >= 1 ? new{C,L,E}(scope, calls, limit, context, Vector{ExecutionResult}(undef, length(calls)), Dict{Int,Task}(), Channel{Int}(max(1, length(calls))), 1) : error("max_parallel must be a positive integer")
+    BatchExecution(scope::ExtensionScope, calls::C, limit::L, context::E, tool_set::Union{Nothing,ToolSet}) where {C,L<:Integer,E} = limit >= 1 ? new{C,L,E}(scope, calls, limit, context, tool_set, Vector{ExecutionResult}(undef, length(calls)), Dict{Int,Task}(), Channel{Int}(max(1, length(calls))), 1) : error("max_parallel must be a positive integer")
 end
+
+BatchExecution(scope::ExtensionScope, calls, limit::Integer, context) = BatchExecution(scope, calls, limit, context, nothing)
 
 """Run independently registered tools with exclusive barriers and bounded opt-in parallelism.
 
@@ -62,7 +71,7 @@ Results stay in input order. Tools are exclusive unless their current registrati
 explicitly declares concurrency safety; started calls always drain on cancellation.
 Each tool retains its own guard, schema, and plugin-lifetime handling.
 """
-invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4, context=current_execution_context()) = execute!(BatchExecution(scope, collect(calls), max_parallel, execution_context(context)))
+invoke_tool_batch!(scope::ExtensionScope, calls::AbstractVector{<:ToolCall}; max_parallel::Integer=4, context=current_execution_context(), tool_set=nothing) = execute!(BatchExecution(scope, collect(calls), max_parallel, execution_context(context), tool_set))
 
 function execute!(batch::BatchExecution)
     while batch.index <= length(batch.calls) && !cancelled(batch.context)
@@ -77,16 +86,16 @@ end
 
 function advance!(batch::BatchExecution)
     call = batch.calls[batch.index]
-    if !tool_batch_parallel(batch.scope, call)
+    if !tool_batch_parallel(batch.scope, call; tool_set=batch.tool_set)
         drain!(batch)
         if !cancelled(batch.context)
-            batch.results[batch.index] = invoke_tool!(batch.scope, call.name, call.arguments; context=batch.context)
+            batch.results[batch.index] = invoke_tool!(batch.scope, call.name, call.arguments; context=batch.context, tool_set=batch.tool_set)
             batch.index += 1
         end
     elseif length(batch.pending) >= batch.limit
         collect_tool_batch!(batch.pending, batch.completed, batch.results)
     else
-        start_tool_batch!(batch.pending, batch.completed, batch.scope, call, batch.index, batch.context)
+        start_tool_batch!(batch.pending, batch.completed, batch.scope, call, batch.index, batch.context, batch.tool_set)
         batch.index += 1
     end
     batch
