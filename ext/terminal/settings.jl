@@ -100,16 +100,37 @@ function select!(app::App, descriptor::ProviderDescriptor)
 end
 remember_provider!(app::App, provider::Symbol) = save_provider!(app.settings.directory, provider)
 
-settings_top(area::Rect) = max(area.y, area.y + area.height - 11)
+settings_top(area::Rect) = max(area.y, area.y + area.height - 14)
 
 function settings_window(app::App, area::Rect)
     top = settings_top(area)
     bottom = area.y + area.height - 3
-    count = min(length(app.settings.providers), max(0, bottom - top - 4))
+    reserved = settings_compact(top, bottom) ? 4 : 6
+    count = min(length(app.settings.providers), max(0, bottom - top - reserved))
     first = max(1, min(app.selected - count + 1, length(app.settings.providers) - count + 1))
     return top, bottom, first, count
 end
 
+settings_compact(top, bottom) = bottom - top < 7
+compact_auto_label(app::App) = "a:" * (app.updates.automatic ? "On" : "Off")
+compact_update_label(app::App) = compact_auto_label(app) * "  c:Check  u:Install  ↑↓ ↵ s Esc"
+
+function update_settings_label(app::App)
+    check = app.updates.latest
+    if app.updates.installing
+        "Installing..."
+    elseif app.updates.checking
+        "Checking..."
+    elseif isnothing(check)
+        "Not checked"
+    elseif update_available(check)
+        "Available (" * first(check.latest, 7) * ")"
+    elseif check.state == :current
+        "Up to date"
+    else
+        String(check.state)
+    end
+end
 
 function page_view!(app::App, ::Val{:auth}, frame::Frame)
     startup_host_view!(app,frame)
@@ -121,14 +142,21 @@ function page_view!(app::App, ::Val{:settings}, frame::Frame)
     x, y, w, h = area.x, area.y, area.width, area.height
     top, bottom, first, count = settings_window(app, area)
     drawline!(buf, x, top, w, repeat("─", w), :border)
-    top + 1 < bottom && drawline!(buf, x, top + 1, w, "> Provider", :text)
+    heading = settings_compact(top, bottom) ? "> Provider · Update: " * update_settings_label(app) : "> Provider"
+    top + 1 < bottom && drawline!(buf, x, top + 1, w, heading, :text)
     labels = app.settings.labels
     for offset in 0:(count - 1)
         index = first + offset
         selected = app.selected == index
         drawline!(buf, x, top + 3 + offset, w, (selected ? "→ " : "  ") * labels[index], selected ? :accent : :text)
     end
-    bottom - 1 > top + 1 && drawline!(buf, x, bottom - 1, w, "  ↑↓ select · Enter use · s sign in · Esc back", :text_dim)
+    if settings_compact(top, bottom)
+        bottom - 1 > top + 1 && drawline!(buf, x, bottom - 1, w, compact_update_label(app), :text_dim)
+    else
+        drawline!(buf, x, bottom - 3, w, "  Auto update: " * (app.updates.automatic ? "On" : "Off") * " (a toggle)", :text)
+        drawline!(buf, x, bottom - 2, w, "  Updates: " * update_settings_label(app), :text)
+        bottom - 1 > top + 1 && drawline!(buf, x, bottom - 1, w, "  ↑↓ provider · Enter use · s sign in · a auto · c check · u install · Esc", :text_dim)
+    end
     drawline!(buf, x, bottom, w, repeat("─", w), :border)
     drawline!(buf, x, y + h - 2, w, app.directory, :text_dim)
     draw_footer!(buf, x, y + h - 1, w, app)
@@ -148,6 +176,12 @@ function page_input!(app::App, ::Val{:settings}, event::KeyEvent)
     elseif event.key == :char && event.char == 's' && !isempty(app.settings.providers)
         descriptor = app.settings.providers[app.selected]
         isnothing(descriptor.auth) || start_sign_in!(app, descriptor.id; action=descriptor.auth)
+    elseif event.key == :char && event.char == 'a'
+        toggle_auto_updates!(app)
+    elseif event.key == :char && event.char == 'c'
+        start_update_check!(app)
+    elseif event.key == :char && event.char == 'u'
+        update_command!(app, "install")
     elseif event.key == :enter
         select_provider!(app)
     end
@@ -156,11 +190,30 @@ end
 
 function page_mouse!(app::App, ::Val{:settings}, event::MouseEvent)
     area = app.area
-    top, _, first, count = settings_window(app, area)
+    top, bottom, first, count = settings_window(app, area)
     offset = event.y - top - 3
     if 0 <= offset < count
         app.selected = first + offset
         update!(app, KeyEvent(:enter))
+    elseif settings_compact(top, bottom)
+        if event.y == bottom - 1 && bottom - 1 > top + 1
+            compact_update_click!(app, event.x - area.x)
+        end
+    elseif event.y == bottom - 3
+        toggle_auto_updates!(app)
+    elseif event.y == bottom - 2
+        start_update_check!(app)
     end
     return nothing
+end
+
+function compact_update_click!(app::App, x)
+    auto_end = length(compact_auto_label(app))
+    check_start = auto_end + 2
+    if 0 <= x < auto_end
+        toggle_auto_updates!(app)
+    elseif check_start <= x < check_start + length("c:Check")
+        start_update_check!(app)
+    end
+    nothing
 end

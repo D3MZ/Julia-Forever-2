@@ -31,6 +31,7 @@ const TERMINAL_SETTINGS = SettingSpec[
     SettingSpec("mermaid-rendering", "Mermaid diagrams", "Render Mermaid code blocks as Unicode diagrams", "streaming", String["off", "final", "streaming"]),
     SettingSpec("cache-miss-notices", "Cache miss notices", "Show transcript notices for cache costs and provider recovery diagnostics", "false", String["true", "false"]),
     SettingSpec("collapse-changelog", "Collapse changelog", "Show condensed changelog after updates", "false", String["true", "false"]),
+    SettingSpec("automatic-updates", "Automatic updates", "Allow background checks and automatic installation from the tracked upstream", "false", String["false", "true"]),
     SettingSpec("quiet-startup", "Quiet startup", "Disable verbose printing at startup (header: keep only the startup header)", "false", String["true", "header", "false"]),
     SettingSpec("install-telemetry", "Install telemetry", "Unavailable: Julia Forever 2 has no approved telemetry destination or privacy contract. No installation or update ping is sent.", "false", String["true", "false"]),
     SettingSpec("default-project-trust", "Default project trust", "Fallback for project skills and prompts without a saved trust decision; applies on the next project admission, never changes host permissions", "Ask", String["Ask", "Always trust", "Never trust"]),
@@ -65,6 +66,8 @@ function setting_value(app::App, item::SettingSpec)
         "unavailable"
     elseif item.id == "model-thinking"
         thinking_defaults_summary(get(app.menus.model_preferences, "thinkingDefaults", Dict{String,Any}()))
+    elseif item.id == "automatic-updates"
+        string(app.updates.automatic)
     else
         menu_preference(app, item.id, item.default)
     end
@@ -268,11 +271,17 @@ end
 """Commit private persistence and runtime effects together; publish only verified outcomes."""
 function set_setting_value!(app::App, name::AbstractString, value::AbstractString)
     reason=setting_unavailable_reason(name)
-    if isempty(reason)
-        commit_supported_setting_value!(app,name,value)
-    else
+    if !isempty(reason)
         setting_status_outcome!(app,name,false,reason)
         frontend_notice!(app,reason;kind=:warning)
+    elseif name == "automatic-updates"
+        if value in ("true", "false")
+            (value == "true") == app.updates.automatic || toggle_auto_updates!(app)
+        else
+            setting_status_outcome!(app,name,false,"Invalid automatic update setting")
+        end
+    else
+        commit_supported_setting_value!(app,name,value)
     end
     nothing
 end

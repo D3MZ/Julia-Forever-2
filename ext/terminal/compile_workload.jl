@@ -20,7 +20,7 @@ function terminal_compile_fixture()
     registry=JuliaForever2.ProviderRegistry()
     app=App(session,TextInput(;label=""),:chat,false,1,false,false,TaskQueue(;capacity=1),"Ready",0,Rect(),
         "precompile",CommandSpec[],Dict{Symbol,Vector{EventHandler}}(),SettingsState(@__DIR__,registry),
-        TranscriptState(),OperationState(),MenusState(),TerminalArchive(@__DIR__))
+        UpdateState(),TranscriptState(),OperationState(),MenusState(),TerminalArchive(@__DIR__))
     register_default_commands!(app)
     timeline=JuliaForever2.SessionTimeline(@__DIR__;id="compile-session",timestamp="2026-01-01T00:00:00.000Z")
     JuliaForever2.timeline_append_message!(timeline,Dict("role"=>"user","content"=>"Review the native implementation."))

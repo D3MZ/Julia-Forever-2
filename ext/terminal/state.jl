@@ -103,6 +103,59 @@ Base.@kwdef mutable struct SettingsState
 end
 SettingsState(directory::AbstractString, registry::ProviderRegistry) = SettingsState(; directory=String(directory), registry)
 
+"""Bind a background result to the permission and check generations that produced it."""
+struct BackgroundUpdateResult
+    permission::UInt64
+    manual::UInt64
+    sequence::UInt64
+    check::UpdateCheck
+end
+
+"""A stopped monitor carries the task and authority of its failed check."""
+struct BackgroundMonitorFailure
+    task::Task
+    permission::UInt64
+    manual::UInt64
+    sequence::UInt64
+end
+
+"""A manual check completion carries the exact task that produced it."""
+struct ManualUpdateCompletion
+    task::Task
+end
+
+"""An installation completion carries its task and selected-check generation."""
+struct InstallUpdateCompletion
+    task::Task
+    latest_generation::UInt64
+end
+
+Base.@kwdef mutable struct UpdateState
+    automatic::Bool = false
+    monitor_enabled::Threads.Atomic{Bool} = Threads.Atomic{Bool}(automatic)
+    permission_generation::Threads.Atomic{UInt64} = Threads.Atomic{UInt64}(0)
+    manual_generation::Threads.Atomic{UInt64} = Threads.Atomic{UInt64}(0)
+    background_sequence::Threads.Atomic{UInt64} = Threads.Atomic{UInt64}(0)
+    accepted_background::UInt64 = UInt64(0)
+    latest::Union{UpdateCheck,Nothing} = nothing
+    checking::Bool = false
+    installing::Bool = false
+    requested_install::Bool = false
+    monitor::Union{Task,Nothing} = nothing
+    check_task::Union{Task,Nothing} = nothing
+    install_task::Union{Task,Nothing} = nothing
+    latest_generation::UInt64 = UInt64(0)
+    check_tasks::WeakKeyDict{Task,Nothing} = WeakKeyDict{Task,Nothing}()
+    install_tasks::WeakKeyDict{Task,UInt64} = WeakKeyDict{Task,UInt64}()
+end
+UpdateState(automatic, monitor_enabled, latest, checking, installing, requested_install, monitor) =
+    UpdateState(; automatic, monitor_enabled, latest, checking, installing, requested_install, monitor)
+UpdateState(automatic, monitor_enabled, permission_generation, manual_generation, background_sequence,
+        accepted_background, latest, checking, installing, requested_install, monitor) =
+    UpdateState(; automatic, monitor_enabled, permission_generation, manual_generation, background_sequence,
+        accepted_background, latest, checking, installing, requested_install, monitor)
+UpdateState(directory::AbstractString) = UpdateState(; automatic=auto_updates_enabled(directory))
+
 Base.@kwdef mutable struct TranscriptState
     prompts::TerminalPromptRows = TerminalPromptRows()
     notices::FrontendNoticeState = FrontendNoticeState()
@@ -173,6 +226,7 @@ mutable struct App <: Model
     commands::Vector{CommandSpec}
     event_handlers::Dict{Symbol,Vector{EventHandler}}
     settings::SettingsState
+    updates::UpdateState
     transcript::TranscriptState
     operations::OperationState
     menus::MenusState

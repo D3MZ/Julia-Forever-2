@@ -60,6 +60,7 @@ public SessionAPI, session_api_plugin, session_api_request!, session_api_peer, s
 public WorkspaceRegistry, workspace_registry_plugin, workspace_snapshot, workspace_changes, workspace_wait_changes, workspace_state_snapshot, workspace_navigation_state
 public register_workspace!, rename_workspace!, delete_workspace!, move_workspace!, move_workspace_session!, registered_workspace_groups
 public start_web_server, web_server_plugin, web_url, web_launch_url
+public UpdateCheck, installation_root, check_for_updates, update_available, apply_update!, auto_updates_enabled, set_auto_updates!
 
 include("files/search_tool.jl")
 include("kernel.jl")
@@ -99,6 +100,7 @@ include("core/profile_patches.jl")
 include("auth.jl")
 include("providers.jl")
 include("providers/inline_content_wire.jl")
+include("application/updates.jl")
 include("application/model_configuration.jl")
 include("application/provider_warning_facts.jl")
 include("core/session_context.jl")

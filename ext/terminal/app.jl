@@ -16,12 +16,13 @@ function App(session::Session; settings_dir::AbstractString=config_dir(), regist
     input = TextInput(; label="", style=pi_style(:text), cursor_style=Tachikoma.Style(; fg=Tachikoma.ColorRGB(36, 41, 49), bg=Tachikoma.ColorRGB(255, 255, 255)))
     app = App(session, input, :chat, false, 1, false, false, TaskQueue(; capacity=typemax(Int)), "Ready", 0, Rect(),
         directory_label(), CommandSpec[], Dict{Symbol,Vector{EventHandler}}(),
-        SettingsState(settings_dir, registry), TranscriptState(), OperationState(), MenusState(), TerminalArchive(settings_dir))
+        SettingsState(settings_dir, registry), UpdateState(settings_dir), TranscriptState(), OperationState(), MenusState(), TerminalArchive(settings_dir))
     isnothing(component(kernel, :input)) && install!(kernel, ComponentSpec(:input, default_input!))
     isnothing(component(kernel, :view)) && install!(kernel, ComponentSpec(:view, default_view!))
     app.settings.workspace = working_directory(session)
     app.directory = directory_label(app.settings.workspace)
     register_default_commands!(app)
+    register_command!(app, CommandSpec("update", "Check or install upstream updates", update_command!))
     lock(session.runtime.execution_lock) do
         lock(session.conversation.lock) do
             initialize_archive!(app.archive, app.session)
@@ -52,6 +53,8 @@ function App(session::Session; settings_dir::AbstractString=config_dir(), regist
     register_event_handler!(app, :compaction_done, operation_finished!)
     register_event_handler!(app, :auth_url, auth_url_received!)
     register_event_handler!(app, :auth_done, auth_finished!)
+    register_event_handler!(app, :update_checked, update_check_finished!)
+    register_event_handler!(app, :update_installed, update_installed!)
     register_event_handler!(app, :response_progress, response_progress_received!)
     register_event_handler!(app, :response_committed, response_committed!)
     refresh_settings!(app)
@@ -81,6 +84,7 @@ end
 
 function JuliaForever2.main(; settings_dir::AbstractString=config_dir(), registry::ProviderRegistry=DEFAULT_PROVIDER_REGISTRY)
     app = terminal_app(; settings_dir, registry)
+    start_update_monitor!(app)
     capture_was_enabled = Tachikoma.raw_capture_enabled()
     capture_was_enabled || Tachikoma.enable_raw_capture!()
     terminal_task = Task(() -> Tachikoma.app(app; default_bindings=false))

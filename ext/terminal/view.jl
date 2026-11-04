@@ -2,6 +2,11 @@
 function footer_line_parts(app::App, width::Integer)
     snapshot = JuliaForever2.session_footer_snapshot(app.session)
     left = JuliaForever2.footer_usage_label(snapshot.usage, snapshot.provider)
+    latest = app.updates.latest
+    if !isnothing(latest) && update_available(latest) && !app.updates.installing
+        notice = "Update available: /update install"
+        left = isempty(left) ? notice : left * " · " * notice
+    end
     if app.status != "Ready"
         left = isempty(left) ? app.status : left * " · " * app.status
     end
